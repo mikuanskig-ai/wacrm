@@ -1,0 +1,78 @@
+# Local dev: self-hosted WuzAPI (github.com/asternic/wuzapi) — the
+# WhatsApp channel alternative to the Meta Cloud API. Two services
+# only: wuzapi itself + its own Postgres. WuzAPI's own compose file
+# also runs RabbitMQ, but that's optional internal eventing for
+# consumers who want a message bus instead of HTTP webhooks — this
+# integration is purely webhook-based, so it's omitted here.
+#
+# Ports are chosen to avoid colliding with anything else this project
+# may already have running on the same Docker daemon: Supabase local
+# (54321-54323) and, if you're also running the Whaticket project in
+# this same c:\claude tree, its Postgres/Redis (5432/6379).
+#
+# Usage:
+#   1. cp .env.local.example .env.local (if you haven't already) and
+#      fill in WUZAPI_ADMIN_TOKEN / WUZAPI_GLOBAL_ENCRYPTION_KEY /
+#      WUZAPI_GLOBAL_HMAC_KEY — generate each with:
+#        node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"
+#   2. docker compose --env-file .env.local -f docker-compose.wuzapi.yml up -d
+#      (--env-file is required: docker compose reads plain `.env` by
+#      default, not Next.js's `.env.local`)
+#   3. In Settings > WhatsApp > WuzAPI, server URL is
+#      http://localhost:8081 and admin token is whatever you set for
+#      WUZAPI_ADMIN_TOKEN.
+services:
+  wuzapi:
+    image: asternic/wuzapi:latest
+    container_name: wacrm-wuzapi
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      WUZAPI_ADMIN_TOKEN: ${WUZAPI_ADMIN_TOKEN:?set WUZAPI_ADMIN_TOKEN in .env.local}
+      WUZAPI_GLOBAL_ENCRYPTION_KEY: ${WUZAPI_GLOBAL_ENCRYPTION_KEY:?set WUZAPI_GLOBAL_ENCRYPTION_KEY in .env.local}
+      WUZAPI_GLOBAL_HMAC_KEY: ${WUZAPI_GLOBAL_HMAC_KEY:-}
+      DB_USER: wuzapi
+      DB_PASSWORD: wuzapi
+      DB_NAME: wuzapi
+      DB_HOST: wuzapi-db
+      DB_PORT: 5432
+      DB_SSLMODE: "false"
+      WEBHOOK_FORMAT: json
+      SESSION_DEVICE_NAME: wacrm
+      TZ: America/Sao_Paulo
+    depends_on:
+      wuzapi-db:
+        condition: service_healthy
+    networks:
+      - wacrm-wuzapi
+
+  wuzapi-db:
+    image: postgres:16
+    container_name: wacrm-wuzapi-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wuzapi
+      POSTGRES_PASSWORD: wuzapi
+      POSTGRES_DB: wuzapi
+    ports:
+      # Exposed on the host on a non-default port purely for local
+      # debugging (psql in). Not needed by the wuzapi service itself,
+      # which talks to it over the compose network as `wuzapi-db`.
+      - "5433:5432"
+    volumes:
+      - wacrm_wuzapi_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wuzapi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wacrm-wuzapi
+
+networks:
+  wacrm-wuzapi:
+    driver: bridge
+
+volumes:
+  wacrm_wuzapi_db_data:
