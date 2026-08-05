@@ -2290,6 +2290,7 @@
         "resultDistance": "Distância calculada: {km} km",
         "resultFee": "Taxa de entrega: {fee}",
         "resultFreeShipping": "Frete grátis aplicado",
+        "resolvedTo": "Endereço localizado em: {label}",
         "reason": {
           "address_required": "Um endereço de entrega é obrigatório para esse método de cálculo",
           "origin_not_configured": "O endereço de origem da entrega ainda não foi configurado — preencha e salve na seção acima",

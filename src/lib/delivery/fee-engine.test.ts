@@ -31,7 +31,14 @@ describe('calculateDeliveryFee — fixed', () => {
   it('returns the fixed price without ever calling the distance provider', async () => {
     const provider = fakeProvider()
     const result = await calculateDeliveryFee(BASE_CONFIG, { subtotal: 30 }, provider)
-    expect(result).toEqual({ ok: true, fee: 8, distanceKm: null, freeShipping: false, method: 'fixed' })
+    expect(result).toEqual({
+      ok: true,
+      fee: 8,
+      distanceKm: null,
+      resolvedLabel: null,
+      freeShipping: false,
+      method: 'fixed',
+    })
     expect(provider.geocode).not.toHaveBeenCalled()
     expect(provider.calculateDistance).not.toHaveBeenCalled()
   })
@@ -39,7 +46,14 @@ describe('calculateDeliveryFee — fixed', () => {
   it('defaults to 0 when fixed_price is missing', async () => {
     const config: DeliveryFeeConfig = { ...BASE_CONFIG, settings: {} }
     const result = await calculateDeliveryFee(config, { subtotal: 30 }, fakeProvider())
-    expect(result).toEqual({ ok: true, fee: 0, distanceKm: null, freeShipping: false, method: 'fixed' })
+    expect(result).toEqual({
+      ok: true,
+      fee: 0,
+      distanceKm: null,
+      resolvedLabel: null,
+      freeShipping: false,
+      method: 'fixed',
+    })
   })
 })
 
@@ -57,7 +71,14 @@ describe('calculateDeliveryFee — neighborhood', () => {
 
   it('matches an explicit neighborhoodName case-insensitively', async () => {
     const result = await calculateDeliveryFee(config, { neighborhoodName: 'centro', subtotal: 30 }, fakeProvider())
-    expect(result).toEqual({ ok: true, fee: 5, distanceKm: null, freeShipping: false, method: 'neighborhood' })
+    expect(result).toEqual({
+      ok: true,
+      fee: 5,
+      distanceKm: null,
+      resolvedLabel: null,
+      freeShipping: false,
+      method: 'neighborhood',
+    })
   })
 
   it('matches accent-insensitively', async () => {
@@ -66,7 +87,14 @@ describe('calculateDeliveryFee — neighborhood', () => {
       { neighborhoodName: 'sao paulo', subtotal: 30 },
       fakeProvider(),
     )
-    expect(result).toEqual({ ok: true, fee: 12, distanceKm: null, freeShipping: false, method: 'neighborhood' })
+    expect(result).toEqual({
+      ok: true,
+      fee: 12,
+      distanceKm: null,
+      resolvedLabel: null,
+      freeShipping: false,
+      method: 'neighborhood',
+    })
   })
 
   it('falls back to the geocoded neighbourhood guess when none is given explicitly', async () => {
@@ -74,7 +102,30 @@ describe('calculateDeliveryFee — neighborhood', () => {
       geocode: vi.fn(async () => ({ lat: -23.5, lng: -46.6, neighborhood: 'Centro', label: null })),
     })
     const result = await calculateDeliveryFee(config, { address: 'Rua X, 100', subtotal: 30 }, provider)
-    expect(result).toEqual({ ok: true, fee: 5, distanceKm: null, freeShipping: false, method: 'neighborhood' })
+    expect(result).toEqual({
+      ok: true,
+      fee: 5,
+      distanceKm: null,
+      resolvedLabel: null,
+      freeShipping: false,
+      method: 'neighborhood',
+    })
+  })
+
+  it('surfaces the provider-resolved label so an admin can spot a wrong geocode pin', async () => {
+    const provider = fakeProvider({
+      geocode: vi.fn(async () => ({
+        lat: -24.95,
+        lng: -53.45,
+        neighborhood: 'Centro',
+        label: 'Av. Papagaios, 1395, Cascavel - PR, Brazil',
+      })),
+    })
+    const result = await calculateDeliveryFee(config, { address: 'Av. Papagaios, 1395', subtotal: 30 }, provider)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.resolvedLabel).toBe('Av. Papagaios, 1395, Cascavel - PR, Brazil')
+    }
   })
 
   it('fails with neighborhood_not_found when nothing matches', async () => {
@@ -108,7 +159,14 @@ describe('calculateDeliveryFee — distance_range', () => {
   it('picks the range matching the computed distance', async () => {
     const provider = fakeProvider({ calculateDistance: vi.fn(async () => 4) })
     const result = await calculateDeliveryFee(config, { address: 'Rua X, 100', subtotal: 30 }, provider)
-    expect(result).toEqual({ ok: true, fee: 8, distanceKm: 4, freeShipping: false, method: 'distance_range' })
+    expect(result).toEqual({
+      ok: true,
+      fee: 8,
+      distanceKm: 4,
+      resolvedLabel: null,
+      freeShipping: false,
+      method: 'distance_range',
+    })
   })
 
   it('is inclusive on range boundaries, first match wins on an overlapping edge', async () => {
@@ -120,6 +178,7 @@ describe('calculateDeliveryFee — distance_range', () => {
       ok: true,
       fee: 5,
       distanceKm: 3,
+      resolvedLabel: null,
       freeShipping: false,
       method: 'distance_range',
     })
@@ -129,6 +188,7 @@ describe('calculateDeliveryFee — distance_range', () => {
       ok: true,
       fee: 12,
       distanceKm: 8,
+      resolvedLabel: null,
       freeShipping: false,
       method: 'distance_range',
     })
@@ -183,7 +243,14 @@ describe('calculateDeliveryFee — global rules', () => {
     }
     const provider = fakeProvider({ calculateDistance: vi.fn(async () => 10) })
     const result = await calculateDeliveryFee(config, { address: 'Rua X, 100', subtotal: 60 }, provider)
-    expect(result).toEqual({ ok: true, fee: 0, distanceKm: 10, freeShipping: true, method: 'per_km' })
+    expect(result).toEqual({
+      ok: true,
+      fee: 0,
+      distanceKm: 10,
+      resolvedLabel: null,
+      freeShipping: true,
+      method: 'per_km',
+    })
   })
 
   it('fixed method with a configured max_distance still requires a real distance check', async () => {
@@ -199,6 +266,7 @@ describe('calculateDeliveryFee — global rules', () => {
       ok: true,
       fee: 8,
       distanceKm: 4,
+      resolvedLabel: null,
       freeShipping: false,
       method: 'fixed',
     })

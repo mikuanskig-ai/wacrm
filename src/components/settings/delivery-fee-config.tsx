@@ -56,7 +56,7 @@ const BR_STATES = [
 ] as const;
 
 type SimResult =
-  | { ok: true; fee: number; distanceKm: number | null; freeShipping: boolean }
+  | { ok: true; fee: number; distanceKm: number | null; resolvedLabel: string | null; freeShipping: boolean }
   | { ok: false; reason: DeliveryFeeFailureReason };
 
 export function DeliveryFeeConfig() {
@@ -611,6 +611,11 @@ export function DeliveryFeeConfig() {
                         ? t('simulator.resultFreeShipping')
                         : t('simulator.resultFee', { fee: formatFee(simResult.fee) })}
                     </p>
+                    {simResult.resolvedLabel && (
+                      <p className="text-xs opacity-80">
+                        {t('simulator.resolvedTo', { label: simResult.resolvedLabel })}
+                      </p>
+                    )}
                   </>
                 ) : (
                   <p>{t(`simulator.reason.${simResult.reason}`)}</p>
