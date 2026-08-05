@@ -19,6 +19,9 @@ const eslintConfig = defineConfig([
     // require() on purpose and shouldn't be linted against the app's
     // ESM/Next.js rules.
     "print-agent/**",
+    // Local, gitignored staging area for handing changes to the dev for
+    // manual deploy — plain file copies, never meant to be linted/built.
+    "Deploy/**",
   ]),
 ]);
 

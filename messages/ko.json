@@ -2289,6 +2289,7 @@
         "resultDistance": "계산된 거리: {km} km",
         "resultFee": "배달비: {fee}",
         "resultFreeShipping": "무료 배송 적용됨",
+        "resolvedTo": "주소가 확인된 위치: {label}",
         "reason": {
           "address_required": "이 계산 방식에는 배달 주소가 필요합니다",
           "origin_not_configured": "배달 출발 주소가 아직 설정되지 않았습니다 — 위 섹션에서 입력하고 저장하세요",

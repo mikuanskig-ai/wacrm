@@ -54,7 +54,9 @@ export const AI_PROVIDER_MODELS: Record<AiProvider, { value: string; label: stri
   // to a wider model later never gets silently reset.
   openrouter: [
     { value: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
-    { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    { value: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna' },
+    { value: 'openai/gpt-5.6-terra', label: 'GPT-5.6 Terra' },
+    { value: 'openai/gpt-5.6-sol', label: 'GPT-5.6 Sol' },
     { value: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5' },
     { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
   ],

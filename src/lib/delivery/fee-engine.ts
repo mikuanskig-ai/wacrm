@@ -69,7 +69,20 @@ export type DeliveryFeeFailureReason =
   | 'no_matching_distance_range'
 
 export type DeliveryFeeResult =
-  | { ok: true; fee: number; distanceKm: number | null; freeShipping: boolean; method: DeliveryMethod }
+  | {
+      ok: true
+      fee: number
+      distanceKm: number | null
+      /** Label the provider actually geocoded the destination address
+       *  to (e.g. "Av. Papagaios, 1395, Cascavel - PR, Brazil"), null
+       *  when no geocode was needed. Surfaced end-to-end to the
+       *  simulator UI so an admin can tell a wrong-pin geocode apart
+       *  from a correct-pin-but-wrong-route distance — see the
+       *  origin_resolved_label precedent in fee-config/route.ts. */
+      resolvedLabel: string | null
+      freeShipping: boolean
+      method: DeliveryMethod
+    }
   | { ok: false; reason: DeliveryFeeFailureReason }
 
 const DEFAULT_CONFIG: DeliveryFeeConfig = {
@@ -152,6 +165,7 @@ export async function calculateDeliveryFee(
 
   let distanceKm: number | null = null
   let geocodedNeighborhood: string | null = null
+  let resolvedLabel: string | null = null
 
   if (needsGeocode) {
     const address = args.address?.trim()
@@ -183,6 +197,7 @@ export async function calculateDeliveryFee(
     }
     if (!destination) return { ok: false, reason: 'geocode_failed' }
     geocodedNeighborhood = destination.neighborhood
+    resolvedLabel = destination.label
 
     if (needsDistance) {
       if (config.originLat == null || config.originLng == null) {
@@ -204,26 +219,40 @@ export async function calculateDeliveryFee(
   }
 
   if (config.freeShippingAbove != null && args.subtotal >= config.freeShippingAbove) {
-    return { ok: true, fee: 0, distanceKm, freeShipping: true, method: config.method }
+    return { ok: true, fee: 0, distanceKm, resolvedLabel, freeShipping: true, method: config.method }
   }
 
   switch (config.method) {
     case 'fixed': {
       const fee = roundCents(config.settings.fixed_price ?? 0)
-      return { ok: true, fee, distanceKm, freeShipping: false, method: 'fixed' }
+      return { ok: true, fee, distanceKm, resolvedLabel, freeShipping: false, method: 'fixed' }
     }
     case 'neighborhood': {
       const name = args.neighborhoodName?.trim() || geocodedNeighborhood
       if (!name) return { ok: false, reason: 'neighborhood_not_found' }
       const match = matchNeighborhood(config.settings.neighborhoods ?? [], name)
       if (!match) return { ok: false, reason: 'neighborhood_not_found' }
-      return { ok: true, fee: roundCents(match.price), distanceKm, freeShipping: false, method: 'neighborhood' }
+      return {
+        ok: true,
+        fee: roundCents(match.price),
+        distanceKm,
+        resolvedLabel,
+        freeShipping: false,
+        method: 'neighborhood',
+      }
     }
     case 'distance_range': {
       if (distanceKm == null) return { ok: false, reason: 'address_required' }
       const match = matchDistanceRange(config.settings.rules ?? [], distanceKm)
       if (!match) return { ok: false, reason: 'no_matching_distance_range' }
-      return { ok: true, fee: roundCents(match.price), distanceKm, freeShipping: false, method: 'distance_range' }
+      return {
+        ok: true,
+        fee: roundCents(match.price),
+        distanceKm,
+        resolvedLabel,
+        freeShipping: false,
+        method: 'distance_range',
+      }
     }
     case 'per_km': {
       if (distanceKm == null) return { ok: false, reason: 'address_required' }
@@ -233,6 +262,7 @@ export async function calculateDeliveryFee(
         ok: true,
         fee: roundCents(base + distanceKm * perKm),
         distanceKm,
+        resolvedLabel,
         freeShipping: false,
         method: 'per_km',
       }

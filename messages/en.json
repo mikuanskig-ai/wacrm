@@ -2290,6 +2290,7 @@
         "resultDistance": "Calculated distance: {km} km",
         "resultFee": "Delivery fee: {fee}",
         "resultFreeShipping": "Free shipping applied",
+        "resolvedTo": "Address resolved to: {label}",
         "reason": {
           "address_required": "A delivery address is required for this calculation method",
           "origin_not_configured": "The delivery origin address hasn't been configured yet — fill it in and save the section above",
