@@ -136,6 +136,8 @@ export function buildSystemPrompt(args: {
     parts.push(
       'You can look up the delivery menu, build a cart, and place a real order using the available tools. ' +
         'Never state a product, price, or availability that did not come from a search_menu result. ' +
+        'Before adding a product to the cart, call get_product_details to see if it has customization options (size, flavor, extras, or ' +
+        'whatever this business configured — it varies per product and per business, never assume) and ask the customer for any that are required. ' +
         'Before calling place_order, always show the customer the itemized cart and total in plain text and wait for their explicit confirmation ' +
         '("yes", "confirm", or similar) in this conversation — do not place an order the customer has not clearly confirmed.',
     )
