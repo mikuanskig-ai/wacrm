@@ -1,9 +1,10 @@
 // ============================================================
-// Delivery tool-calling for the AI chat path (Fase 2). Four tools,
-// deliberately minimal: search the menu, add to cart, view the cart,
-// place the order. No edit/remove-from-cart tool — the model can just
-// add again, or the customer restates what they want; a full cart CRUD
-// surface is not needed for a first version.
+// Delivery tool-calling for the AI chat path (Fase 2). Five tools,
+// deliberately minimal: search the menu, inspect one product's
+// customization options, add to cart, view the cart, place the order.
+// No edit/remove-from-cart tool — the model can just add again, or the
+// customer restates what they want; a full cart CRUD surface is not
+// needed for a first version.
 //
 // Every tool re-validates any id the model hands it against
 // `ctx.accountId` before touching the database (never trust an id or a
@@ -12,10 +13,21 @@
 // the exact query shapes the Flow-based `add_order_item`/`order_summary`
 // nodes already use (`loadProductWithAddonGroups`, `getAccountCurrency`
 // in src/lib/flows/engine.ts) rather than re-deriving them.
+//
+// Addon groups (delivery_addon_groups) are account-defined and product-
+// type-agnostic — "Size" for a pizzeria, "Ponto da carne" for a burger
+// joint, "Cobertura" for an açaí shop, whatever a given business set
+// up. get_product_details surfaces whatever groups/options that
+// PARTICULAR account configured for that PARTICULAR product; nothing
+// here assumes any specific business vertical. add_to_cart enforces
+// `is_required` server-side (same rule the button-driven Flow engine
+// already enforces — see engine.ts's addon-group step) rather than
+// only hinting at it in a tool description, so a required choice can't
+// be silently skipped just because the model forgot to ask.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { loadProductWithAddonGroups } from '@/lib/flows/engine'
+import { loadProductWithAddonGroups, type ProductWithAddonGroups } from '@/lib/flows/engine'
 import {
   computeCartTotal,
   finalizeDeliveryOrder,
@@ -103,6 +115,54 @@ export const searchMenuTool: ToolDefinition = {
   },
 }
 
+/** Formats one product's addon groups for the model — generic across
+ *  business types, since the group/option names themselves come from
+ *  whatever the account configured (see file header). */
+function formatAddonGroups(product: ProductWithAddonGroups): string {
+  if (product.addon_groups.length === 0) {
+    return 'This product has no customization options — just call add_to_cart with the product_id.'
+  }
+  const lines = product.addon_groups.map((g) => {
+    const cardinality = g.is_required
+      ? g.selection_type === 'single'
+        ? 'required, choose exactly one'
+        : 'required, choose at least one'
+      : g.selection_type === 'single'
+        ? 'optional, choose at most one'
+        : 'optional, choose any number'
+    const options = g.options
+      .map((o) => `${o.name} (option_id: ${o.id}, +${o.price_delta})`)
+      .join('; ')
+    return `- ${g.name} (${cardinality}): ${options}`
+  })
+  return `Customization options:\n${lines.join('\n')}`
+}
+
+export const getProductDetailsTool: ToolDefinition = {
+  name: 'get_product_details',
+  description:
+    "Get one menu product's full customization options (size, flavor, extras, or whatever this business configured — never assume, always check). ALWAYS call this before add_to_cart for a product you haven't already inspected in this conversation, so you know whether anything is required.",
+  parameters: {
+    type: 'object',
+    properties: {
+      product_id: { type: 'string', description: 'A product_id from search_menu.' },
+    },
+    required: ['product_id'],
+    additionalProperties: false,
+  },
+  async execute(args, ctx) {
+    const productId = typeof args.product_id === 'string' ? args.product_id : ''
+    if (!productId) return { content: 'Missing product_id — call search_menu first.' }
+    const product = await loadProductWithAddonGroups(ctx.db, ctx.accountId, productId)
+    if (!product) {
+      return { content: "That product_id doesn't exist in this account's menu. Call search_menu again." }
+    }
+    return {
+      content: `${product.name} — ${formatCurrency(product.price, ctx.currency)}\n\n${formatAddonGroups(product)}`,
+    }
+  },
+}
+
 export const viewCartTool: ToolDefinition = {
   name: 'view_cart',
   description: "Read the customer's current cart and running total. Use this before asking for order confirmation.",
@@ -122,7 +182,7 @@ export const viewCartTool: ToolDefinition = {
 export const addToCartTool: ToolDefinition = {
   name: 'add_to_cart',
   description:
-    "Add one item to the customer's cart. product_id must be one returned by a prior search_menu call — never guess an id. addon_option_ids are optional option ids from that product's addon groups.",
+    "Add one item to the customer's cart. product_id must be one returned by a prior search_menu call — never guess an id. addon_option_ids are option ids from that product's addon groups (see get_product_details) — required groups MUST have a selection or this call is rejected.",
   parameters: {
     type: 'object',
     properties: {
@@ -164,6 +224,37 @@ export const addToCartTool: ToolDefinition = {
         option_name: o.name,
         price_delta: o.price_delta,
       }))
+
+    // Enforce is_required / single-selection server-side — same rule
+    // the button-driven Flow engine already enforces (never trust the
+    // model to have asked, same "defense in depth" as the id checks
+    // above). Generic across business types: whatever groups this
+    // particular account configured for this particular product.
+    const selectedByGroup = new Map<string, CartLineItemAddon[]>()
+    for (const a of addons) {
+      const list = selectedByGroup.get(a.group_id) ?? []
+      list.push(a)
+      selectedByGroup.set(a.group_id, list)
+    }
+    const problems: string[] = []
+    for (const group of product.addon_groups) {
+      const picked = selectedByGroup.get(group.id) ?? []
+      if (group.is_required && picked.length === 0) {
+        const options = group.options.map((o) => `${o.name} (option_id: ${o.id})`).join(', ')
+        problems.push(`"${group.name}" requires a choice — options: ${options}`)
+      } else if (group.selection_type === 'single' && picked.length > 1) {
+        problems.push(
+          `"${group.name}" allows only one choice, but ${picked.length} were given (${picked
+            .map((p) => p.option_name)
+            .join(', ')})`,
+        )
+      }
+    }
+    if (problems.length > 0) {
+      return {
+        content: `Cannot add to cart yet — ${problems.join('; ')}. Ask the customer to choose, then call add_to_cart again with the right addon_option_ids.`,
+      }
+    }
 
     const item: CartLineItem = {
       product_id: product.id,
@@ -299,9 +390,18 @@ export function getAvailableTools(args: {
   // Draft/Playground: read-only menu lookups (and fee calculation,
   // which only reads config) are free and safe to try regardless of
   // the tools_enabled switch — they can't mutate anything.
-  if (!args.allowSideEffects) return [searchMenuTool, viewCartTool, calculateDeliveryFeeTool]
+  if (!args.allowSideEffects) {
+    return [searchMenuTool, getProductDetailsTool, viewCartTool, calculateDeliveryFeeTool]
+  }
   // Live customer chat: the mutating tools (and therefore any tool at
   // all here) require the account to have explicitly opted in.
   if (!args.toolsEnabled) return []
-  return [searchMenuTool, viewCartTool, calculateDeliveryFeeTool, addToCartTool, placeOrderTool]
+  return [
+    searchMenuTool,
+    getProductDetailsTool,
+    viewCartTool,
+    calculateDeliveryFeeTool,
+    addToCartTool,
+    placeOrderTool,
+  ]
 }

@@ -20,6 +20,7 @@ vi.mock('@/lib/delivery/create-order', async () => {
 
 import {
   searchMenuTool,
+  getProductDetailsTool,
   viewCartTool,
   addToCartTool,
   placeOrderTool,
@@ -150,6 +151,62 @@ describe('searchMenuTool', () => {
   })
 })
 
+describe('getProductDetailsTool', () => {
+  it('rejects a product_id that does not resolve for this account', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue(null)
+    const { db } = makeDb({})
+    const res = await getProductDetailsTool.execute({ product_id: 'not-mine' }, ctxFor(db))
+    expect(res.content).toMatch(/doesn't exist|does not exist/i)
+  })
+
+  it('reports no customization options for a plain product', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'Coxinha',
+      price: 8,
+      addon_groups: [],
+    })
+    const { db } = makeDb({})
+    const res = await getProductDetailsTool.execute({ product_id: 'p1' }, ctxFor(db))
+    expect(res.content).toMatch(/no customization options/i)
+  })
+
+  it('lists every addon group with cardinality and option ids — generic, not menu-specific', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'X-Burguer',
+      price: 22,
+      addon_groups: [
+        {
+          id: 'g1',
+          name: 'Ponto da carne',
+          selection_type: 'single',
+          is_required: true,
+          position: 0,
+          options: [
+            { id: 'o1', name: 'Ao ponto', price_delta: 0, group_id: 'g1' },
+            { id: 'o2', name: 'Bem passado', price_delta: 0, group_id: 'g1' },
+          ],
+        },
+        {
+          id: 'g2',
+          name: 'Adicionais',
+          selection_type: 'multiple',
+          is_required: false,
+          position: 1,
+          options: [{ id: 'o3', name: 'Bacon extra', price_delta: 4, group_id: 'g2' }],
+        },
+      ],
+    })
+    const { db } = makeDb({})
+    const res = await getProductDetailsTool.execute({ product_id: 'p1' }, ctxFor(db))
+    expect(res.content).toContain('Ponto da carne (required, choose exactly one)')
+    expect(res.content).toContain('Ao ponto (option_id: o1, +0)')
+    expect(res.content).toContain('Adicionais (optional, choose any number)')
+    expect(res.content).toContain('Bacon extra (option_id: o3, +4)')
+  })
+})
+
 describe('viewCartTool', () => {
   it('reports an empty cart', async () => {
     const { db } = makeDb({ cart: [] })
@@ -217,6 +274,56 @@ describe('addToCartTool', () => {
     expect(writes[0][0].addons).toEqual([
       { group_id: 'g1', group_name: 'Size', option_id: 'o1', option_name: 'Large', price_delta: 5 },
     ])
+  })
+
+  const burgerWithRequiredGroup = {
+    id: 'p1',
+    name: 'X-Burguer',
+    price: 22,
+    addon_groups: [
+      {
+        id: 'g1',
+        name: 'Ponto da carne',
+        selection_type: 'single' as const,
+        is_required: true,
+        position: 0,
+        options: [
+          { id: 'o1', name: 'Ao ponto', price_delta: 0, group_id: 'g1' },
+          { id: 'o2', name: 'Bem passado', price_delta: 0, group_id: 'g1' },
+        ],
+      },
+    ],
+  }
+
+  it('rejects add_to_cart when a required addon group has no selection — regardless of business type', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue(burgerWithRequiredGroup)
+    const { db, writes } = makeDb({ cart: [] })
+    const res = await addToCartTool.execute({ product_id: 'p1' }, ctxFor(db))
+    expect(res.content).toMatch(/ponto da carne.*requires a choice/i)
+    expect(res.content).toContain('Ao ponto (option_id: o1)')
+    expect(writes).toHaveLength(0)
+  })
+
+  it('accepts add_to_cart once the required group is satisfied', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue(burgerWithRequiredGroup)
+    const { db, writes } = makeDb({ cart: [] })
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', addon_option_ids: ['o1'] },
+      ctxFor(db),
+    )
+    expect(writes).toHaveLength(1)
+    expect(res.content).toMatch(/added/i)
+  })
+
+  it('rejects more than one selection in a single-selection group', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue(burgerWithRequiredGroup)
+    const { db, writes } = makeDb({ cart: [] })
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', addon_option_ids: ['o1', 'o2'] },
+      ctxFor(db),
+    )
+    expect(res.content).toMatch(/ponto da carne.*allows only one choice/i)
+    expect(writes).toHaveLength(0)
   })
 })
 
@@ -293,6 +400,7 @@ describe('getAvailableTools', () => {
     })
     expect(tools.map((t) => t.name).sort()).toEqual([
       'calculate_delivery_fee',
+      'get_product_details',
       'search_menu',
       'view_cart',
     ])
@@ -304,7 +412,7 @@ describe('getAvailableTools', () => {
     ).toEqual([])
   })
 
-  it('returns all five tools for live chat once tools_enabled is on', () => {
+  it('returns all six tools for live chat once tools_enabled is on', () => {
     const tools = getAvailableTools({
       accountHasDeliveryModule: true,
       toolsEnabled: true,
@@ -313,6 +421,7 @@ describe('getAvailableTools', () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       'add_to_cart',
       'calculate_delivery_fee',
+      'get_product_details',
       'place_order',
       'search_menu',
       'view_cart',
