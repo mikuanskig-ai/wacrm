@@ -202,23 +202,22 @@ describe('OpenRouteServiceProvider', () => {
   })
 
   describe('calculateDistance', () => {
-    it('posts both coordinates and converts the response from meters to km', async () => {
-      fetchMock.mockResolvedValueOnce(okResponse({ distances: [[4200]] }))
+    it('posts both coordinates to the directions endpoint and converts meters to km', async () => {
+      fetchMock.mockResolvedValueOnce(okResponse({ routes: [{ summary: { distance: 4200, duration: 600 } }] }))
 
       const provider = new OpenRouteServiceProvider()
       const km = await provider.calculateDistance({ lat: -23.5, lng: -46.6 }, { lat: -23.6, lng: -46.7 })
 
       expect(km).toBe(4.2)
       const [url, init] = fetchMock.mock.calls[0]
-      expect(url).toBe('https://api.openrouteservice.org/v2/matrix/driving-car')
+      expect(url).toBe('https://api.openrouteservice.org/v2/directions/driving-car')
       expect(init.headers.Authorization).toBe('test-key')
       const body = JSON.parse(init.body)
-      expect(body.locations).toEqual([
+      expect(body.coordinates).toEqual([
         [-46.6, -23.5],
         [-46.7, -23.6],
       ])
-      expect(body.sources).toEqual([0])
-      expect(body.destinations).toEqual([1])
+      expect(body.units).toBe('m')
     })
 
     it('throws DistanceProviderError on a non-2xx response', async () => {
@@ -230,7 +229,15 @@ describe('OpenRouteServiceProvider', () => {
     })
 
     it('throws DistanceProviderError when the response has no distance value', async () => {
-      fetchMock.mockResolvedValueOnce(okResponse({ distances: [[null]] }))
+      fetchMock.mockResolvedValueOnce(okResponse({ routes: [{ summary: {} }] }))
+      const provider = new OpenRouteServiceProvider()
+      await expect(
+        provider.calculateDistance({ lat: 0, lng: 0 }, { lat: 1, lng: 1 }),
+      ).rejects.toThrow(DistanceProviderError)
+    })
+
+    it('throws DistanceProviderError when routes is empty', async () => {
+      fetchMock.mockResolvedValueOnce(okResponse({ routes: [] }))
       const provider = new OpenRouteServiceProvider()
       await expect(
         provider.calculateDistance({ lat: 0, lng: 0 }, { lat: 1, lng: 1 }),

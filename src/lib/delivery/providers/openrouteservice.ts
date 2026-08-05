@@ -45,7 +45,15 @@ import {
 
 const GEOCODE_URL = 'https://api.openrouteservice.org/geocode/search'
 const GEOCODE_STRUCTURED_URL = 'https://api.openrouteservice.org/geocode/search/structured'
-const MATRIX_URL = 'https://api.openrouteservice.org/v2/matrix/driving-car'
+// Directions, not Matrix — observed live: for the same two points, the
+// Matrix endpoint (built for fast many-to-many lookups over a
+// contracted graph) returned a meaningfully shorter distance than the
+// Directions endpoint (single-pair, the same engine ORS's own public
+// map demo uses) — 7.1km vs 8.6km for one real address in Cascavel-PR,
+// against a ~9.0km real route. We only ever call this with exactly one
+// origin/destination pair, so there's no batching upside to Matrix
+// that would offset its lower precision.
+const DIRECTIONS_URL = 'https://api.openrouteservice.org/v2/directions/driving-car'
 
 function apiKey(): string {
   const key = process.env.ORS_API_KEY?.trim()
@@ -71,8 +79,8 @@ interface OrsGeocodeResponse {
   features?: OrsGeocodeFeature[]
 }
 
-interface OrsMatrixResponse {
-  distances?: (number | null)[][]
+interface OrsDirectionsResponse {
+  routes?: { summary?: { distance?: number } }[]
 }
 
 function featureToResult(feature: OrsGeocodeFeature | undefined): GeocodeResult | null {
@@ -150,32 +158,29 @@ export class OpenRouteServiceProvider implements DistanceProvider {
     origin: { lat: number; lng: number },
     destination: { lat: number; lng: number },
   ): Promise<number> {
-    const res = await fetch(MATRIX_URL, {
+    const res = await fetch(DIRECTIONS_URL, {
       method: 'POST',
       headers: {
         Authorization: apiKey(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        locations: [
+        coordinates: [
           [origin.lng, origin.lat],
           [destination.lng, destination.lat],
         ],
-        sources: [0],
-        destinations: [1],
-        metrics: ['distance'],
         units: 'm',
       }),
     })
 
     if (!res.ok) {
-      throw new DistanceProviderError(`OpenRouteService matrix failed with status ${res.status}`)
+      throw new DistanceProviderError(`OpenRouteService directions failed with status ${res.status}`)
     }
 
-    const body = (await res.json()) as OrsMatrixResponse
-    const meters = body.distances?.[0]?.[0]
+    const body = (await res.json()) as OrsDirectionsResponse
+    const meters = body.routes?.[0]?.summary?.distance
     if (typeof meters !== 'number') {
-      throw new DistanceProviderError('OpenRouteService matrix response missing a distance value')
+      throw new DistanceProviderError('OpenRouteService directions response missing a distance value')
     }
     return meters / 1000
   }
