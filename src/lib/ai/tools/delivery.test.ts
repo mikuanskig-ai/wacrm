@@ -24,6 +24,7 @@ import {
   viewCartTool,
   addToCartTool,
   placeOrderTool,
+  calculateDeliveryFeeTool,
   getAvailableTools,
 } from './delivery'
 
@@ -49,12 +50,19 @@ function makeDb(
     rawAiCart?: unknown
     products?: FakeProduct[]
     businessHours?: FakeBusinessHours | null
+    /** Overrides the `delivery_fee_configs` row — keep the method
+     *  geocode-free (`fixed`, or `neighborhood` with `max_distance:
+     *  null` and an explicit neighbourhood name) or a test will hit the
+     *  real network via the real DistanceProvider. Full calculation
+     *  coverage lives in fee-engine.test.ts (fake provider, no I/O). */
+    feeConfig?: Record<string, unknown> | null
   } = {},
 ) {
   let cart = opts.cart ?? []
   const hasRawOverride = 'rawAiCart' in opts
   const products = opts.products ?? []
   const businessHours = opts.businessHours ?? null
+  const feeConfig = opts.feeConfig ?? null
   const writes: CartLineItem[][] = []
 
   const db = {
@@ -75,7 +83,7 @@ function makeDb(
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: () => Promise.resolve({ data: null, error: null }),
+              maybeSingle: () => Promise.resolve({ data: feeConfig, error: null }),
             }),
           }),
         }
@@ -448,7 +456,7 @@ describe('placeOrderTool', () => {
       cart,
       businessHours: { enabled: false, timezone: 'UTC', hours: {} },
     })
-    const res = await placeOrderTool.execute({}, ctxFor(db))
+    const res = await placeOrderTool.execute({ is_pickup: true }, ctxFor(db))
     expect(h.finalizeDeliveryOrder).toHaveBeenCalled()
     expect(res.data).toMatchObject({ id: 'order-2' })
   })
@@ -456,9 +464,69 @@ describe('placeOrderTool', () => {
   it('places the order when no business-hours config exists at all', async () => {
     h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-3', total: 30, currency: 'BRL' })
     const { db } = makeDb({ cart, businessHours: null })
-    const res = await placeOrderTool.execute({}, ctxFor(db))
+    const res = await placeOrderTool.execute({ is_pickup: true }, ctxFor(db))
     expect(h.finalizeDeliveryOrder).toHaveBeenCalled()
     expect(res.data).toMatchObject({ id: 'order-3' })
+  })
+
+  it('refuses a delivery order with no address and no is_pickup, instead of silently requiring one via the fee calculation — regression, 2026-08-06', async () => {
+    // Every account on a distance-based fee method (per_km,
+    // distance_range, or neighborhood without an explicit name) always
+    // needs an address to compute distance — so before this guard,
+    // place_order for a stated pickup order still called the fee
+    // engine, which demanded an address the customer had already said
+    // wasn't needed. Confirmed live: a real pickup order got stuck here.
+    const { db } = makeDb({ cart, businessHours: null })
+    const res = await placeOrderTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/missing delivery_address|is_pickup/i)
+    expect(h.finalizeDeliveryOrder).not.toHaveBeenCalled()
+  })
+
+  it('skips fee calculation entirely for a pickup order — no address needed', async () => {
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-4', total: 30, currency: 'BRL' })
+    // A geocode-requiring method would hang/hit the network if the fee
+    // engine were reached at all — proving is_pickup bypasses it, not
+    // just happens to succeed on a permissive default config.
+    const { db } = makeDb({
+      cart,
+      businessHours: null,
+      feeConfig: { delivery_method: 'per_km', max_distance: null, free_shipping_above: null, origin_lat: -25, origin_lng: -49, settings: { base_price: 0, price_per_km: 2 } },
+    })
+    const res = await placeOrderTool.execute({ is_pickup: true }, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ deliveryFee: 0, deliveryAddress: null }),
+    )
+    expect(res.data).toMatchObject({ id: 'order-4', deliveryFee: 0 })
+  })
+})
+
+describe('calculateDeliveryFeeTool', () => {
+  it('passes an explicit neighborhood through, skipping geocode entirely for a neighborhood-method account — regression, 2026-08-06', async () => {
+    // Before this, the tool only ever sent free-text `address` to the
+    // fee engine, so a "fixed price per bairro" account still depended
+    // on the external geocoder to guess the neighbourhood from that
+    // address — even when the model already knew it as its own answer.
+    // max_distance: null here is what proves no distance/geocode step
+    // ran: a geocode-requiring config would hit the real network in
+    // this test (no DistanceProvider mock in this file) and hang/fail.
+    const { db } = makeDb({
+      cart: [],
+      feeConfig: {
+        delivery_method: 'neighborhood',
+        max_distance: null,
+        free_shipping_above: null,
+        origin_lat: null,
+        origin_lng: null,
+        settings: { neighborhoods: [{ id: 'n1', name: 'Centro', price: 7 }] },
+      },
+    })
+    const res = await calculateDeliveryFeeTool.execute(
+      { address: 'Rua X, 100, Centro', neighborhood: 'Centro' },
+      ctxFor(db),
+    )
+    expect(res.content).toMatch(/7/)
+    expect(res.content).not.toMatch(/could not locate|not in our delivery list/i)
   })
 })
 

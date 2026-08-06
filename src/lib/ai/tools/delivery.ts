@@ -181,7 +181,8 @@ export const viewCartTool: ToolDefinition = {
     if (cart.length === 0) return { content: 'The cart is currently empty.' }
     const { subtotal } = computeCartTotal(cart)
     const lines = cart.map((item) => {
-      const addonsTxt = item.addons.length ? ` (${item.addons.map((a) => a.option_name).join(', ')})` : ''
+      const addons = item.addons ?? []
+      const addonsTxt = addons.length ? ` (${addons.map((a) => a.option_name).join(', ')})` : ''
       return `- ${item.quantity}x ${item.product_name}${addonsTxt}`
     })
     return { content: `Current cart:\n${lines.join('\n')}\nSubtotal: ${formatCurrency(subtotal, ctx.currency)}` }
@@ -317,11 +318,16 @@ export const addToCartTool: ToolDefinition = {
 export const calculateDeliveryFeeTool: ToolDefinition = {
   name: 'calculate_delivery_fee',
   description:
-    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change.",
+    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change. If you already asked the customer for their neighbourhood/bairro separately, ALWAYS pass it as `neighborhood` too — accounts using a fixed per-neighbourhood fee can then skip address lookup (and its external-service dependency) entirely instead of guessing the neighbourhood from the free-text address.",
   parameters: {
     type: 'object',
     properties: {
       address: { type: 'string', description: "The customer's full delivery address." },
+      neighborhood: {
+        type: 'string',
+        description:
+          "The customer's neighbourhood/bairro, if you already have it as its own answer (not just embedded in `address`). Optional, but pass it whenever you know it.",
+      },
     },
     required: ['address'],
     additionalProperties: false,
@@ -329,11 +335,16 @@ export const calculateDeliveryFeeTool: ToolDefinition = {
   async execute(args, ctx) {
     const address = typeof args.address === 'string' ? args.address : ''
     if (!address.trim()) return { content: 'Missing address — ask the customer for their delivery address first.' }
+    const neighborhood = typeof args.neighborhood === 'string' ? args.neighborhood : null
 
     const cart = await readCart(ctx.db, ctx.conversationId)
     const { subtotal } = computeCartTotal(cart)
 
-    const result = await calculateDeliveryFeeForAccount(ctx.db, ctx.accountId, { address, subtotal })
+    const result = await calculateDeliveryFeeForAccount(ctx.db, ctx.accountId, {
+      address,
+      neighborhoodName: neighborhood,
+      subtotal,
+    })
     if (!result.ok) return { content: describeFeeFailure(result.reason) }
 
     const freeNote = result.freeShipping ? ' (free shipping applied)' : ''
@@ -355,13 +366,18 @@ export interface PlacedOrderPayload {
 export const placeOrderTool: ToolDefinition = {
   name: 'place_order',
   description:
-    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation.',
+    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation. Set is_pickup to true when the customer is picking the order up themselves (no delivery address needed, no delivery fee) — never leave delivery_address empty for a real delivery order.',
   parameters: {
     type: 'object',
     properties: {
       delivery_address: { type: 'string' },
       customer_name: { type: 'string' },
       notes: { type: 'string' },
+      is_pickup: {
+        type: 'boolean',
+        description:
+          'True when the customer said they will pick the order up (retirada) instead of having it delivered. Skips the delivery fee entirely.',
+      },
     },
     additionalProperties: false,
   },
@@ -379,17 +395,39 @@ export const placeOrderTool: ToolDefinition = {
       return { content: closedMessage(businessHours.hours) }
     }
 
+    const isPickup = args.is_pickup === true
     const deliveryAddress = typeof args.delivery_address === 'string' ? args.delivery_address : null
+    if (!isPickup && !deliveryAddress?.trim()) {
+      return {
+        content:
+          'Missing delivery_address for a delivery order. Ask the customer for their full delivery address, or call this again with is_pickup: true if they are picking it up themselves.',
+      }
+    }
 
-    // Regra 4 — the model never invents a fee, even if it already
-    // called calculate_delivery_fee earlier: this is the mandatory,
-    // final calculation right before the order is created.
     const { subtotal } = computeCartTotal(cart)
-    const feeResult = await calculateDeliveryFeeForAccount(ctx.db, ctx.accountId, {
-      address: deliveryAddress,
-      subtotal,
-    })
-    if (!feeResult.ok) return { content: describeFeeFailure(feeResult.reason) }
+
+    // Pickup orders never go through fee calculation at all — same as
+    // a staff member creating one manually (src/app/api/delivery/orders
+    // just leaves delivery_fee unset for those, never calls the fee
+    // engine). Before this, place_order unconditionally called
+    // calculateDeliveryFeeForAccount even for a stated pickup — for any
+    // account on a distance-based method (per_km, distance_range, or
+    // neighborhood without an explicit name), that ALWAYS needs an
+    // address to compute distance, so every pickup order failed at this
+    // step (confirmed live 2026-08-06) — the model would ask for an
+    // address the customer had already said they didn't need.
+    let deliveryFee = 0
+    if (!isPickup) {
+      // Regra 4 — the model never invents a fee, even if it already
+      // called calculate_delivery_fee earlier: this is the mandatory,
+      // final calculation right before the order is created.
+      const feeResult = await calculateDeliveryFeeForAccount(ctx.db, ctx.accountId, {
+        address: deliveryAddress,
+        subtotal,
+      })
+      if (!feeResult.ok) return { content: describeFeeFailure(feeResult.reason) }
+      deliveryFee = feeResult.fee
+    }
 
     const order = await finalizeDeliveryOrder(ctx.db, {
       accountId: ctx.accountId,
@@ -398,8 +436,8 @@ export const placeOrderTool: ToolDefinition = {
       source: 'ai_chat',
       cart,
       currency: ctx.currency,
-      deliveryAddress,
-      deliveryFee: feeResult.fee,
+      deliveryAddress: isPickup ? null : deliveryAddress,
+      deliveryFee,
       customerName: typeof args.customer_name === 'string' ? args.customer_name : null,
       notes: typeof args.notes === 'string' ? args.notes : null,
     })
