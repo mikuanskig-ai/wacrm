@@ -164,6 +164,15 @@ export async function generateReplyWithTools(
 
   let usage: AiUsage | null = null
 
+  // Tool-call/tool-result turns are otherwise completely invisible —
+  // never logged, never persisted (see the file header doc: they're
+  // "ephemeral"). When the model gives up and hands off with no crash
+  // and no provider error, there was previously no way to tell WHY —
+  // this trail gets dumped to the log in that one case (see
+  // finishWithText below) so a silent handoff is diagnosable from
+  // journalctl instead of DB archaeology.
+  const toolTrail: string[] = []
+
   async function runToolCalls(
     calls: { id: string; name: string; args: Record<string, unknown> }[],
   ): Promise<{ results: { id: string; content: string }[]; placedOrder?: PlacedOrderPayload }> {
@@ -175,11 +184,30 @@ export async function generateReplyWithTools(
         ? await tool.execute(call.args, toolContext)
         : { content: `Unknown tool: ${call.name}` }
       results.push({ id: call.id, content: result.content })
+      toolTrail.push(
+        `${call.name}(${JSON.stringify(call.args).slice(0, 150)}) -> ${result.content.slice(0, 150)}`,
+      )
       if (call.name === 'place_order' && result.data) {
         placedOrder = result.data as PlacedOrderPayload
       }
     }
     return { results, placedOrder }
+  }
+
+  /** Wraps `parseGeneration` for the loop's normal "model produced
+   *  final text" exit — logs the tool trail iff that text turned out
+   *  to be just the handoff sentinel, so the reasoning that led there
+   *  is visible without having to reproduce it live. */
+  function finishWithText(text: string, usage: AiUsage | null): GenerateWithToolsResult {
+    const parsed = parseGeneration(text, usage)
+    if (parsed.handoff) {
+      console.warn(
+        `[ai generate] model handed off after tool calls — trail:\n${
+          toolTrail.length > 0 ? toolTrail.join('\n') : '(no tool calls this turn)'
+        }`,
+      )
+    }
+    return parsed
   }
 
   if (config.provider === 'openai') {
@@ -196,13 +224,13 @@ export async function generateReplyWithTools(
         timeoutMs,
       })
       usage = sumUsage(usage, result.usage)
-      if (result.kind === 'text') return parseGeneration(result.text, usage)
+      if (result.kind === 'text') return finishWithText(result.text, usage)
 
       const { results, placedOrder } = await runToolCalls(result.calls)
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendOpenAiToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: openai)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: openai). trail:\n${toolTrail.join('\n')}`)
     return { text: '', handoff: true, usage }
   }
 
@@ -221,13 +249,13 @@ export async function generateReplyWithTools(
         timeoutMs,
       })
       usage = sumUsage(usage, result.usage)
-      if (result.kind === 'text') return parseGeneration(result.text, usage)
+      if (result.kind === 'text') return finishWithText(result.text, usage)
 
       const { results, placedOrder } = await runToolCalls(result.calls)
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendAnthropicToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: anthropic)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: anthropic). trail:\n${toolTrail.join('\n')}`)
     return { text: '', handoff: true, usage }
   }
 
@@ -245,13 +273,13 @@ export async function generateReplyWithTools(
         timeoutMs,
       })
       usage = sumUsage(usage, result.usage)
-      if (result.kind === 'text') return parseGeneration(result.text, usage)
+      if (result.kind === 'text') return finishWithText(result.text, usage)
 
       const { results, placedOrder } = await runToolCalls(result.calls)
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendGroqToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: groq)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: groq). trail:\n${toolTrail.join('\n')}`)
     return { text: '', handoff: true, usage }
   }
 
@@ -269,13 +297,13 @@ export async function generateReplyWithTools(
         timeoutMs,
       })
       usage = sumUsage(usage, result.usage)
-      if (result.kind === 'text') return parseGeneration(result.text, usage)
+      if (result.kind === 'text') return finishWithText(result.text, usage)
 
       const { results, placedOrder } = await runToolCalls(result.calls)
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendOpenRouterToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: openrouter)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: openrouter). trail:\n${toolTrail.join('\n')}`)
     return { text: '', handoff: true, usage }
   }
 
@@ -294,13 +322,13 @@ export async function generateReplyWithTools(
         timeoutMs,
       })
       usage = sumUsage(usage, result.usage)
-      if (result.kind === 'text') return parseGeneration(result.text, usage)
+      if (result.kind === 'text') return finishWithText(result.text, usage)
 
       const { results, placedOrder } = await runToolCalls(result.calls)
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendGeminiToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: gemini)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: gemini). trail:\n${toolTrail.join('\n')}`)
     return { text: '', handoff: true, usage }
   }
 
