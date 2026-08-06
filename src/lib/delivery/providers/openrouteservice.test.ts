@@ -44,6 +44,7 @@ describe('OpenRouteServiceProvider', () => {
         lng: -46.6,
         neighborhood: 'Centro',
         label: 'Rua X, 123, São Paulo, SP, Brazil',
+        layer: null,
       })
       const [url] = fetchMock.mock.calls[0]
       const parsed = new URL(String(url))
@@ -51,6 +52,23 @@ describe('OpenRouteServiceProvider', () => {
       expect(parsed.searchParams.get('api_key')).toBe('test-key')
       expect(parsed.searchParams.get('text')).toBe('Rua X, 123')
       expect(parsed.searchParams.get('boundary.country')).toBe('BR')
+    })
+
+    it('surfaces the Pelias match-precision layer, null when absent', async () => {
+      fetchMock.mockResolvedValueOnce(
+        okResponse({
+          features: [{ geometry: { coordinates: [-53.6, -25.0] }, properties: { layer: 'locality' } }],
+        }),
+      )
+      const provider = new OpenRouteServiceProvider()
+      const result = await provider.geocode('Cascavel, PR')
+      expect(result?.layer).toBe('locality')
+
+      fetchMock.mockResolvedValueOnce(
+        okResponse({ features: [{ geometry: { coordinates: [-53.6, -25.0] }, properties: {} }] }),
+      )
+      const noLayer = await new OpenRouteServiceProvider().geocode('Cascavel, PR')
+      expect(noLayer?.layer).toBeNull()
     })
 
     it('falls back to borough when neighbourhood is absent', async () => {
@@ -160,6 +178,7 @@ describe('OpenRouteServiceProvider', () => {
         lng: -53.613413,
         neighborhood: 'Malucelli',
         label: 'Santa Tereza do Oeste, PR, Brazil',
+        layer: null,
       })
 
       const [url] = fetchMock.mock.calls[0]

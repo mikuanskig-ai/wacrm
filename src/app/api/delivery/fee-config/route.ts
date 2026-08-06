@@ -2,12 +2,17 @@ import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { getDistanceProvider } from '@/lib/delivery/providers/openrouteservice'
-import { DistanceProviderError } from '@/lib/delivery/distance-provider'
+import { DistanceProviderError, isPreciseGeocode } from '@/lib/delivery/distance-provider'
 import type { DeliveryMethod, DeliveryFeeSettings, NeighborhoodRule, DistanceRangeRule } from '@/lib/delivery/fee-engine'
 
 const METHODS: DeliveryMethod[] = ['fixed', 'neighborhood', 'distance_range', 'per_km']
 const GENERIC_GEOCODE_WARNING =
   'Could not resolve this address to a location. Distance-based methods will not work until it does.'
+// Real, observed failure: geocodeStructured resolved a full street +
+// number + neighbourhood + city + state down to a bare city-level
+// match, with no error — see distance-provider.ts's isPreciseGeocode.
+const COARSE_GEOCODE_WARNING =
+  'This address only resolved to city/region level, not the exact street — distance-based fees will be inaccurate until it resolves more precisely. Double-check the street name/number (avoid abbreviations) and save again.'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -195,17 +200,46 @@ export async function POST(request: Request) {
         originResolvedLabel = null
       } else {
         try {
-          const result = await getDistanceProvider().geocodeStructured({
+          const provider = getDistanceProvider()
+          let result = await provider.geocodeStructured({
             address: originStreet ?? undefined,
             neighbourhood: originNeighbourhood ?? undefined,
             locality: originCity,
             region: originState ?? undefined,
             postalCode: originPostalCode ?? undefined,
           })
+
+          // The structured endpoint can silently fall back to a
+          // city/region-level match — a real label, real coordinates,
+          // no error — instead of the actual street (observed live).
+          // Free-text search resolves the same kind of address
+          // correctly for customer delivery addresses, so retry with
+          // it before accepting a coarse match as the store's location.
+          if (result && !isPreciseGeocode(result.layer)) {
+            const composed = composeOriginAddress({
+              street: originStreet,
+              neighbourhood: originNeighbourhood,
+              city: originCity,
+              state: originState,
+              postalCode: originPostalCode,
+            })
+            if (composed) {
+              try {
+                const retry = await provider.geocode(composed)
+                if (retry && isPreciseGeocode(retry.layer)) result = retry
+              } catch {
+                // Best-effort improvement only — keep the original
+                // (coarse) result and let the warning below flag it,
+                // rather than failing the save over a retry-only error.
+              }
+            }
+          }
+
           if (result) {
             originLat = result.lat
             originLng = result.lng
             originResolvedLabel = result.label
+            if (!isPreciseGeocode(result.layer)) geocodeWarning = COARSE_GEOCODE_WARNING
           } else {
             originLat = null
             originLng = null
