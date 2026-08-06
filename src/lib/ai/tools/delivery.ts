@@ -274,11 +274,42 @@ export const addToCartTool: ToolDefinition = {
       notes: typeof args.notes === 'string' ? args.notes : null,
     }
 
-    const cart = [...(await readCart(ctx.db, ctx.conversationId)), item]
+    // The model has no memory of tool calls from earlier turns (they're
+    // ephemeral — see this file's header doc), only the human-readable
+    // transcript. Confirmed live (2026-08-06): that made it re-call
+    // add_to_cart for a product a customer asked for only once, and
+    // without this merge, that created a SECOND separate line instead
+    // of updating the first — a cart quietly showing 3x the real order.
+    // Same product + identical customization (same addon options, same
+    // notes) merges into the existing line by summing quantity; only a
+    // genuinely different customization gets its own line.
+    const cartBefore = await readCart(ctx.db, ctx.conversationId)
+    const addonsKey = (list: CartLineItemAddon[]) =>
+      [...list.map((a) => a.option_id)].sort().join(',')
+    const matchIndex = cartBefore.findIndex(
+      (line) =>
+        line.product_id === item.product_id &&
+        addonsKey(line.addons ?? []) === addonsKey(item.addons) &&
+        (line.notes ?? null) === item.notes,
+    )
+
+    let cart: CartLineItem[]
+    let mergedQuantity = quantity
+    if (matchIndex >= 0) {
+      cart = [...cartBefore]
+      mergedQuantity = cart[matchIndex]!.quantity + quantity
+      cart[matchIndex] = { ...cart[matchIndex]!, quantity: mergedQuantity }
+    } else {
+      cart = [...cartBefore, item]
+    }
+
     await writeCart(ctx.db, ctx.conversationId, cart)
     const { subtotal } = computeCartTotal(cart)
     return {
-      content: `Added ${quantity}x ${product.name} to the cart. Cart now has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`,
+      content:
+        matchIndex >= 0
+          ? `${product.name} was already in the cart with the same customization — merged instead of duplicating it. Quantity is now ${mergedQuantity}. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
+          : `Added ${quantity}x ${product.name} to the cart. Cart now has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`,
     }
   },
 }

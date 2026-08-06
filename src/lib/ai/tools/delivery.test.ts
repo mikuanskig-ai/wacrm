@@ -268,6 +268,65 @@ describe('addToCartTool', () => {
     expect(res.content).toMatch(/added 20x pizza/i)
   })
 
+  it('merges into the existing line instead of duplicating it when the model re-adds the same product+customization — regression, 2026-08-06', async () => {
+    // The model has no memory of tool calls from earlier turns (only
+    // the text transcript), so it sometimes calls add_to_cart again for
+    // something already in the cart. Confirmed live: without merging,
+    // one customer request for "uma marmita" ended up as three separate
+    // 1x lines (R$60 instead of R$20) after the model re-added it on
+    // later turns — and then got stuck with no way to undo it.
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'Marmita P',
+      price: 20,
+      addon_groups: [],
+    })
+    const { db, writes, getCart } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: null }],
+    })
+    const res = await addToCartTool.execute({ product_id: 'p1', quantity: 1 }, ctxFor(db))
+    expect(getCart()).toHaveLength(1)
+    expect(getCart()[0]).toMatchObject({ product_id: 'p1', quantity: 2 })
+    expect(writes[0]).toHaveLength(1)
+    expect(res.content).toMatch(/already in the cart/i)
+    expect(res.content).toMatch(/quantity is now 2/i)
+  })
+
+  it('keeps a different customization of the same product as its own line', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'Marmita',
+      price: 20,
+      addon_groups: [
+        {
+          id: 'g1',
+          name: 'Tamanho',
+          selection_type: 'single',
+          is_required: true,
+          position: 0,
+          options: [
+            { id: 'o-p', name: 'P', price_delta: 0, group_id: 'g1' },
+            { id: 'o-g', name: 'G', price_delta: 5, group_id: 'g1' },
+          ],
+        },
+      ],
+    })
+    const { db, getCart } = makeDb({
+      cart: [
+        {
+          product_id: 'p1',
+          product_name: 'Marmita',
+          unit_price: 20,
+          quantity: 1,
+          addons: [{ group_id: 'g1', group_name: 'Tamanho', option_id: 'o-p', option_name: 'P', price_delta: 0 }],
+          notes: null,
+        },
+      ],
+    })
+    await addToCartTool.execute({ product_id: 'p1', quantity: 1, addon_option_ids: ['o-g'] }, ctxFor(db))
+    expect(getCart()).toHaveLength(2)
+  })
+
   it('only applies addon_option_ids that actually belong to the product', async () => {
     h.loadProductWithAddonGroups.mockResolvedValue({
       id: 'p1',
