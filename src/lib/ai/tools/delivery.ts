@@ -306,10 +306,19 @@ export const addToCartTool: ToolDefinition = {
 
     await writeCart(ctx.db, ctx.conversationId, cart)
     const { subtotal } = computeCartTotal(cart)
+    // Deliberately phrased the same way whether this merged into an
+    // existing line or started a new one — a message that instead
+    // announces "already in cart / merged" reads to the model like
+    // something unexpected happened, and confirmed live (2026-08-06)
+    // that was enough to make it hesitate and hand off right after a
+    // perfectly correct merge, even though the cart itself was fine.
+    // Calling add_to_cart again for something already there is normal
+    // (the model has no memory of earlier turns' tool calls) and must
+    // read as a routine running-total update, not an anomaly.
     return {
       content:
         matchIndex >= 0
-          ? `${product.name} was already in the cart with the same customization — merged instead of duplicating it. Quantity is now ${mergedQuantity}. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
+          ? `Added ${quantity}x ${product.name} — now ${mergedQuantity}x total in the cart. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
           : `Added ${quantity}x ${product.name} to the cart. Cart now has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`,
     }
   },

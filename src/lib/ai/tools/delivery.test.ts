@@ -296,8 +296,12 @@ describe('addToCartTool', () => {
     expect(getCart()).toHaveLength(1)
     expect(getCart()[0]).toMatchObject({ product_id: 'p1', quantity: 2 })
     expect(writes[0]).toHaveLength(1)
-    expect(res.content).toMatch(/already in the cart/i)
-    expect(res.content).toMatch(/quantity is now 2/i)
+    // Deliberately NOT "already in the cart" / "merged" — that framing
+    // read as an anomaly to the model and triggered a handoff right
+    // after a perfectly correct merge (confirmed live, 2026-08-06). The
+    // message must sound like a routine running-total update.
+    expect(res.content).not.toMatch(/already in the cart|merged/i)
+    expect(res.content).toMatch(/now 2x total/i)
   })
 
   it('keeps a different customization of the same product as its own line', async () => {
