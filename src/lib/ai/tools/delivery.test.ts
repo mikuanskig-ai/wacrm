@@ -532,6 +532,31 @@ describe('calculateDeliveryFeeTool', () => {
     expect(res.content).toMatch(/7/)
     expect(res.content).not.toMatch(/could not locate|not in our delivery list/i)
   })
+
+  it('returns subtotal and a pre-added total alongside the fee — regression, 2026-08-06', async () => {
+    // Confirmed live: the model hallucinated a R$100 subtotal for a
+    // single R$25 item when left to compute the order-summary numbers
+    // itself. The fee tool now hands back subtotal + total already
+    // added up, so there is no arithmetic left for the model to get
+    // wrong when it copies them into the summary.
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita M', unit_price: 25, quantity: 1, addons: [], notes: null }],
+      feeConfig: {
+        delivery_method: 'neighborhood',
+        max_distance: null,
+        free_shipping_above: null,
+        origin_lat: null,
+        origin_lng: null,
+        settings: { neighborhoods: [{ id: 'n1', name: 'Coqueiral', price: 2 }] },
+      },
+    })
+    const res = await calculateDeliveryFeeTool.execute(
+      { address: 'Rua Pedro Miranda 646, Coqueiral', neighborhood: 'Coqueiral' },
+      ctxFor(db),
+    )
+    expect(res.content).toMatch(/subtotal.*25/i)
+    expect(res.content).toMatch(/total.*27/i)
+  })
 })
 
 describe('getAvailableTools', () => {

@@ -327,7 +327,7 @@ export const addToCartTool: ToolDefinition = {
 export const calculateDeliveryFeeTool: ToolDefinition = {
   name: 'calculate_delivery_fee',
   description:
-    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change. If you already asked the customer for their neighbourhood/bairro separately, ALWAYS pass it as `neighborhood` too — accounts using a fixed per-neighbourhood fee can then skip address lookup (and its external-service dependency) entirely instead of guessing the neighbourhood from the free-text address.",
+    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change. If you already asked the customer for their neighbourhood/bairro separately, ALWAYS pass it as `neighborhood` too — accounts using a fixed per-neighbourhood fee can then skip address lookup (and its external-service dependency) entirely instead of guessing the neighbourhood from the free-text address. The response also includes the cart Subtotal and the Total (subtotal + fee) — when you write the order summary, copy those two numbers character-for-character from here. Doing that arithmetic yourself is exactly how a wrong total gets shown to the customer (confirmed live 2026-08-06: a single R$25 item was summarized as a R$100 subtotal).",
   parameters: {
     type: 'object',
     properties: {
@@ -357,7 +357,18 @@ export const calculateDeliveryFeeTool: ToolDefinition = {
     if (!result.ok) return { content: describeFeeFailure(result.reason) }
 
     const freeNote = result.freeShipping ? ' (free shipping applied)' : ''
-    return { content: `Delivery fee for that address: ${formatCurrency(result.fee, ctx.currency)}${freeNote}.` }
+    // Total is computed here, server-side, and handed to the model as a
+    // ready number — never make it re-derive subtotal + fee itself in
+    // the order-summary text (see the description above for why).
+    // Rounded to cents same as computeCartTotal/fee-engine, so float
+    // drift never shows up in what the customer sees.
+    const total = Math.round((subtotal + result.fee) * 100) / 100
+    return {
+      content:
+        `Subtotal: ${formatCurrency(subtotal, ctx.currency)}. ` +
+        `Delivery fee for that address: ${formatCurrency(result.fee, ctx.currency)}${freeNote}. ` +
+        `Total: ${formatCurrency(total, ctx.currency)}.`,
+    }
   },
 }
 

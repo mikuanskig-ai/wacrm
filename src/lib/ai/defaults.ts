@@ -164,7 +164,10 @@ export function buildSystemPrompt(args: {
         'Tool calls from earlier turns are NOT visible to you now — only the conversation text is. Once you have told the customer an item is noted ' +
         '(anywhere earlier in this conversation), trust that and do NOT call add_to_cart again for that same item on a later turn just to be sure — ' +
         'call view_cart instead if you need to check what is actually in the cart. Re-adding an item you already confirmed is not an error, but it is ' +
-        'unnecessary and can read as something went wrong; only call add_to_cart again when the customer is clearly asking for another item or more of it.',
+        'unnecessary and can read as something went wrong; only call add_to_cart again when the customer is clearly asking for another item or more of it. ' +
+        'Every money figure in the order summary (Subtotal, delivery fee, Total) must be copied character-for-character from a tool response — ' +
+        'view_cart for the subtotal, calculate_delivery_fee for the fee and the already-added-up total. NEVER add, multiply, or otherwise compute a ' +
+        'money figure yourself, even something as simple as subtotal + fee — that arithmetic is exactly how a wrong total reaches the customer.',
     )
   }
 
