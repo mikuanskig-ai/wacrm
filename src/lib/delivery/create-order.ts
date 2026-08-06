@@ -46,7 +46,14 @@ export interface CartTotal {
  */
 export function computeCartTotal(cart: CartLineItem[]): CartTotal {
   const subtotal = cart.reduce((sum, item) => {
-    const addonsTotal = item.addons.reduce((s, a) => s + a.price_delta, 0);
+    // `?? []` — defensive against a cart line persisted before addons
+    // existed on this shape, or any other write path that omitted the
+    // key. Confirmed live (2026-08-06): a bare `item.addons.reduce`
+    // here crashed the whole tool-loop mid `place_order` with
+    // "Cannot read properties of undefined (reading 'reduce')",
+    // handing the conversation off to a human with no order ever
+    // created — so no fee/total shown and nothing to print.
+    const addonsTotal = (item.addons ?? []).reduce((s, a) => s + a.price_delta, 0);
     return sum + (item.unit_price + addonsTotal) * item.quantity;
   }, 0);
   return { subtotal: Math.round(subtotal * 100) / 100 };
@@ -125,7 +132,7 @@ export async function finalizeDeliveryOrder(
   }
 
   const itemRows = args.cart.map((item) => {
-    const addonsTotal = item.addons.reduce((s, a) => s + a.price_delta, 0);
+    const addonsTotal = (item.addons ?? []).reduce((s, a) => s + a.price_delta, 0);
     return {
       account_id: args.accountId,
       order_id: order.id,
@@ -133,7 +140,7 @@ export async function finalizeDeliveryOrder(
       product_name: item.product_name,
       unit_price: item.unit_price,
       quantity: item.quantity,
-      addons_snapshot: item.addons,
+      addons_snapshot: item.addons ?? [],
       line_total: (item.unit_price + addonsTotal) * item.quantity,
       notes: item.notes ?? null,
     };

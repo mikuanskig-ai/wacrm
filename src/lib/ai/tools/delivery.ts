@@ -374,7 +374,7 @@ export const placeOrderTool: ToolDefinition = {
         product_name: item.product_name,
         quantity: item.quantity,
         line_total:
-          (item.unit_price + item.addons.reduce((s, a) => s + a.price_delta, 0)) * item.quantity,
+          (item.unit_price + (item.addons ?? []).reduce((s, a) => s + a.price_delta, 0)) * item.quantity,
       })),
     }
     return { content: `Order placed successfully (id ${order.id}).`, data: payload }

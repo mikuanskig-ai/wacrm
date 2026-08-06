@@ -14,6 +14,7 @@ import { getAvailableTools, type PlacedOrderPayload } from './tools/delivery'
 import type { ToolContext } from './tools/types'
 import { formatCurrency } from '@/lib/currency'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { sleep } from './debounce'
 import type { AiUsage } from './types'
 
 interface DispatchArgs {
@@ -29,7 +30,21 @@ interface DispatchArgs {
    *  redelivered webhook must not be able to place a second real order.
    *  The plain-text-only path doesn't need it. */
   inboundMessageId: string
+  /** `conversations.ai_inbound_seq` value assigned to THIS inbound
+   *  message (see `bump_ai_inbound_seq`, migration 066). Used by the
+   *  debounce below to detect a newer customer message landing while
+   *  this dispatch is waiting/generating, so only the last message in
+   *  a rapid burst actually replies. */
+  inboundSeq: number
 }
+
+/** How long a dispatch waits for the conversation to "settle" before
+ *  generating a reply. Long enough to coalesce a customer's rapid
+ *  back-to-back bubbles into one turn; short enough not to be a
+ *  noticeable delay on a normal single message (this only delays the
+ *  bot's own reply — it runs in the webhook's `after()`, off the
+ *  critical path of the 200 ack). */
+const AI_REPLY_DEBOUNCE_MS = 2000
 
 /** Builds the deterministic (non-LLM) order-confirmation message. Kept
  *  as plain string formatting — not another provider round-trip — so a
@@ -84,7 +99,7 @@ function formatOrderConfirmation(order: PlacedOrderPayload): string {
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
 ): Promise<void> {
-  const { accountId, conversationId, contactId, configOwnerUserId, inboundMessageId } = args
+  const { accountId, conversationId, contactId, configOwnerUserId, inboundMessageId, inboundSeq } = args
 
   try {
     const db = supabaseAdmin()
@@ -109,18 +124,45 @@ export async function dispatchInboundToAiReply(
       .limit(1)
     if (autoResponders && autoResponders.length > 0) return
 
-    const { data: conv, error: convErr } = await db
-      .from('conversations')
-      .select('status, assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
-      .eq('id', conversationId)
-      .maybeSingle()
-    if (convErr || !conv) return
-    if (conv.status === 'open') return // ABERTO — an agent owns this thread
-    if (conv.assigned_agent_id) return // a human owns this thread
-    if (conv.ai_autoreply_disabled) return // handed off / turned off here
-    // Cheap early-out; the authoritative cap check is the atomic claim
-    // below (this read can race a concurrent inbound).
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+    // Re-run on both sides of the debounce sleep below — state (a human
+    // grabbing the ticket, the cap filling up, another dispatch handing
+    // off) can change while this call is waiting or mid-generation.
+    // `maxReplies` is hoisted out of the closure since TS can't retain
+    // the `config` null-narrowing across a nested function boundary.
+    const maxReplies = config.autoReplyMaxPerConversation
+    async function loadEligibleConversation() {
+      const { data: c, error } = await db
+        .from('conversations')
+        .select('status, assigned_agent_id, ai_autoreply_disabled, ai_reply_count, ai_inbound_seq')
+        .eq('id', conversationId)
+        .maybeSingle()
+      if (error || !c) return null
+      if (c.status === 'open') return null // ABERTO — an agent owns this thread
+      if (c.assigned_agent_id) return null // a human owns this thread
+      if (c.ai_autoreply_disabled) return null // handed off / turned off here
+      // Cheap early-out; the authoritative cap check is the atomic claim
+      // further down (this read can race a concurrent inbound).
+      if (c.ai_reply_count >= maxReplies) return null
+      return c
+    }
+
+    if (!(await loadEligibleConversation())) return
+
+    // Let a burst of rapid customer messages settle into ONE reply
+    // instead of one per message. Without this, two dispatches racing
+    // the same conversation both read the same not-yet-answered
+    // context and each independently generate an LLM reply — near-
+    // duplicate texts, AND each send burns a reply-cap slot, so a
+    // 2-message burst silently exhausts the cap (default 3) twice as
+    // fast and the bot goes quiet on the customer's next real message
+    // (confirmed live 2026-08-06). Re-check below: if a newer inbound
+    // bumped `ai_inbound_seq` while we slept, that message's own
+    // dispatch will see this one in its context — stand down here.
+    await sleep(AI_REPLY_DEBOUNCE_MS)
+
+    const conv = await loadEligibleConversation()
+    if (!conv) return
+    if (conv.ai_inbound_seq !== inboundSeq) return // superseded by a newer inbound
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
@@ -262,6 +304,17 @@ export async function dispatchInboundToAiReply(
       model: config.model,
       usage,
     })
+
+    // Final debounce check: generation itself can take a few seconds —
+    // if a newer customer message landed on this conversation mid-call,
+    // stand down instead of sending a now-stale reply (that later
+    // message's own dispatch will build context that already includes
+    // this one). Never skipped when a real order was just placed —
+    // the customer must always be told, even if this reply is "late".
+    if (!placedOrder) {
+      const stillEligible = await loadEligibleConversation()
+      if (!stillEligible || stillEligible.ai_inbound_seq !== inboundSeq) return
+    }
 
     if (!placedOrder && (handoff || !text)) {
       // The model can't (or shouldn't) answer — stop auto-replying on

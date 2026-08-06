@@ -631,13 +631,27 @@ export async function processMessage(
   }
 
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
-      accountId,
-      conversationId: conversation.id,
-      contactId: contactRecord.id,
-      configOwnerUserId,
-      inboundMessageId: message.id,
-    })
+    // Assigns this inbound message a monotonic per-conversation
+    // sequence number — dispatchInboundToAiReply uses it to detect a
+    // newer message arriving during its debounce/generation window and
+    // stand down, so a rapid burst of customer messages gets ONE reply
+    // instead of one duplicate-ish reply per message (see auto-reply.ts).
+    const { data: inboundSeq, error: seqError } = await supabaseAdmin().rpc(
+      'bump_ai_inbound_seq',
+      { conversation_id: conversation.id },
+    )
+    if (seqError) {
+      console.error('[inbound-message] bump_ai_inbound_seq failed:', seqError.message)
+    } else {
+      await dispatchInboundToAiReply({
+        accountId,
+        conversationId: conversation.id,
+        contactId: contactRecord.id,
+        configOwnerUserId,
+        inboundMessageId: message.id,
+        inboundSeq: inboundSeq as number,
+      })
+    }
   }
 
   await dispatchWebhookEvent(supabaseAdmin(), accountId, 'message.received', {

@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   generateReplyWithTools: vi.fn(),
   getAccountCurrency: vi.fn(),
   engineSendText: vi.fn(),
+  sleep: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -27,6 +28,7 @@ vi.mock('./generate', () => ({
   generateReply: h.generateReply,
   generateReplyWithTools: h.generateReplyWithTools,
 }))
+vi.mock('./debounce', () => ({ sleep: h.sleep }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('@/lib/flows/engine', () => ({ getAccountCurrency: h.getAccountCurrency }))
 vi.mock('./admin-client', () => ({
@@ -85,6 +87,7 @@ const ARGS = {
   contactId: 'contact-1',
   configOwnerUserId: 'user-1',
   inboundMessageId: 'wamid-1',
+  inboundSeq: 1,
 }
 
 function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
@@ -108,6 +111,7 @@ beforeEach(() => {
     assigned_agent_id: null,
     ai_autoreply_disabled: false,
     ai_reply_count: 0,
+    ai_inbound_seq: 1,
   }
   h.state.autoResponders = []
   h.state.claim = true
@@ -121,6 +125,9 @@ beforeEach(() => {
   h.generateReplyWithTools.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.getAccountCurrency.mockResolvedValue('BRL')
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
+  // No real delay in tests — the debounce's actual timing isn't under
+  // test here (that's covered by the seq-mismatch behavior below).
+  h.sleep.mockResolvedValue(undefined)
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -220,6 +227,57 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispatchInboundToAiReply — burst debounce', () => {
+  it('waits out the debounce window before generating', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sleep).toHaveBeenCalledWith(expect.any(Number))
+    expect(h.generateReply).toHaveBeenCalled()
+  })
+
+  it('stands down — no generation, no send — when a newer inbound bumped the seq during the debounce wait', async () => {
+    h.sleep.mockImplementation(async () => {
+      // Simulate a second customer message landing while this
+      // dispatch was "waiting" — its own dispatch owns the reply now.
+      h.state.conv = { ...(h.state.conv as object), ai_inbound_seq: 2 }
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('does not send a reply that went stale mid-generation (newer inbound arrived while the provider call was in flight)', async () => {
+    h.generateReply.mockImplementation(async () => {
+      h.state.conv = { ...(h.state.conv as object), ai_inbound_seq: 2 }
+      return { text: 'Hello!', handoff: false }
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('still sends the order confirmation when generation goes stale AFTER a real order was placed', async () => {
+    h.state.enabledModules = ['delivery']
+    h.loadAiConfig.mockResolvedValue(aiConfig({ toolsEnabled: true }))
+    h.generateReplyWithTools.mockImplementation(async () => {
+      h.state.conv = { ...(h.state.conv as object), ai_inbound_seq: 2 }
+      return {
+        text: '',
+        handoff: false,
+        usage: null,
+        placedOrder: {
+          id: 'order-1',
+          total: 42,
+          currency: 'BRL',
+          items: [{ product_name: 'Pizza', quantity: 1, line_total: 42 }],
+        },
+      }
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Pizza') }),
+    )
   })
 })
 

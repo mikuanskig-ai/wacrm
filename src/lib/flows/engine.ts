@@ -864,10 +864,11 @@ async function resendAddOrderItemPrompt(
 }
 
 function formatCartLine(item: CartLineItem, currency: string): string {
-  const addonsTotal = item.addons.reduce((s, a) => s + a.price_delta, 0);
+  const addons = item.addons ?? [];
+  const addonsTotal = addons.reduce((s, a) => s + a.price_delta, 0);
   const lineTotal = (item.unit_price + addonsTotal) * item.quantity;
-  const addonsLabel = item.addons.length
-    ? ` (${item.addons.map((a) => a.option_name).join(", ")})`
+  const addonsLabel = addons.length
+    ? ` (${addons.map((a) => a.option_name).join(", ")})`
     : "";
   return `${item.quantity}x ${item.product_name}${addonsLabel} — ${formatCurrency(lineTotal, currency)}`;
 }
