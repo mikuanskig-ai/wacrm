@@ -146,6 +146,11 @@ export function buildSystemPrompt(args: {
     parts.push(
       `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — reply with exactly ${HANDOFF_SENTINEL} and nothing else. A human agent will then take over. Prefer handing off over guessing.`,
     )
+    parts.push(
+      'This conversation may be continuing from an earlier, already-completed order with the same customer — read the WHOLE visible transcript, not just the newest message, before asking for anything. ' +
+        'If a piece of information (their name, address, a preference) already appears anywhere earlier in this conversation, you already have it — do not ask for it again, even if you are otherwise following a fixed step-by-step script. ' +
+        'Re-asking something you already used yourself (e.g. greeting the customer by name, then asking their name the next message) is confusing and unprofessional — always check what you already know before asking.',
+    )
   }
 
   if (toolsActive) {
