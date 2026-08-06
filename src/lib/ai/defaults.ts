@@ -73,19 +73,28 @@ export const HANDOFF_SENTINEL = '[[HANDOFF]]'
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
 
-/** Hard ceiling on provider round-trips within one tool-calling loop
- *  (`generateReplyWithTools`). A model stuck looping past this falls
- *  back to a human handoff rather than burning the account's BYO key
- *  indefinitely. Was 6 — too tight in practice (confirmed live
- *  2026-08-06): even a clean single-item order already spends most of
- *  that budget (search_menu → get_product_details → add_to_cart →
- *  view_cart → calculate_delivery_fee → place_order = 6), so any
- *  clarifying re-ask ("quer 1 ou 2?") pushed a real order past the
- *  ceiling and silently handed the thread off with no order placed —
- *  no error logged anywhere, since exhausting the loop was never
- *  itself treated as a failure worth a log line (see the `console.warn`
- *  now added at each exhaustion point in generate.ts). */
-export const MAX_TOOL_ITERATIONS = 10
+/** Default for `ai_configs.max_tool_iterations` (migration 067) — the
+ *  ceiling on provider round-trips within one tool-calling loop
+ *  (`generateReplyWithTools`) before a model stuck looping falls back
+ *  to a human handoff rather than burning the account's BYO key
+ *  indefinitely. Was a hardcoded 6, then 10 — too tight in practice
+ *  (confirmed live 2026-08-06): even a clean single-item order already
+ *  spends most of a 10-call budget (search_menu → get_product_details
+ *  → add_to_cart → view_cart → calculate_delivery_fee → place_order =
+ *  6 with zero mistakes), so a business taking multi-item orders or
+ *  needing several clarifying re-asks can genuinely need more than any
+ *  one global default — hence per-account and settings-editable
+ *  (Settings > IA, next to "Máximo de respostas automáticas") instead
+ *  of a fixed constant. This value now only seeds the DB column
+ *  default and new-account inserts; `generateReplyWithTools` reads
+ *  `config.maxToolIterations`, never this constant directly. */
+export const MAX_TOOL_ITERATIONS_DEFAULT = 10
+
+/** Hard outer bound the Settings API clamps to — an account can raise
+ *  its own ceiling, but not into a runaway-cost range (each iteration
+ *  is a provider round-trip on the account's own key). Matches the DB
+ *  CHECK constraint in migration 067. */
+export const MAX_TOOL_ITERATIONS_CEILING = 30
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20

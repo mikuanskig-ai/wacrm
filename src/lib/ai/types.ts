@@ -39,6 +39,13 @@ export interface AiConfig {
    *  Separate from `autoReplyEnabled`: an account can have the bot
    *  reply in free text without letting it take actions. */
   toolsEnabled: boolean
+  /** Ceiling on tool round-trips within a single auto-reply turn
+   *  before the bot gives up and hands off to a human (see
+   *  `generateReplyWithTools`). Per-account (migration 067) — a
+   *  business whose orders need several tool calls (multi-item carts,
+   *  clarifying re-asks) can raise this themselves in Settings
+   *  instead of hitting a silent, undiagnosable mid-order handoff. */
+  maxToolIterations: number
 }
 
 /** A single conversation turn in the shape both providers accept. */

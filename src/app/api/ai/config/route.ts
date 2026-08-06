@@ -9,6 +9,7 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, AI_PROVIDERS, type AiProvider } from '@/lib/ai/types'
+import { MAX_TOOL_ITERATIONS_DEFAULT, MAX_TOOL_ITERATIONS_CEILING } from '@/lib/ai/defaults'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -30,7 +31,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, tools_enabled, api_key, embeddings_api_key, onboarding_tested_at',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, tools_enabled, max_tool_iterations, api_key, embeddings_api_key, onboarding_tested_at',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -99,6 +100,16 @@ export async function POST(request: Request) {
     let maxPer = Number(body.auto_reply_max_per_conversation)
     if (!Number.isFinite(maxPer)) maxPer = 3
     maxPer = Math.min(20, Math.max(1, Math.floor(maxPer)))
+
+    // Per-account ceiling on tool round-trips within one auto-reply
+    // turn (migration 067) — was a fixed global constant; a business
+    // taking full orders via chat can need more than any one default
+    // in a single turn (multi-item carts, clarifying re-asks), so this
+    // is now theirs to raise in Settings instead of waiting on a code
+    // deploy. Clamped the same way as maxPer above.
+    let maxToolIter = Number(body.max_tool_iterations)
+    if (!Number.isFinite(maxToolIter)) maxToolIter = MAX_TOOL_ITERATIONS_DEFAULT
+    maxToolIter = Math.min(MAX_TOOL_ITERATIONS_CEILING, Math.max(1, Math.floor(maxToolIter)))
 
     // Handoff routing target for auto-reply. A non-empty string must be a
     // member of this account (else the conversation would be assigned to a
@@ -173,6 +184,7 @@ export async function POST(request: Request) {
           handoffAgentId: null,
           embeddingsApiKey: null,
           toolsEnabled,
+          maxToolIterations: maxToolIter,
         })
       } catch (err) {
         if (err instanceof AiError) {
@@ -212,6 +224,7 @@ export async function POST(request: Request) {
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
       tools_enabled: toolsEnabled,
+      max_tool_iterations: maxToolIter,
     }
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.

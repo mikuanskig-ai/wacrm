@@ -120,8 +120,9 @@ describe('OpenRouter — shares the OpenAI-compatible wire format at its own bas
     expect(withResults[3]).toEqual({ role: 'tool', tool_call_id: 'call_1', content: 'sunny' })
   })
 
-  it('throws empty_response for a genuinely empty final-text turn', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse({ choices: [{ message: { content: '' } }] })))
+  it('throws empty_response only after retrying once still comes back empty', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ choices: [{ message: { content: '' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
     await expect(
       callOpenRouterTurn({
         apiKey: 'sk-or-test',
@@ -131,5 +132,23 @@ describe('OpenRouter — shares the OpenAI-compatible wire format at its own bas
         timeoutMs: 1000,
       }),
     ).rejects.toBeInstanceOf(AiError)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers from a transient empty completion by retrying once — confirmed live, 2026-08-06', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(okResponse({ choices: [{ message: { content: '' } }] }))
+      .mockResolvedValueOnce(okResponse({ choices: [{ message: { content: 'Sure, one moment.' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await callOpenRouterTurn({
+      apiKey: 'sk-or-test',
+      model: 'openai/gpt-5.6-luna',
+      nativeMessages: seedOpenRouterMessages('sys', []),
+      tools: [],
+      timeoutMs: 1000,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result).toMatchObject({ kind: 'text', text: 'Sure, one moment.' })
   })
 })

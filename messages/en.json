@@ -2391,6 +2391,8 @@
       "enableToolsDesc": "When on, the AI can look up the menu, build a cart, and create a real order during the WhatsApp conversation. Orders always start awaiting confirmation — a human reviews before it goes into production.",
       "maxAutoReplies": "Max auto-replies per conversation",
       "maxAutoRepliesDesc": "After this many bot replies in one thread, the bot goes quiet.",
+      "maxToolIterations": "Max AI actions per reply",
+      "maxToolIterationsDesc": "How many times the AI can check the menu, cart, delivery fee, etc. before giving up and handing off to an agent. Orders with several items or confirmations may need a higher number.",
       "handoffTo": "Hand off to",
       "handoffToDesc": "When the bot can’t help — or hits the reply cap — it pauses and routes the chat here, with a short note on what happened.",
       "handoffQueue": "Unassigned queue (any agent can pick it up)",

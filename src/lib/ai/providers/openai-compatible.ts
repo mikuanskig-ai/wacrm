@@ -75,41 +75,55 @@ export function createOpenAiCompatibleProvider(opts: OpenAiCompatibleOptions) {
 
   async function generate(args: ProviderArgs): Promise<ProviderResult> {
     const { apiKey, model, systemPrompt, messages, timeoutMs } = args
-
-    let res: Response
-    try {
-      res = await fetch(baseUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'system', content: systemPrompt }, ...mergeConsecutive(messages)],
-          [maxTokensParam]: MAX_OUTPUT_TOKENS,
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
-      })
-    } catch (err) {
-      throw toNetworkError(err)
-    }
-
-    if (!res.ok) {
-      throw await providerHttpError(label, res)
-    }
-
-    const data = (await res.json().catch(() => null)) as OpenAiCompatResponse | null
-    const text = data?.choices?.[0]?.message?.content
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      throw new AiError(`${label} returned an empty response.`, { code: 'empty_response' })
-    }
-    const usage = normalizeUsage({
-      prompt: data?.usage?.prompt_tokens,
-      completion: data?.usage?.completion_tokens,
-      total: data?.usage?.total_tokens,
+    const body = JSON.stringify({
+      model,
+      messages: [{ role: 'system', content: systemPrompt }, ...mergeConsecutive(messages)],
+      [maxTokensParam]: MAX_OUTPUT_TOKENS,
     })
-    return { text, usage }
+
+    // Retry once on a genuinely empty completion (ok HTTP status, no
+    // tool_calls, blank content) before giving up — confirmed live
+    // (2026-08-06, OpenRouter/openai/gpt-5.6-luna): this happens as a
+    // transient upstream blip, not a real failure, and previously
+    // handed a real customer's conversation off to a human every time
+    // it fired even though a second identical request usually just
+    // works. Network/HTTP errors still throw immediately below — only
+    // the "responded fine but said nothing" case gets a second try.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let res: Response
+      try {
+        res = await fetch(baseUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body,
+          signal: AbortSignal.timeout(timeoutMs),
+        })
+      } catch (err) {
+        throw toNetworkError(err)
+      }
+
+      if (!res.ok) {
+        throw await providerHttpError(label, res)
+      }
+
+      const data = (await res.json().catch(() => null)) as OpenAiCompatResponse | null
+      const text = data?.choices?.[0]?.message?.content
+      const usage = normalizeUsage({
+        prompt: data?.usage?.prompt_tokens,
+        completion: data?.usage?.completion_tokens,
+        total: data?.usage?.total_tokens,
+      })
+      if (text && typeof text === 'string' && text.trim()) {
+        return { text, usage }
+      }
+      if (attempt === 0) {
+        console.warn(`[ai ${label}] empty response, retrying once before handing off`)
+      }
+    }
+    throw new AiError(`${label} returned an empty response.`, { code: 'empty_response' })
   }
 
   function seedMessages(systemPrompt: string, messages: ChatMessage[]): OpenAiNativeMessage[] {
@@ -147,65 +161,74 @@ export function createOpenAiCompatibleProvider(opts: OpenAiCompatibleOptions) {
     timeoutMs: number
   }): Promise<ProviderCallResult> {
     const { apiKey, model, nativeMessages, tools, timeoutMs } = args
-
-    let res: Response
-    try {
-      res = await fetch(baseUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages: nativeMessages,
-          [maxTokensParam]: MAX_OUTPUT_TOKENS,
-          ...(tools.length > 0
-            ? {
-                tools: tools.map((t) => ({
-                  type: 'function',
-                  function: { name: t.name, description: t.description, parameters: t.parameters },
-                })),
-              }
-            : {}),
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
-      })
-    } catch (err) {
-      throw toNetworkError(err)
-    }
-
-    if (!res.ok) {
-      throw await providerHttpError(label, res)
-    }
-
-    const data = (await res.json().catch(() => null)) as OpenAiCompatResponse | null
-    const usage = normalizeUsage({
-      prompt: data?.usage?.prompt_tokens,
-      completion: data?.usage?.completion_tokens,
-      total: data?.usage?.total_tokens,
+    const body = JSON.stringify({
+      model,
+      messages: nativeMessages,
+      [maxTokensParam]: MAX_OUTPUT_TOKENS,
+      ...(tools.length > 0
+        ? {
+            tools: tools.map((t) => ({
+              type: 'function',
+              function: { name: t.name, description: t.description, parameters: t.parameters },
+            })),
+          }
+        : {}),
     })
 
-    const message = data?.choices?.[0]?.message
-    const toolCalls = message?.tool_calls
-    if (toolCalls && toolCalls.length > 0) {
-      return {
-        kind: 'tool_calls',
-        calls: toolCalls.map((tc) => ({
-          id: tc.id,
-          name: tc.function.name,
-          args: safeParseToolArgs(tc.function.arguments),
-        })),
-        usage,
+    // Same one-retry-on-empty-completion as `generate` above — a
+    // mid-order tool turn is exactly where this was observed to strand
+    // a real customer (fee already quoted, order never placed).
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let res: Response
+      try {
+        res = await fetch(baseUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body,
+          signal: AbortSignal.timeout(timeoutMs),
+        })
+      } catch (err) {
+        throw toNetworkError(err)
+      }
+
+      if (!res.ok) {
+        throw await providerHttpError(label, res)
+      }
+
+      const data = (await res.json().catch(() => null)) as OpenAiCompatResponse | null
+      const usage = normalizeUsage({
+        prompt: data?.usage?.prompt_tokens,
+        completion: data?.usage?.completion_tokens,
+        total: data?.usage?.total_tokens,
+      })
+
+      const message = data?.choices?.[0]?.message
+      const toolCalls = message?.tool_calls
+      if (toolCalls && toolCalls.length > 0) {
+        return {
+          kind: 'tool_calls',
+          calls: toolCalls.map((tc) => ({
+            id: tc.id,
+            name: tc.function.name,
+            args: safeParseToolArgs(tc.function.arguments),
+          })),
+          usage,
+        }
+      }
+
+      const text = message?.content
+      if (text && typeof text === 'string' && text.trim()) {
+        guardAgainstLeakedToolCall(label, text)
+        return { kind: 'text', text, usage }
+      }
+      if (attempt === 0) {
+        console.warn(`[ai ${label}] empty response mid tool-loop, retrying once before handing off`)
       }
     }
-
-    const text = message?.content
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      throw new AiError(`${label} returned an empty response.`, { code: 'empty_response' })
-    }
-    guardAgainstLeakedToolCall(label, text)
-    return { kind: 'text', text, usage }
+    throw new AiError(`${label} returned an empty response.`, { code: 'empty_response' })
   }
 
   return { generate, seedMessages, appendToolResults, callTurn }

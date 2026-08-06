@@ -5,7 +5,7 @@ import {
   type ChatMessage,
   type GenerateResult,
 } from './types'
-import { HANDOFF_SENTINEL, MAX_TOOL_ITERATIONS, aiRequestTimeoutMs } from './defaults'
+import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
 import { generateOpenAi, seedOpenAiMessages, appendOpenAiToolResults, callOpenAiTurn } from './providers/openai'
 import {
   generateAnthropic,
@@ -184,7 +184,7 @@ export async function generateReplyWithTools(
 
   if (config.provider === 'openai') {
     let native = seedOpenAiMessages(systemPrompt, messages)
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    for (let i = 0; i < config.maxToolIterations; i++) {
       if (!checkRateLimit(rateLimit.key, rateLimit.options).success) {
         return { text: '', handoff: false, usage, rateLimited: true }
       }
@@ -202,13 +202,13 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendOpenAiToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: openai)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: openai)`)
     return { text: '', handoff: true, usage }
   }
 
   if (config.provider === 'anthropic') {
     let native = seedAnthropicMessages(messages)
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    for (let i = 0; i < config.maxToolIterations; i++) {
       if (!checkRateLimit(rateLimit.key, rateLimit.options).success) {
         return { text: '', handoff: false, usage, rateLimited: true }
       }
@@ -227,13 +227,13 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendAnthropicToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: anthropic)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: anthropic)`)
     return { text: '', handoff: true, usage }
   }
 
   if (config.provider === 'groq') {
     let native = seedGroqMessages(systemPrompt, messages)
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    for (let i = 0; i < config.maxToolIterations; i++) {
       if (!checkRateLimit(rateLimit.key, rateLimit.options).success) {
         return { text: '', handoff: false, usage, rateLimited: true }
       }
@@ -251,13 +251,13 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendGroqToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: groq)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: groq)`)
     return { text: '', handoff: true, usage }
   }
 
   if (config.provider === 'openrouter') {
     let native = seedOpenRouterMessages(systemPrompt, messages)
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    for (let i = 0; i < config.maxToolIterations; i++) {
       if (!checkRateLimit(rateLimit.key, rateLimit.options).success) {
         return { text: '', handoff: false, usage, rateLimited: true }
       }
@@ -275,13 +275,13 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendOpenRouterToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: openrouter)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: openrouter)`)
     return { text: '', handoff: true, usage }
   }
 
   if (config.provider === 'gemini') {
     let native = seedGeminiMessages(messages)
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    for (let i = 0; i < config.maxToolIterations; i++) {
       if (!checkRateLimit(rateLimit.key, rateLimit.options).success) {
         return { text: '', handoff: false, usage, rateLimited: true }
       }
@@ -300,7 +300,7 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendGeminiToolResults(native, result.calls, results)
     }
-    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: gemini)`)
+    console.warn(`[ai generate] tool loop hit max_tool_iterations (${config.maxToolIterations}) without a final reply — handing off (provider: gemini)`)
     return { text: '', handoff: true, usage }
   }
 

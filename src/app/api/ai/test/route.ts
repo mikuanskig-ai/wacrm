@@ -4,6 +4,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { AiError, AI_PROVIDERS, type AiProvider } from '@/lib/ai/types'
+import { MAX_TOOL_ITERATIONS_DEFAULT } from '@/lib/ai/defaults'
 
 /**
  * POST /api/ai/test  (admin+)
@@ -74,6 +75,7 @@ export async function POST(request: Request) {
         handoffAgentId: null,
         embeddingsApiKey: null,
         toolsEnabled: false,
+        maxToolIterations: MAX_TOOL_ITERATIONS_DEFAULT,
       })
     } catch (err) {
       if (err instanceof AiError) {

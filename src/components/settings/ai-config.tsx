@@ -89,6 +89,7 @@ export function AiConfig() {
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [toolsEnabled, setToolsEnabled] = useState(false);
   const [maxPerConversation, setMaxPerConversation] = useState(3);
+  const [maxToolIterations, setMaxToolIterations] = useState(10);
   // Empty string = leave unassigned (shared queue).
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
@@ -117,6 +118,7 @@ export function AiConfig() {
         setAutoReplyEnabled(data.auto_reply_enabled);
         setToolsEnabled(Boolean(data.tools_enabled));
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
+        setMaxToolIterations(data.max_tool_iterations ?? 10);
         setHandoffAgentId(data.handoff_agent_id ?? '');
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
@@ -176,6 +178,7 @@ export function AiConfig() {
     auto_reply_enabled: autoReplyEnabled,
     tools_enabled: toolsEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
+    max_tool_iterations: maxToolIterations,
     handoff_agent_id: handoffAgentId || null,
   });
 
@@ -517,6 +520,31 @@ export function AiConfig() {
                   checked={toolsEnabled}
                   onCheckedChange={setToolsEnabled}
                   disabled={disabled || !isActive || !autoReplyEnabled}
+                />
+              </div>
+            )}
+
+            {hasModule(account, 'delivery') && (
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <Label htmlFor="ai-max-tool-iterations">{t('maxToolIterations')}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('maxToolIterationsDesc')}
+                  </p>
+                </div>
+                <Input
+                  id="ai-max-tool-iterations"
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={maxToolIterations}
+                  onChange={(e) =>
+                    setMaxToolIterations(
+                      Math.min(30, Math.max(1, Number(e.target.value) || 1)),
+                    )
+                  }
+                  disabled={disabled || !toolsEnabled}
+                  className="w-20"
                 />
               </div>
             )}

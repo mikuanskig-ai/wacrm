@@ -2391,6 +2391,8 @@
       "enableToolsDesc": "Com isso ativado, a IA pode consultar o cardápio, montar o carrinho e criar um pedido real durante a conversa no WhatsApp. O pedido sempre nasce aguardando confirmação — um humano revisa antes de ir para produção.",
       "maxAutoReplies": "Máximo de respostas automáticas por conversa",
       "maxAutoRepliesDesc": "Depois desse número de respostas do bot em uma conversa, o bot fica em silêncio.",
+      "maxToolIterations": "Máximo de ações da IA por resposta",
+      "maxToolIterationsDesc": "Quantas vezes a IA pode consultar cardápio, carrinho, taxa de entrega etc. antes de desistir e passar pra um atendente. Pedidos com vários itens ou várias confirmações podem precisar de um número maior.",
       "handoffTo": "Transferir para",
       "handoffToDesc": "Quando o bot não consegue ajudar — ou atinge o limite de respostas — ele pausa e encaminha a conversa para cá, com uma breve nota sobre o que aconteceu.",
       "handoffQueue": "Fila sem atribuição (qualquer agente pode assumir)",

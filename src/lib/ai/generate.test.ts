@@ -16,6 +16,7 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
     handoffAgentId: null,
     embeddingsApiKey: null,
     toolsEnabled: false,
+    maxToolIterations: 10,
     ...overrides,
   }
 }
