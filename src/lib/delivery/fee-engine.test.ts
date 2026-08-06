@@ -10,7 +10,13 @@ import { DistanceProviderError, type DistanceProvider, type GeocodeResult } from
 function fakeProvider(overrides: Partial<DistanceProvider> = {}): DistanceProvider {
   return {
     geocode: vi.fn(
-      async (): Promise<GeocodeResult | null> => ({ lat: -23.5, lng: -46.6, neighborhood: null, label: null }),
+      async (): Promise<GeocodeResult | null> => ({
+        lat: -23.5,
+        lng: -46.6,
+        neighborhood: null,
+        label: null,
+        layer: 'address',
+      }),
     ),
     geocodeStructured: vi.fn(async (): Promise<GeocodeResult | null> => null),
     calculateDistance: vi.fn(async () => 5),
@@ -99,7 +105,7 @@ describe('calculateDeliveryFee — neighborhood', () => {
 
   it('falls back to the geocoded neighbourhood guess when none is given explicitly', async () => {
     const provider = fakeProvider({
-      geocode: vi.fn(async () => ({ lat: -23.5, lng: -46.6, neighborhood: 'Centro', label: null })),
+      geocode: vi.fn(async () => ({ lat: -23.5, lng: -46.6, neighborhood: 'Centro', label: null, layer: 'address' })),
     })
     const result = await calculateDeliveryFee(config, { address: 'Rua X, 100', subtotal: 30 }, provider)
     expect(result).toEqual({
@@ -119,6 +125,7 @@ describe('calculateDeliveryFee — neighborhood', () => {
         lng: -53.45,
         neighborhood: 'Centro',
         label: 'Av. Papagaios, 1395, Cascavel - PR, Brazil',
+        layer: 'address',
       })),
     })
     const result = await calculateDeliveryFee(config, { address: 'Av. Papagaios, 1395', subtotal: 30 }, provider)

@@ -71,6 +71,10 @@ interface OrsGeocodeFeature {
     label?: string
     neighbourhood?: string
     borough?: string
+    /** Pelias match-precision layer — "address"/"street" for a real
+     *  street match, "locality"/"region"/etc. for a coarser fallback.
+     *  See distance-provider.ts's isPreciseGeocode. */
+    layer?: string
     [key: string]: unknown
   }
 }
@@ -91,6 +95,7 @@ function featureToResult(feature: OrsGeocodeFeature | undefined): GeocodeResult 
     lng,
     neighborhood: feature.properties.neighbourhood ?? feature.properties.borough ?? null,
     label: feature.properties.label ?? null,
+    layer: typeof feature.properties.layer === 'string' ? feature.properties.layer : null,
   }
 }
 

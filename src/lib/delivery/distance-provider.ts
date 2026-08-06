@@ -17,6 +17,27 @@ export interface GeocodeResult {
    *  observed failure mode for small Brazilian towns) can be caught
    *  instead of silently trusted. */
   label: string | null
+  /** Pelias-style match-precision layer (e.g. "address", "street",
+   *  "neighbourhood", "locality", "region"), null when the provider
+   *  doesn't report one. See `isPreciseGeocode` — a coarse layer looks
+   *  exactly like a successful match (a real label, real coordinates)
+   *  but can be kilometers from the actual address. */
+  layer: string | null
+}
+
+/** Layers precise enough to trust as a specific address, not a
+ *  city/region fallback. Real, observed failure mode: the structured
+ *  geocoder resolved "Rua Presidente Kennedy 2237, Centro, Cascavel,
+ *  PR" all the way down to a bare "Cascavel, PR, Brazil" — no error,
+ *  no low-confidence flag, just a city-level point silently used as
+ *  the store's exact location for every distance-based fee since.
+ *  `layer: null` (provider reports no layer at all) is treated as
+ *  imprecise too — we'd rather over-flag than trust a match we can't
+ *  actually verify. */
+const PRECISE_GEOCODE_LAYERS = new Set(['venue', 'address', 'street'])
+
+export function isPreciseGeocode(layer: string | null): boolean {
+  return layer !== null && PRECISE_GEOCODE_LAYERS.has(layer)
 }
 
 /** Street/city/state broken into separate fields — dramatically more
