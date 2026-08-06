@@ -334,8 +334,15 @@ export async function dispatchInboundToAiReply(
         ai_handoff_summary: summary,
         // Don't resume a stale cart if this conversation gets
         // re-enabled for AI later — prices/availability may have
-        // changed by then.
-        ai_cart: '[]',
+        // changed by then. MUST be a real array, not the string '[]' —
+        // confirmed live (2026-08-06): passing the string here made
+        // Supabase store `ai_cart` as a JSON STRING, not a JSON array.
+        // Every conversation that had ever been handed off once, then
+        // re-enabled ("Retomar IA") and continued ordering, permanently
+        // crashed on `cart.reduce is not a function` the moment any
+        // tool touched the cart again — readCart() handed that string
+        // straight back out, cast (not validated) as CartLineItem[].
+        ai_cart: [],
       }
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.

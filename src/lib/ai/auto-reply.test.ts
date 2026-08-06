@@ -374,7 +374,7 @@ describe('dispatchInboundToAiReply — tool-calling path', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.state.updatePayload).toMatchObject({
       ai_autoreply_disabled: true,
-      ai_cart: '[]',
+      ai_cart: [],
     })
   })
 
@@ -386,7 +386,7 @@ describe('dispatchInboundToAiReply — tool-calling path', () => {
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toMatchObject({
       ai_autoreply_disabled: true,
-      ai_cart: '[]',
+      ai_cart: [],
     })
     expect(h.state.updatePayload?.ai_handoff_summary).toContain('provider error')
   })

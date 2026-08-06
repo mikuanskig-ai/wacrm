@@ -65,7 +65,16 @@ async function readCart(db: SupabaseClient, conversationId: string): Promise<Car
     .select('ai_cart')
     .eq('id', conversationId)
     .maybeSingle()
-  return ((data as { ai_cart?: CartLineItem[] } | null)?.ai_cart as CartLineItem[] | undefined) ?? []
+  const raw = (data as { ai_cart?: unknown } | null)?.ai_cart
+  // Array.isArray, not just `?? []` — a jsonb column can hold ANY JSON
+  // value, and `?? []` only rescues null/undefined. Confirmed live
+  // (2026-08-06): a past write bug stored the literal JSON string
+  // "[]" here instead of an array; every read blindly cast it back to
+  // CartLineItem[] and crashed the moment a tool called .reduce on it.
+  // Treating anything non-array as an empty cart makes this self-heal
+  // on the very next write, for both future bugs and rows already
+  // corrupted by that one.
+  return Array.isArray(raw) ? (raw as CartLineItem[]) : []
 }
 
 async function writeCart(db: SupabaseClient, conversationId: string, cart: CartLineItem[]): Promise<void> {

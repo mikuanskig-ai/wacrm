@@ -43,11 +43,16 @@ interface FakeBusinessHours {
 function makeDb(
   opts: {
     cart?: CartLineItem[]
+    /** Overrides what `ai_cart` reads back as, bypassing the `cart`
+     *  typing — for regression-testing readCart() against a corrupted
+     *  (non-array) value already sitting in the column. */
+    rawAiCart?: unknown
     products?: FakeProduct[]
     businessHours?: FakeBusinessHours | null
   } = {},
 ) {
   let cart = opts.cart ?? []
+  const hasRawOverride = 'rawAiCart' in opts
   const products = opts.products ?? []
   const businessHours = opts.businessHours ?? null
   const writes: CartLineItem[][] = []
@@ -79,7 +84,11 @@ function makeDb(
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: () => Promise.resolve({ data: { ai_cart: cart }, error: null }),
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: { ai_cart: hasRawOverride ? opts.rawAiCart : cart },
+                  error: null,
+                }),
             }),
           }),
           update: (payload: { ai_cart: CartLineItem[] }) => {
@@ -223,6 +232,15 @@ describe('viewCartTool', () => {
     const res = await viewCartTool.execute({}, ctxFor(db))
     expect(res.content).toContain('2x Pizza')
     expect(res.content).toContain('60')
+  })
+
+  it('treats a corrupted (non-array) ai_cart as empty instead of crashing — regression, 2026-08-06', async () => {
+    // A past bug wrote the literal string "[]" instead of an array on
+    // handoff; readCart() blindly cast it back to CartLineItem[] and
+    // any tool that then called .reduce on it crashed the whole turn.
+    const { db } = makeDb({ rawAiCart: '[]' })
+    const res = await viewCartTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/empty/i)
   })
 })
 
