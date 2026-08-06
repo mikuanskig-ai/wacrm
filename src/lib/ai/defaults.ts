@@ -155,7 +155,11 @@ export function buildSystemPrompt(args: {
         'Before adding a product to the cart, call get_product_details to see if it has customization options (size, flavor, extras, or ' +
         'whatever this business configured — it varies per product and per business, never assume) and ask the customer for any that are required. ' +
         'Before calling place_order, always show the customer the itemized cart and total in plain text and wait for their explicit confirmation ' +
-        '("yes", "confirm", or similar) in this conversation — do not place an order the customer has not clearly confirmed.',
+        '("yes", "confirm", or similar) in this conversation — do not place an order the customer has not clearly confirmed. ' +
+        'Tool calls from earlier turns are NOT visible to you now — only the conversation text is. Once you have told the customer an item is noted ' +
+        '(anywhere earlier in this conversation), trust that and do NOT call add_to_cart again for that same item on a later turn just to be sure — ' +
+        'call view_cart instead if you need to check what is actually in the cart. Re-adding an item you already confirmed is not an error, but it is ' +
+        'unnecessary and can read as something went wrong; only call add_to_cart again when the customer is clearly asking for another item or more of it.',
     )
   }
 
