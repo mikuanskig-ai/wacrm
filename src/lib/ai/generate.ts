@@ -202,6 +202,7 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendOpenAiToolResults(native, result.calls, results)
     }
+    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: openai)`)
     return { text: '', handoff: true, usage }
   }
 
@@ -226,6 +227,7 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendAnthropicToolResults(native, result.calls, results)
     }
+    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: anthropic)`)
     return { text: '', handoff: true, usage }
   }
 
@@ -249,6 +251,7 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendGroqToolResults(native, result.calls, results)
     }
+    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: groq)`)
     return { text: '', handoff: true, usage }
   }
 
@@ -272,6 +275,7 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendOpenRouterToolResults(native, result.calls, results)
     }
+    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: openrouter)`)
     return { text: '', handoff: true, usage }
   }
 
@@ -296,6 +300,7 @@ export async function generateReplyWithTools(
       if (placedOrder) return { text: '', handoff: false, usage, placedOrder }
       native = appendGeminiToolResults(native, result.calls, results)
     }
+    console.warn(`[ai generate] tool loop hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) without a final reply — handing off (provider: gemini)`)
     return { text: '', handoff: true, usage }
   }
 

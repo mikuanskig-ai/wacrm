@@ -309,7 +309,7 @@ describe('generateReplyWithTools', () => {
       rateLimit: generousRateLimit,
     })
 
-    expect(fetchMock).toHaveBeenCalledTimes(6) // MAX_TOOL_ITERATIONS
+    expect(fetchMock).toHaveBeenCalledTimes(10) // MAX_TOOL_ITERATIONS
     expect(res.text).toBe('')
     expect(res.handoff).toBe(true)
   })

@@ -74,11 +74,18 @@ export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 export const MAX_OUTPUT_TOKENS = 1024
 
 /** Hard ceiling on provider round-trips within one tool-calling loop
- *  (`generateReplyWithTools`). A single customer message should resolve
- *  in a handful of turns (search → add a few items → view → place); a
- *  model stuck looping past this falls back to a human handoff rather
- *  than burning the account's BYO key indefinitely. */
-export const MAX_TOOL_ITERATIONS = 6
+ *  (`generateReplyWithTools`). A model stuck looping past this falls
+ *  back to a human handoff rather than burning the account's BYO key
+ *  indefinitely. Was 6 — too tight in practice (confirmed live
+ *  2026-08-06): even a clean single-item order already spends most of
+ *  that budget (search_menu → get_product_details → add_to_cart →
+ *  view_cart → calculate_delivery_fee → place_order = 6), so any
+ *  clarifying re-ask ("quer 1 ou 2?") pushed a real order past the
+ *  ceiling and silently handed the thread off with no order placed —
+ *  no error logged anywhere, since exhausting the loop was never
+ *  itself treated as a failure worth a log line (see the `console.warn`
+ *  now added at each exhaustion point in generate.ts). */
+export const MAX_TOOL_ITERATIONS = 10
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
