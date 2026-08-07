@@ -287,19 +287,49 @@ export const addToCartTool: ToolDefinition = {
     const cartBefore = await readCart(ctx.db, ctx.conversationId)
     const addonsKey = (list: CartLineItemAddon[]) =>
       [...list.map((a) => a.option_id)].sort().join(',')
-    const matchIndex = cartBefore.findIndex(
+    const exactMatchIndex = cartBefore.findIndex(
       (line) =>
         line.product_id === item.product_id &&
         addonsKey(line.addons ?? []) === addonsKey(item.addons) &&
         (line.notes ?? null) === item.notes,
     )
 
+    // A second, narrower match for when the exact one above misses:
+    // same product + addons, but the existing line has no notes yet
+    // and this call is quantity 1 with some. Confirmed live
+    // (2026-08-07): a customer said "1 marmita P" (added bare, no
+    // notes), then in the next message described how they wanted it
+    // prepared ("sem carne, com ovo frito, sem macarrão") — the model,
+    // with no memory of the first call, re-called add_to_cart with
+    // that as `notes`. Without this, the two calls (notes "" vs notes
+    // "sem carne...") don't match the exact check above, so they
+    // became two separate 1x lines — R$20 x 2 shown as R$40 for what
+    // was really one R$20 marmita. This is almost always the customer
+    // volunteering a customization detail for the item they just
+    // ordered, not asking for a second unit, so it updates the note in
+    // place rather than summing quantity.
+    const refinementMatchIndex =
+      exactMatchIndex === -1 && quantity === 1 && item.notes && item.notes.trim()
+        ? cartBefore.findIndex(
+            (line) =>
+              line.product_id === item.product_id &&
+              addonsKey(line.addons ?? []) === addonsKey(item.addons) &&
+              !(line.notes ?? '').trim(),
+          )
+        : -1
+
     let cart: CartLineItem[]
     let mergedQuantity = quantity
-    if (matchIndex >= 0) {
+    let noteUpdated = false
+    if (exactMatchIndex >= 0) {
       cart = [...cartBefore]
-      mergedQuantity = cart[matchIndex]!.quantity + quantity
-      cart[matchIndex] = { ...cart[matchIndex]!, quantity: mergedQuantity }
+      mergedQuantity = cart[exactMatchIndex]!.quantity + quantity
+      cart[exactMatchIndex] = { ...cart[exactMatchIndex]!, quantity: mergedQuantity }
+    } else if (refinementMatchIndex >= 0) {
+      cart = [...cartBefore]
+      mergedQuantity = cart[refinementMatchIndex]!.quantity
+      cart[refinementMatchIndex] = { ...cart[refinementMatchIndex]!, notes: item.notes }
+      noteUpdated = true
     } else {
       cart = [...cartBefore, item]
     }
@@ -317,9 +347,11 @@ export const addToCartTool: ToolDefinition = {
     // read as a routine running-total update, not an anomaly.
     return {
       content:
-        matchIndex >= 0
+        exactMatchIndex >= 0
           ? `Added ${quantity}x ${product.name} — now ${mergedQuantity}x total in the cart. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
-          : `Added ${quantity}x ${product.name} to the cart. Cart now has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`,
+          : noteUpdated
+            ? `Noted for the ${mergedQuantity}x ${product.name} already in the cart — no new line added, quantity unchanged. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
+            : `Added ${quantity}x ${product.name} to the cart. Cart now has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`,
     }
   },
 }

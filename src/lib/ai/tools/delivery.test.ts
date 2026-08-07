@@ -304,6 +304,38 @@ describe('addToCartTool', () => {
     expect(res.content).toMatch(/now 2x total/i)
   })
 
+  it('attaches a note to the existing bare line instead of duplicating it — regression, 2026-08-07', async () => {
+    // Live incident: customer said "1 marmita P" (added bare, no notes),
+    // then in the next message described how they wanted it prepared
+    // ("sem carne, com ovo frito, sem macarrão"). The model, with no
+    // memory of the first call, re-called add_to_cart with that as
+    // `notes` — since notes differ from the existing (empty) line, the
+    // exact-match merge above didn't catch it, so it created a SECOND
+    // 1x line: R$20 x 2 shown as a R$40 subtotal for one R$20 marmita.
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'Marmita P',
+      price: 20,
+      addon_groups: [],
+    })
+    const { db, writes, getCart } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: null }],
+    })
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', quantity: 1, notes: 'Sem carne, com ovo frito, sem macarrão' },
+      ctxFor(db),
+    )
+    expect(getCart()).toHaveLength(1)
+    expect(getCart()[0]).toMatchObject({
+      product_id: 'p1',
+      quantity: 1,
+      notes: 'Sem carne, com ovo frito, sem macarrão',
+    })
+    expect(writes[0]).toHaveLength(1)
+    expect(res.content).toMatch(/noted for the 1x marmita p/i)
+    expect(res.content).not.toMatch(/added 1x marmita p to the cart/i)
+  })
+
   it('keeps a different customization of the same product as its own line', async () => {
     h.loadProductWithAddonGroups.mockResolvedValue({
       id: 'p1',
