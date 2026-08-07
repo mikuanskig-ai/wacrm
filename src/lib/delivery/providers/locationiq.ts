@@ -44,25 +44,64 @@ function apiKey(): string {
   return key
 }
 
-/** Retries once (short backoff) on 429 and — confirmed live 2026-08-07
- *  — 400: LocationIQ's free tier caps concurrent/per-second throughput
- *  tighter than its 5,000/day headline number suggests, and under
- *  concurrent load from this app it was observed returning 400 rather
- *  than 429 for what a burst-replay proved was the exact same
- *  transient overload (two test conversations resolving the identical
- *  address within the same second). The `CachingDistanceProvider`
- *  wrapping this (openrouteservice.ts's getDistanceProvider) already
- *  de-duplicates truly concurrent identical requests — this is the
- *  complementary defense for concurrent DIFFERENT requests (different
- *  customers, different addresses) that don't share a cache key but
- *  still collide on the same per-second cap. A single retry is enough
- *  to absorb that; a real 400 (malformed input) fails identically on
- *  the retry and still surfaces as an error, just ~300ms later. */
+/** Caps how many LocationIQ requests THIS PROCESS has in flight at
+ *  once. Confirmed live 2026-08-07: retries alone (below) weren't
+ *  enough under sustained contention — two test conversations both
+ *  retrying every few seconds kept re-colliding, because every retry
+ *  was itself just another uncoordinated concurrent request. A limiter
+ *  is the actual fix for a self-inflicted burst: it stops OUR process
+ *  from ever sending more than `max` simultaneous requests in the
+ *  first place, rather than reactively recovering after the provider
+ *  rejects one. `max: 2` is deliberately conservative — a burst-replay
+ *  against the real key showed 2 concurrent requests succeeding
+ *  reliably and higher counts starting to fail — a busy restaurant's
+ *  real traffic is nowhere near enough to notice a 2-wide queue, this
+ *  is sized for defending against this app's own worst case, not
+ *  normal load. */
+class ConcurrencyLimiter {
+  private inFlight = 0
+  private readonly queue: (() => void)[] = []
+
+  constructor(private readonly max: number) {}
+
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.inFlight >= this.max) {
+      await new Promise<void>((resolve) => this.queue.push(resolve))
+    }
+    this.inFlight++
+    try {
+      return await task()
+    } finally {
+      this.inFlight--
+      const next = this.queue.shift()
+      if (next) next()
+    }
+  }
+}
+
+const limiter = new ConcurrencyLimiter(2)
+
+/** Retries with increasing backoff on 429 and — confirmed live
+ *  2026-08-07 — 400: LocationIQ's free tier caps concurrent/per-second
+ *  throughput tighter than its 5,000/day headline number suggests, and
+ *  under concurrent load from this app it was observed returning 400
+ *  rather than 429 for what a burst-replay proved was the exact same
+ *  transient overload. Every attempt (including retries) goes through
+ *  `limiter` above, which is the primary defense; this retry is the
+ *  secondary one, for whatever a real customer's genuinely independent
+ *  concurrent request still collides with (the limiter caps OUR
+ *  concurrency, not everyone else hitting the same shared free-tier
+ *  key/IP). A genuine 400 (malformed input) fails identically on every
+ *  attempt and still surfaces as an error, just up to ~1.2s later. */
 async function fetchWithRetry(url: string): Promise<Response> {
-  const res = await fetch(url)
-  if (res.status !== 429 && res.status !== 400) return res
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  return fetch(url)
+  const delaysMs = [300, 900]
+  let res = await limiter.run(() => fetch(url))
+  for (const delay of delaysMs) {
+    if (res.status !== 429 && res.status !== 400) return res
+    await new Promise((resolve) => setTimeout(resolve, delay))
+    res = await limiter.run(() => fetch(url))
+  }
+  return res
 }
 
 interface LocationIqAddress {

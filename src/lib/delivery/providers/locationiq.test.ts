@@ -140,13 +140,14 @@ describe('LocationIqProvider', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2)
     })
 
-    it('still throws if the retry also fails — a genuinely malformed request only costs one extra round-trip, not an infinite loop', async () => {
+    it('still throws if every retry also fails — a genuinely malformed request costs a bounded number of extra round-trips, not an infinite loop', async () => {
       fetchMock
+        .mockResolvedValueOnce(new Response('', { status: 400 }))
         .mockResolvedValueOnce(new Response('', { status: 400 }))
         .mockResolvedValueOnce(new Response('', { status: 400 }))
       const provider = new LocationIqProvider()
       await expect(provider.geocode('Rua X, 123')).rejects.toThrow(DistanceProviderError)
-      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(fetchMock).toHaveBeenCalledTimes(3) // 1 initial attempt + 2 retries, then gives up
     })
 
     it('throws DistanceProviderError when LOCATIONIQ_API_KEY is not configured', async () => {
@@ -258,6 +259,35 @@ describe('LocationIqProvider', () => {
       await expect(
         provider.calculateDistance({ lat: 0, lng: 0 }, { lat: 1, lng: 1 }),
       ).rejects.toThrow(DistanceProviderError)
+    })
+  })
+
+  describe('outbound concurrency cap', () => {
+    it('never lets more than 2 requests to LocationIQ be in flight at once — regression, 2026-08-07', async () => {
+      // Retries alone weren't enough under sustained contention (two
+      // test conversations both retrying every few seconds kept
+      // re-colliding) — this is what actually stops the app from
+      // generating the burst in the first place, rather than reacting
+      // to it after the provider rejects a request.
+      let concurrent = 0
+      let maxConcurrent = 0
+      fetchMock.mockImplementation(async () => {
+        concurrent++
+        maxConcurrent = Math.max(maxConcurrent, concurrent)
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        concurrent--
+        return okResponse([{ lat: '-24.95', lon: '-53.48' }])
+      })
+      const provider = new LocationIqProvider()
+      await Promise.all([
+        provider.geocode('Rua A'),
+        provider.geocode('Rua B'),
+        provider.geocode('Rua C'),
+        provider.geocode('Rua D'),
+        provider.geocode('Rua E'),
+      ])
+      expect(maxConcurrent).toBeLessThanOrEqual(2)
+      expect(fetchMock).toHaveBeenCalledTimes(5)
     })
   })
 })
