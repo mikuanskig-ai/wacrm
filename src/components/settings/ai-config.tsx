@@ -204,6 +204,54 @@ export function AiConfig() {
     }
   };
 
+  // The master on/off switches ("Ativar assistente" / "Resposta
+  // automática") used to be plain local state — nothing reached the
+  // server until the admin also clicked "Salvar". Confirmed live
+  // (2026-08-07): an admin flipped "Ativar assistente" off expecting
+  // the bot to stop immediately (every other on/off switch in this app,
+  // e.g. the inbox's "Retomar IA" banner, already takes effect the
+  // instant it's clicked) — the UI showed it off, but `is_active` was
+  // still true in the database, so the bot kept answering customers for
+  // several more minutes until "Salvar" was eventually pressed. These
+  // two fields now save themselves the moment they're toggled, same as
+  // every other real-time on/off control in the app; `overrides` wins
+  // over the corresponding field in `buildBody()` so this doesn't race
+  // React's async setState (the caller passes the just-clicked value
+  // explicitly rather than relying on it having landed in state yet).
+  const persistToggleNow = async (
+    overrides: Partial<ReturnType<typeof buildBody>>,
+    revert: () => void,
+  ) => {
+    if (!model.trim() || (!configured && !keyEdited)) {
+      // Can't persist a config that isn't valid yet (e.g. mid-setup,
+      // model/key not saved at all) — don't let the switch silently
+      // lie about a state nothing backs, put it back where it was.
+      revert();
+      toast.error(!model.trim() ? t('missingModel') : t('missingApiKey'));
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/ai/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...buildBody(), ...overrides }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        revert();
+        toast.error(data.error ?? t('saveFailed'));
+        return;
+      }
+      toast.success(t('saveSuccess'));
+    } catch {
+      revert();
+      toast.error(t('saveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!model.trim()) {
       toast.error(t('missingModel'));
@@ -485,7 +533,11 @@ export function AiConfig() {
               </div>
               <Switch
                 checked={isActive}
-                onCheckedChange={setIsActive}
+                onCheckedChange={(checked) => {
+                  const prev = isActive;
+                  setIsActive(checked);
+                  void persistToggleNow({ is_active: checked }, () => setIsActive(prev));
+                }}
                 disabled={disabled}
               />
             </div>
@@ -501,7 +553,11 @@ export function AiConfig() {
               </div>
               <Switch
                 checked={autoReplyEnabled}
-                onCheckedChange={setAutoReplyEnabled}
+                onCheckedChange={(checked) => {
+                  const prev = autoReplyEnabled;
+                  setAutoReplyEnabled(checked);
+                  void persistToggleNow({ auto_reply_enabled: checked }, () => setAutoReplyEnabled(prev));
+                }}
                 disabled={disabled || !isActive}
               />
             </div>
