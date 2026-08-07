@@ -31,6 +31,8 @@ const BASE_CONFIG: DeliveryFeeConfig = {
   freeShippingAbove: null,
   originLat: -23.5,
   originLng: -46.6,
+  originCity: null,
+  originState: null,
   settings: { fixed_price: 8 },
 }
 
@@ -224,6 +226,45 @@ describe('calculateDeliveryFee — per_km', () => {
       expect(result.fee).toBeCloseTo(4 + 3.333 * 1.5, 2)
       expect(result.distanceKm).toBe(3.333)
     }
+  })
+})
+
+describe('calculateDeliveryFee — origin-city enrichment', () => {
+  // Confirmed live (2026-08-07): a customer typed a real, in-range
+  // street with no city ("Av Carlos Gomes 2166, Parque São Paulo") and
+  // it kept failing to geocode — nobody names their own city when
+  // giving a local address. The account's registered origin city/state
+  // now gets appended automatically when the customer's text doesn't
+  // already have one.
+  const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km', originCity: 'Cascavel', originState: 'PR' }
+
+  it('appends the account\'s registered city + state when the address has neither', async () => {
+    const provider = fakeProvider()
+    await calculateDeliveryFee(config, { address: 'Av Carlos Gomes 2166, Parque São Paulo', subtotal: 30 }, provider)
+    expect(provider.geocode).toHaveBeenCalledWith(
+      'Av Carlos Gomes 2166, Parque São Paulo, Cascavel, PR',
+      expect.anything(),
+    )
+  })
+
+  it('does not duplicate the city when the customer already named it — accent/case-insensitive', async () => {
+    const provider = fakeProvider()
+    await calculateDeliveryFee(config, { address: 'Av Carlos Gomes 2166, cascável', subtotal: 30 }, provider)
+    expect(provider.geocode).toHaveBeenCalledWith('Av Carlos Gomes 2166, cascável', expect.anything())
+  })
+
+  it('is a no-op when the account has no registered city', async () => {
+    const noCityConfig: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km', originCity: null, originState: null }
+    const provider = fakeProvider()
+    await calculateDeliveryFee(noCityConfig, { address: 'Av Carlos Gomes 2166', subtotal: 30 }, provider)
+    expect(provider.geocode).toHaveBeenCalledWith('Av Carlos Gomes 2166', expect.anything())
+  })
+
+  it('appends just the city when no state is registered', async () => {
+    const cityOnlyConfig: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km', originCity: 'Cascavel', originState: null }
+    const provider = fakeProvider()
+    await calculateDeliveryFee(cityOnlyConfig, { address: 'Av Carlos Gomes 2166', subtotal: 30 }, provider)
+    expect(provider.geocode).toHaveBeenCalledWith('Av Carlos Gomes 2166, Cascavel', expect.anything())
   })
 })
 
@@ -465,6 +506,8 @@ describe('getDeliveryFeeConfig', () => {
       freeShippingAbove: null,
       originLat: null,
       originLng: null,
+      originCity: null,
+      originState: null,
       settings: { fixed_price: 0 },
     })
   })
@@ -477,6 +520,8 @@ describe('getDeliveryFeeConfig', () => {
         free_shipping_above: 100,
         origin_lat: -23.5,
         origin_lng: -46.6,
+        origin_city: 'Cascavel',
+        origin_state: 'PR',
         settings: { base_price: 4, price_per_km: 1.5 },
       }),
       'acct-1',
@@ -487,6 +532,8 @@ describe('getDeliveryFeeConfig', () => {
       freeShippingAbove: 100,
       originLat: -23.5,
       originLng: -46.6,
+      originCity: 'Cascavel',
+      originState: 'PR',
       settings: { base_price: 4, price_per_km: 1.5 },
     })
   })

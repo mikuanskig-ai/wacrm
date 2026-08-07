@@ -45,6 +45,18 @@ export interface DeliveryFeeConfig {
   freeShippingAbove: number | null
   originLat: number | null
   originLng: number | null
+  /** The account's own registered city/state (Settings > delivery
+   *  origin address) — used to fill in a customer's free-text address
+   *  when it doesn't already name one. See `enrichAddressWithOriginCity`
+   *  for why: confirmed live (2026-08-07) that a customer repeatedly
+   *  typing a real, in-range street ("Av Carlos Gomes 2166, Parque São
+   *  Paulo") with no city kept failing to geocode or landing on a
+   *  same-named street elsewhere — every other account's customer will
+   *  have the exact same blind spot (nobody prefixes their own
+   *  neighbourhood with their city when giving a local address), so
+   *  this isn't specific to one flaky address. */
+  originCity: string | null
+  originState: string | null
   settings: DeliveryFeeSettings
 }
 
@@ -101,6 +113,8 @@ const DEFAULT_CONFIG: DeliveryFeeConfig = {
   freeShippingAbove: null,
   originLat: null,
   originLng: null,
+  originCity: null,
+  originState: null,
   settings: { fixed_price: 0 },
 }
 
@@ -116,7 +130,9 @@ export async function getDeliveryFeeConfig(
 ): Promise<DeliveryFeeConfig> {
   const { data } = await db
     .from('delivery_fee_configs')
-    .select('delivery_method, max_distance, free_shipping_above, origin_lat, origin_lng, settings')
+    .select(
+      'delivery_method, max_distance, free_shipping_above, origin_lat, origin_lng, origin_city, origin_state, settings',
+    )
     .eq('account_id', accountId)
     .maybeSingle()
 
@@ -128,6 +144,8 @@ export async function getDeliveryFeeConfig(
     freeShippingAbove: data.free_shipping_above,
     originLat: data.origin_lat,
     originLng: data.origin_lng,
+    originCity: data.origin_city,
+    originState: data.origin_state,
     settings: (data.settings ?? {}) as DeliveryFeeSettings,
   }
 }
@@ -146,6 +164,28 @@ function normalizeName(value: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLowerCase()
+}
+
+/**
+ * Appends the account's own registered city/state to a customer's
+ * free-text address when it doesn't already name one. Confirmed live
+ * (2026-08-07): a customer typed a real, in-range street ("Av Carlos
+ * Gomes 2166, Parque São Paulo") with no city, and it repeatedly
+ * failed to geocode or risked landing on a same-named street in a
+ * different city — the exact ambiguity `focus`/`radiusKm` above only
+ * partially guards against. Nobody locally gives their own city when
+ * describing a nearby address ("I live on Av Carlos Gomes" — obviously
+ * in Cascavel, if you're a Cascavel customer), so this isn't specific
+ * to one address; every customer of every account has the same blind
+ * spot the moment the account has a registered city to fall back on.
+ * A no-op (returns the address unchanged) when the account hasn't set
+ * one, or the customer's text already names it.
+ */
+function enrichAddressWithOriginCity(address: string, city: string | null, state: string | null): string {
+  if (!city?.trim()) return address
+  if (normalizeName(address).includes(normalizeName(city))) return address
+  const suffix = state?.trim() ? `${city}, ${state}` : city
+  return `${address}, ${suffix}`
 }
 
 function matchNeighborhood(rules: NeighborhoodRule[], name: string): NeighborhoodRule | null {
@@ -221,10 +261,11 @@ export async function calculateDeliveryFee(
         ? { lat: config.originLat, lng: config.originLng }
         : undefined
     const radiusKm = focus ? (config.maxDistance ?? 50) : undefined
+    const enrichedAddress = enrichAddressWithOriginCity(address, config.originCity, config.originState)
 
     let destination
     try {
-      destination = await provider.geocode(address, { focus, radiusKm })
+      destination = await provider.geocode(enrichedAddress, { focus, radiusKm })
     } catch (err) {
       if (err instanceof DistanceProviderError) {
         // Confirmed live (2026-08-07): this failure was completely
@@ -236,7 +277,7 @@ export async function calculateDeliveryFee(
         // least two customers abandoned their order over it. Logging
         // this is what makes that diagnosable from journalctl instead
         // of manually replaying the same address by hand afterward.
-        console.error(`[fee-engine] geocode failed for "${address}":`, err.message)
+        console.error(`[fee-engine] geocode failed for "${enrichedAddress}":`, err.message)
         return { ok: false, reason: 'geocode_failed' }
       }
       throw err
