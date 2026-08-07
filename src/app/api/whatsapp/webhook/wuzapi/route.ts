@@ -11,6 +11,8 @@ import {
   type ParsedContent,
 } from '@/lib/whatsapp/inbound-message'
 import { isAccountSuspended } from '@/lib/accounts/suspension'
+import { loadTranscriptionConfig } from '@/lib/ai/config'
+import { transcribeAudio } from '@/lib/ai/transcription'
 
 /** Strip any `; params` off a MIME type (WhatsApp sends audio as
  *  `"audio/ogg; codecs=opus"`, but Storage bucket allowlists and file
@@ -387,6 +389,32 @@ export async function POST(request: Request) {
           if (!upErr) {
             const { data: pub } = supabaseAdmin().storage.from('chat-media').getPublicUrl(path)
             resolvedContent = { ...content, mediaUrl: pub.publicUrl }
+
+            // Transcribe inbound voice notes when the account opted in
+            // (migration 069) — runs here, before processMessage()
+            // below, so the transcript lands in content_text in time
+            // for both the inbox (human agents read it as a caption)
+            // and the AI (buildConversationContext only sees content_
+            // type 'text'/'audio' rows that actually have text — see
+            // context.ts). Never blocks message ingestion: any failure
+            // here just leaves this voice note without a transcript,
+            // exactly like today.
+            if (message.type === 'audio') {
+              try {
+                const transcription = await loadTranscriptionConfig(supabaseAdmin(), config.account_id)
+                if (transcription) {
+                  const transcript = await transcribeAudio(
+                    transcription.provider,
+                    transcription.apiKey,
+                    buffer,
+                    mimetype,
+                  )
+                  if (transcript) resolvedContent = { ...resolvedContent, contentText: transcript }
+                }
+              } catch (err) {
+                console.error('[wuzapi-webhook] audio transcription failed:', err)
+              }
+            }
           } else {
             console.error('[wuzapi-webhook] media upload failed:', upErr.message)
           }

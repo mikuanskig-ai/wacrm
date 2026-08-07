@@ -79,4 +79,23 @@ describe('buildConversationContext', () => {
     )
     expect(out).toEqual([{ role: 'user', content: '[Customer shared their location] Minha Padaria' }])
   })
+
+  it('includes a transcribed voice note (content_text filled in by the webhook) as a normal user message', async () => {
+    const out = await buildConversationContext(
+      fakeDb([{ sender_type: 'customer', content_text: 'quero uma marmita grande', content_type: 'audio' }]),
+      'conv-1',
+    )
+    expect(out).toEqual([{ role: 'user', content: 'quero uma marmita grande' }])
+  })
+
+  it('drops an untranscribed voice note (content_text still null) same as any other media', async () => {
+    const out = await buildConversationContext(
+      fakeDb([
+        { sender_type: 'customer', content_text: null, content_type: 'audio' },
+        { sender_type: 'customer', content_text: 'depois disso', content_type: 'text' },
+      ]),
+      'conv-1',
+    )
+    expect(out).toEqual([{ role: 'user', content: 'depois disso' }])
+  })
 })

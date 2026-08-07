@@ -5,7 +5,7 @@ import { aiContextMessageLimit } from './defaults'
 interface DbMessage {
   sender_type: 'customer' | 'agent' | 'bot'
   content_text: string | null
-  content_type: 'text' | 'location'
+  content_type: 'text' | 'location' | 'audio'
 }
 
 // A location message's content_text is built by the wuzapi webhook
@@ -30,15 +30,21 @@ function formatLocationMessage(contentText: string): string {
 }
 
 /**
- * Fetch the last N text (+ location) messages of a conversation and
- * map them to the provider-neutral chat shape. Customer messages
- * become `user`; agent and bot messages become `assistant`. Other
- * non-text message types (media, templates, interactive) are still
- * excluded — they carry no text to model. Location messages ARE
- * included (reformatted, see `formatLocationMessage`) — excluding them
- * used to leave the model with no idea a customer had shared a pin at
- * all, so it just asked for a typed address instead (confirmed live
- * 2026-08-07).
+ * Fetch the last N text (+ location, + transcribed audio) messages of
+ * a conversation and map them to the provider-neutral chat shape.
+ * Customer messages become `user`; agent and bot messages become
+ * `assistant`. Other non-text message types (images, documents,
+ * templates, interactive) are still excluded — they carry no text to
+ * the model.
+ *
+ * - Location messages ARE included (reformatted, see
+ *   `formatLocationMessage`) — excluding them used to leave the model
+ *   with no idea a customer had shared a pin at all, so it just asked
+ *   for a typed address instead (confirmed live 2026-08-07).
+ * - A voice note counts as text too once transcribed (content_text
+ *   gets filled in by the webhook — see transcription.ts / migration
+ *   069); an untranscribed one still has content_text = null and gets
+ *   dropped by the filter below, same as any other non-text message.
  *
  * Ordered oldest-first (chronological) so the transcript reads
  * naturally and the most recent customer message lands last.
@@ -52,7 +58,7 @@ export async function buildConversationContext(
     .from('messages')
     .select('sender_type, content_text, content_type')
     .eq('conversation_id', conversationId)
-    .in('content_type', ['text', 'location'])
+    .in('content_type', ['text', 'location', 'audio'])
     .order('created_at', { ascending: false })
     .limit(limit)
 

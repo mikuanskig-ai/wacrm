@@ -42,6 +42,12 @@ import { useConfirmDialog } from '@/hooks/use-confirm-dialog';
 
 const MASKED_KEY = '••••••••••••••••';
 
+// Whisper-compatible transcription is only offered under these two —
+// Anthropic/Gemini/OpenRouter have no audio-transcription endpoint
+// (same reason embeddings_api_key exists as its own OpenAI-only slot).
+const TRANSCRIPTION_PROVIDERS = ['groq', 'openai'] as const;
+type TranscriptionProvider = (typeof TRANSCRIPTION_PROVIDERS)[number];
+
 // Radix Select can't use an empty-string item value, so the "leave
 // unassigned" choice gets a sentinel that maps to null in the payload.
 const HANDOFF_QUEUE = '__queue__';
@@ -84,6 +90,10 @@ export function AiConfig() {
   const [embeddingsKey, setEmbeddingsKey] = useState('');
   const [embeddingsKeyEdited, setEmbeddingsKeyEdited] = useState(false);
   const [hasStoredEmbeddingsKey, setHasStoredEmbeddingsKey] = useState(false);
+  const [transcriptionProvider, setTranscriptionProvider] = useState<TranscriptionProvider>('groq');
+  const [transcriptionKey, setTranscriptionKey] = useState('');
+  const [transcriptionKeyEdited, setTranscriptionKeyEdited] = useState(false);
+  const [hasStoredTranscriptionKey, setHasStoredTranscriptionKey] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
@@ -126,6 +136,12 @@ export function AiConfig() {
         setHasStoredEmbeddingsKey(Boolean(data.has_embeddings_key));
         setEmbeddingsKey(data.has_embeddings_key ? MASKED_KEY : '');
         setEmbeddingsKeyEdited(false);
+        setTranscriptionProvider(
+          data.transcription_provider === 'openai' ? 'openai' : 'groq',
+        );
+        setHasStoredTranscriptionKey(Boolean(data.has_transcription_key));
+        setTranscriptionKey(data.has_transcription_key ? MASKED_KEY : '');
+        setTranscriptionKeyEdited(false);
       }
     } catch {
       toast.error(t('loadFailed'));
@@ -168,11 +184,16 @@ export function AiConfig() {
   const embeddingsKeyPayload = () =>
     embeddingsKeyEdited ? embeddingsKey.trim() || null : undefined;
 
+  const transcriptionKeyPayload = () =>
+    transcriptionKeyEdited ? transcriptionKey.trim() || null : undefined;
+
   const buildBody = () => ({
     provider,
     model: model.trim(),
     api_key: keyPayload(),
     embeddings_api_key: embeddingsKeyPayload(),
+    transcription_provider: transcriptionProvider,
+    transcription_api_key: transcriptionKeyPayload(),
     system_prompt: systemPrompt.trim() || null,
     is_active: isActive,
     auto_reply_enabled: autoReplyEnabled,
@@ -481,6 +502,51 @@ export function AiConfig() {
                   sameKeyText: provider === 'openai' ? t('sameKeyText') : '',
                 })}
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-transcription-key">
+                {t('transcriptionKey')}{' '}
+                <span className="font-normal text-muted-foreground">{t('optionalTranscription')}</span>
+              </Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Select
+                  value={transcriptionProvider}
+                  onValueChange={(v) => setTranscriptionProvider(v as TranscriptionProvider)}
+                  disabled={disabled}
+                >
+                  <SelectTrigger className="w-full sm:w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TRANSCRIPTION_PROVIDERS.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {PROVIDER_LABEL[p]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  id="ai-transcription-key"
+                  type="password"
+                  value={transcriptionKey}
+                  onChange={(e) => {
+                    setTranscriptionKey(e.target.value);
+                    setTranscriptionKeyEdited(true);
+                  }}
+                  onFocus={() => {
+                    if (!transcriptionKeyEdited && hasStoredTranscriptionKey) {
+                      setTranscriptionKey('');
+                      setTranscriptionKeyEdited(true);
+                    }
+                  }}
+                  placeholder={KEY_PLACEHOLDER[transcriptionProvider]}
+                  disabled={disabled}
+                  autoComplete="off"
+                  className="flex-1"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">{t('transcriptionHint')}</p>
             </div>
           </CardContent>
         </Card>

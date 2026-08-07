@@ -87,6 +87,40 @@ export async function loadAiConfig(
 }
 
 /**
+ * Load + decrypt the account's transcription config, independent of
+ * `is_active` — a business may want voice notes transcribed for human
+ * agents to read even with the AI assistant's master switch off.
+ * Returns `null` when no transcription provider is configured, or the
+ * stored key can't be decrypted (same "corrupt key -> treat as unset"
+ * choice as `loadEmbeddingsKey`, logged rather than thrown so a single
+ * account's bad key can never block message ingestion for anyone).
+ * Used by the WhatsApp webhook right after an inbound audio message is
+ * downloaded — see wuzapi/route.ts.
+ */
+export async function loadTranscriptionConfig(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<{ provider: 'groq' | 'openai'; apiKey: string } | null> {
+  const { data, error } = await db
+    .from('ai_configs')
+    .select('transcription_provider, transcription_api_key')
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (error || !data?.transcription_provider || !data?.transcription_api_key) return null
+  try {
+    return {
+      provider: data.transcription_provider as 'groq' | 'openai',
+      apiKey: decrypt(data.transcription_api_key),
+    }
+  } catch {
+    console.error(
+      `[ai config] transcription key for account ${accountId} could not be decrypted — check ENCRYPTION_KEY.`,
+    )
+    return null
+  }
+}
+
+/**
  * Load + decrypt just the embeddings key, independent of `is_active`.
  * Used by the knowledge-base ingest routes so the KB gets embedded (and
  * semantic search works) whenever an embeddings key is present, even if
