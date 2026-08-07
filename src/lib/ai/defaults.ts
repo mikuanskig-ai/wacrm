@@ -167,7 +167,12 @@ export function buildSystemPrompt(args: {
         'unnecessary and can read as something went wrong; only call add_to_cart again when the customer is clearly asking for another item or more of it. ' +
         'Every money figure in the order summary (Subtotal, delivery fee, Total) must be copied character-for-character from a tool response — ' +
         'view_cart for the subtotal, calculate_delivery_fee for the fee and the already-added-up total. NEVER add, multiply, or otherwise compute a ' +
-        'money figure yourself, even something as simple as subtotal + fee — that arithmetic is exactly how a wrong total reaches the customer.',
+        'money figure yourself, even something as simple as subtotal + fee — that arithmetic is exactly how a wrong total reaches the customer. ' +
+        "If the customer shares their WhatsApp location instead of typing an address, it appears in this conversation as " +
+        '"[Customer shared their location] latitude=..., longitude=...". Use those exact numbers with calculate_delivery_fee\'s latitude/longitude ' +
+        'parameters — do not ask them to type an address instead, and do not ask them to resend it in a different format. calculate_delivery_fee may ' +
+        'answer with a Resolved address for that location — always read it back to the customer and get an explicit "yes, that\'s correct" before ' +
+        'using it in place_order; never place an order against a resolved address the customer has not confirmed.',
     )
   }
 

@@ -45,6 +45,7 @@ import {
 
 const GEOCODE_URL = 'https://api.openrouteservice.org/geocode/search'
 const GEOCODE_STRUCTURED_URL = 'https://api.openrouteservice.org/geocode/search/structured'
+const REVERSE_GEOCODE_URL = 'https://api.openrouteservice.org/geocode/reverse'
 // Directions, not Matrix — observed live: for the same two points, the
 // Matrix endpoint (built for fast many-to-many lookups over a
 // contracted graph) returned a meaningfully shorter distance than the
@@ -153,6 +154,23 @@ export class OpenRouteServiceProvider implements DistanceProvider {
     const res = await fetch(url.toString())
     if (!res.ok) {
       throw new DistanceProviderError(`OpenRouteService structured geocode failed with status ${res.status}`)
+    }
+
+    const body = (await res.json()) as OrsGeocodeResponse
+    return featureToResult(body.features?.[0])
+  }
+
+  async reverseGeocode(point: { lat: number; lng: number }): Promise<GeocodeResult | null> {
+    const url = new URL(REVERSE_GEOCODE_URL)
+    url.searchParams.set('api_key', apiKey())
+    url.searchParams.set('point.lat', String(point.lat))
+    url.searchParams.set('point.lon', String(point.lng))
+    url.searchParams.set('boundary.country', 'BR')
+    url.searchParams.set('size', '1')
+
+    const res = await fetch(url.toString())
+    if (!res.ok) {
+      throw new DistanceProviderError(`OpenRouteService reverse geocode failed with status ${res.status}`)
     }
 
     const body = (await res.json()) as OrsGeocodeResponse

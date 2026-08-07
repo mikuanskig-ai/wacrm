@@ -87,6 +87,13 @@ export interface DistanceProvider {
    *  more accurate than `geocode()` when the caller can supply
    *  separate fields (the origin-address form in Settings). */
   geocodeStructured(parts: StructuredAddressParts, options?: GeocodeOptions): Promise<GeocodeResult | null>
+  /** Resolves coordinates back to a human-readable address/neighbourhood
+   *  — used when the caller already has exact coordinates (e.g. a
+   *  customer's WhatsApp location share) and needs a label to show
+   *  them for confirmation, or a neighbourhood name for the
+   *  `neighborhood` fee method. Returns null when nothing is found
+   *  nearby — never a fabricated address. */
+  reverseGeocode(point: { lat: number; lng: number }): Promise<GeocodeResult | null>
   /** Real driving distance in kilometers between two points. */
   calculateDistance(
     origin: { lat: number; lng: number },

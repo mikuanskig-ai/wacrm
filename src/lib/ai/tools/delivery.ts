@@ -359,31 +359,54 @@ export const addToCartTool: ToolDefinition = {
 export const calculateDeliveryFeeTool: ToolDefinition = {
   name: 'calculate_delivery_fee',
   description:
-    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change. If you already asked the customer for their neighbourhood/bairro separately, ALWAYS pass it as `neighborhood` too — accounts using a fixed per-neighbourhood fee can then skip address lookup (and its external-service dependency) entirely instead of guessing the neighbourhood from the free-text address. The response also includes the cart Subtotal and the Total (subtotal + fee) — when you write the order summary, copy those two numbers character-for-character from here. Doing that arithmetic yourself is exactly how a wrong total gets shown to the customer (confirmed live 2026-08-06: a single R$25 item was summarized as a R$100 subtotal).",
+    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change. If you already asked the customer for their neighbourhood/bairro separately, ALWAYS pass it as `neighborhood` too — accounts using a fixed per-neighbourhood fee can then skip address lookup (and its external-service dependency) entirely instead of guessing the neighbourhood from the free-text address. " +
+    "If the customer shared a WhatsApp location pin instead of typing an address — the transcript will show a message like '[Customer shared their location] latitude=..., longitude=...' — pass those exact numbers as `latitude`/`longitude` instead of (or alongside) `address`; it's more accurate than any typed address and you can omit `address` entirely in that case. " +
+    "The response may include a Resolved address for that location/address — always read it back to the customer and get their explicit confirmation ('is this address correct?') before calling place_order; never assume a resolved address or coordinates are correct without asking. " +
+    "The response also includes the cart Subtotal and the Total (subtotal + fee) — when you write the order summary, copy those two numbers character-for-character from here. Doing that arithmetic yourself is exactly how a wrong total gets shown to the customer (confirmed live 2026-08-06: a single R$25 item was summarized as a R$100 subtotal).",
   parameters: {
     type: 'object',
     properties: {
-      address: { type: 'string', description: "The customer's full delivery address." },
+      address: {
+        type: 'string',
+        description: "The customer's full delivery address. Not needed when latitude/longitude are given.",
+      },
       neighborhood: {
         type: 'string',
         description:
           "The customer's neighbourhood/bairro, if you already have it as its own answer (not just embedded in `address`). Optional, but pass it whenever you know it.",
       },
+      latitude: {
+        type: 'number',
+        description: 'Exact latitude from a WhatsApp location share, if the customer sent one.',
+      },
+      longitude: {
+        type: 'number',
+        description: 'Exact longitude from a WhatsApp location share, if the customer sent one.',
+      },
     },
-    required: ['address'],
     additionalProperties: false,
   },
   async execute(args, ctx) {
     const address = typeof args.address === 'string' ? args.address : ''
-    if (!address.trim()) return { content: 'Missing address — ask the customer for their delivery address first.' }
+    const lat = typeof args.latitude === 'number' ? args.latitude : null
+    const lng = typeof args.longitude === 'number' ? args.longitude : null
+    const location = lat != null && lng != null ? { lat, lng } : null
     const neighborhood = typeof args.neighborhood === 'string' ? args.neighborhood : null
+
+    if (!address.trim() && !location) {
+      return {
+        content:
+          'Missing address — ask the customer for their delivery address, or use the latitude/longitude from a location they shared.',
+      }
+    }
 
     const cart = await readCart(ctx.db, ctx.conversationId)
     const { subtotal } = computeCartTotal(cart)
 
     const result = await calculateDeliveryFeeForAccount(ctx.db, ctx.accountId, {
-      address,
+      address: address.trim() || null,
       neighborhoodName: neighborhood,
+      location,
       subtotal,
     })
     if (!result.ok) return { content: describeFeeFailure(result.reason) }
@@ -395,8 +418,15 @@ export const calculateDeliveryFeeTool: ToolDefinition = {
     // Rounded to cents same as computeCartTotal/fee-engine, so float
     // drift never shows up in what the customer sees.
     const total = Math.round((subtotal + result.fee) * 100) / 100
+    // Only surfaced when the provider actually resolved one (a typed
+    // address doesn't always geocode to a nameable place, and a fixed
+    // fee with no distance/neighbourhood need never even looks one up)
+    // — see the description above for why this must be read back to
+    // the customer, not silently trusted.
+    const addressNote = result.resolvedLabel ? `Resolved address: ${result.resolvedLabel}. ` : ''
     return {
       content:
+        addressNote +
         `Subtotal: ${formatCurrency(subtotal, ctx.currency)}. ` +
         `Delivery fee for that address: ${formatCurrency(result.fee, ctx.currency)}${freeNote}. ` +
         `Total: ${formatCurrency(total, ctx.currency)}.`,

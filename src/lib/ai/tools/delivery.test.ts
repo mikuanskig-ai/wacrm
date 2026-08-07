@@ -589,6 +589,36 @@ describe('calculateDeliveryFeeTool', () => {
     expect(res.content).toMatch(/subtotal.*25/i)
     expect(res.content).toMatch(/total.*27/i)
   })
+
+  it('accepts latitude/longitude from a WhatsApp location share in place of address — regression, 2026-08-07', async () => {
+    // Passing an explicit neighborhood alongside lat/lng keeps this
+    // network-free (same reasoning as the max_distance: null test
+    // above) while proving the tool no longer requires `address` when
+    // coordinates are given.
+    const { db } = makeDb({
+      cart: [],
+      feeConfig: {
+        delivery_method: 'neighborhood',
+        max_distance: null,
+        free_shipping_above: null,
+        origin_lat: null,
+        origin_lng: null,
+        settings: { neighborhoods: [{ id: 'n1', name: 'Centro', price: 5 }] },
+      },
+    })
+    const res = await calculateDeliveryFeeTool.execute(
+      { latitude: -24.9532935, longitude: -53.4699534, neighborhood: 'Centro' },
+      ctxFor(db),
+    )
+    expect(res.content).toMatch(/5/)
+    expect(res.content).not.toMatch(/missing address/i)
+  })
+
+  it('rejects when neither address nor latitude/longitude are given', async () => {
+    const { db } = makeDb({ cart: [] })
+    const res = await calculateDeliveryFeeTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/missing address/i)
+  })
 })
 
 describe('getAvailableTools', () => {

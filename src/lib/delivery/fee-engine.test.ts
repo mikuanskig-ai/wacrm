@@ -19,6 +19,7 @@ function fakeProvider(overrides: Partial<DistanceProvider> = {}): DistanceProvid
       }),
     ),
     geocodeStructured: vi.fn(async (): Promise<GeocodeResult | null> => null),
+    reverseGeocode: vi.fn(async (): Promise<GeocodeResult | null> => null),
     calculateDistance: vi.fn(async () => 5),
     ...overrides,
   }
@@ -223,6 +224,88 @@ describe('calculateDeliveryFee — per_km', () => {
       expect(result.fee).toBeCloseTo(4 + 3.333 * 1.5, 2)
       expect(result.distanceKm).toBe(3.333)
     }
+  })
+})
+
+describe('calculateDeliveryFee — location (WhatsApp share)', () => {
+  it('computes distance straight from coordinates, never calling geocode at all', async () => {
+    const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km', settings: { base_price: 4, price_per_km: 1.5 } }
+    const provider = fakeProvider({ calculateDistance: vi.fn(async () => 3) })
+    const result = await calculateDeliveryFee(
+      config,
+      { location: { lat: -24.95, lng: -53.47 }, subtotal: 30 },
+      provider,
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.fee).toBeCloseTo(4 + 3 * 1.5, 2)
+    expect(provider.geocode).not.toHaveBeenCalled()
+    expect(provider.calculateDistance).toHaveBeenCalledWith(
+      { lat: BASE_CONFIG.originLat, lng: BASE_CONFIG.originLng },
+      { lat: -24.95, lng: -53.47 },
+    )
+  })
+
+  it('reverse-geocodes to resolve the neighbourhood method and surfaces the label for confirmation', async () => {
+    const config: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'neighborhood',
+      settings: { neighborhoods: [{ id: '1', name: 'Centro', price: 3 }] },
+    }
+    const provider = fakeProvider({
+      reverseGeocode: vi.fn(async () => ({
+        lat: -24.95,
+        lng: -53.47,
+        neighborhood: 'Centro',
+        label: 'Rua Presidente Kennedy 183, Centro, Pato Branco - PR',
+        layer: 'address',
+      })),
+    })
+    const result = await calculateDeliveryFee(
+      config,
+      { location: { lat: -24.95, lng: -53.47 }, subtotal: 30 },
+      provider,
+    )
+    expect(result).toEqual({
+      ok: true,
+      fee: 3,
+      distanceKm: null,
+      resolvedLabel: 'Rua Presidente Kennedy 183, Centro, Pato Branco - PR',
+      freeShipping: false,
+      method: 'neighborhood',
+    })
+  })
+
+  it('still computes the fee off raw coordinates when reverse geocode fails — distance never depended on it', async () => {
+    const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km', settings: { base_price: 4, price_per_km: 1.5 } }
+    const provider = fakeProvider({
+      reverseGeocode: vi.fn(async () => {
+        throw new DistanceProviderError('reverse geocode down')
+      }),
+      calculateDistance: vi.fn(async () => 2),
+    })
+    const result = await calculateDeliveryFee(
+      config,
+      { location: { lat: -24.95, lng: -53.47 }, subtotal: 30 },
+      provider,
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.fee).toBeCloseTo(4 + 2 * 1.5, 2)
+      expect(result.resolvedLabel).toBeNull()
+    }
+  })
+
+  it('skips reverse geocode entirely for a fixed fee with no max_distance — nothing to resolve', async () => {
+    const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'fixed', settings: { fixed_price: 8 } }
+    const provider = fakeProvider()
+    const result = await calculateDeliveryFee(
+      config,
+      { location: { lat: -24.95, lng: -53.47 }, subtotal: 30 },
+      provider,
+    )
+    expect(result.ok).toBe(true)
+    expect(provider.reverseGeocode).not.toHaveBeenCalled()
+    expect(provider.calculateDistance).not.toHaveBeenCalled()
   })
 })
 

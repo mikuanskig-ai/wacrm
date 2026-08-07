@@ -52,11 +52,21 @@ export interface CalculateFeeArgs {
   /** Customer's free-text delivery address. Required whenever the
    *  config needs a distance (max_distance set, or method is
    *  distance_range/per_km) or when `neighborhoodName` is omitted for
-   *  the neighborhood method. */
+   *  the neighborhood method — unless `location` is given instead. */
   address?: string | null
   /** Explicit neighbourhood pick (e.g. the customer chose one from a
    *  list) — skips the geocode-based auto-match entirely. */
   neighborhoodName?: string | null
+  /** Exact coordinates already known — e.g. a customer shared their
+   *  location in WhatsApp instead of typing an address. When set, this
+   *  is used as the destination directly: no forward geocoding of
+   *  `address` happens at all, which is both strictly more accurate
+   *  (no free-text ambiguity) and lighter on the geocode provider's
+   *  quota. A reverse geocode still runs, but only when a distance or
+   *  the neighbourhood method's name is actually needed, and never
+   *  blocks the fee/distance result if it fails — see
+   *  `calculateDeliveryFee`. */
+  location?: { lat: number; lng: number } | null
   subtotal: number
 }
 
@@ -160,14 +170,33 @@ export async function calculateDeliveryFee(
 ): Promise<DeliveryFeeResult> {
   const needsDistance =
     config.maxDistance != null || config.method === 'distance_range' || config.method === 'per_km'
-  const needsGeocode =
-    needsDistance || (config.method === 'neighborhood' && !args.neighborhoodName?.trim())
+  const needsNeighborhoodName = config.method === 'neighborhood' && !args.neighborhoodName?.trim()
 
   let distanceKm: number | null = null
   let geocodedNeighborhood: string | null = null
   let resolvedLabel: string | null = null
+  let destinationPoint: { lat: number; lng: number } | null = null
 
-  if (needsGeocode) {
+  if (args.location) {
+    // Exact coordinates already known (e.g. a WhatsApp location share)
+    // — used as the destination directly, no forward geocoding of free
+    // text at all. A reverse geocode still runs when a name/label is
+    // actually needed (neighbourhood-method matching, or just a label
+    // to show the customer for confirmation), but it's best-effort: if
+    // it fails, the fee/distance calculation below still proceeds off
+    // the raw coordinates, which the Directions call doesn't need a
+    // geocode for either way.
+    destinationPoint = args.location
+    if (needsDistance || needsNeighborhoodName) {
+      try {
+        const reverse = await provider.reverseGeocode(args.location)
+        geocodedNeighborhood = reverse?.neighborhood ?? null
+        resolvedLabel = reverse?.label ?? null
+      } catch (err) {
+        if (!(err instanceof DistanceProviderError)) throw err
+      }
+    }
+  } else if (needsDistance || needsNeighborhoodName) {
     const address = args.address?.trim()
     if (!address) return { ok: false, reason: 'address_required' }
 
@@ -198,19 +227,21 @@ export async function calculateDeliveryFee(
     if (!destination) return { ok: false, reason: 'geocode_failed' }
     geocodedNeighborhood = destination.neighborhood
     resolvedLabel = destination.label
+    destinationPoint = { lat: destination.lat, lng: destination.lng }
+  }
 
-    if (needsDistance) {
-      if (config.originLat == null || config.originLng == null) {
-        return { ok: false, reason: 'origin_not_configured' }
-      }
-      try {
-        distanceKm = await provider.calculateDistance(
-          { lat: config.originLat, lng: config.originLng },
-          { lat: destination.lat, lng: destination.lng },
-        )
-      } catch {
-        return { ok: false, reason: 'geocode_failed' }
-      }
+  if (needsDistance) {
+    if (!destinationPoint) return { ok: false, reason: 'address_required' }
+    if (config.originLat == null || config.originLng == null) {
+      return { ok: false, reason: 'origin_not_configured' }
+    }
+    try {
+      distanceKm = await provider.calculateDistance(
+        { lat: config.originLat, lng: config.originLng },
+        destinationPoint,
+      )
+    } catch {
+      return { ok: false, reason: 'geocode_failed' }
     }
   }
 
