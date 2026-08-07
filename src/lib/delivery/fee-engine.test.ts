@@ -404,7 +404,14 @@ describe('calculateDeliveryFee — global rules', () => {
     expect(result).toEqual({ ok: false, reason: 'geocode_failed' })
   })
 
-  it('fails with geocode_failed when the provider throws a DistanceProviderError', async () => {
+  it('fails with geocode_failed when the provider throws a DistanceProviderError, and logs it — regression, 2026-08-07', async () => {
+    // Confirmed live: this failure used to be completely silent server-
+    // side — a burst of ORS quota/rate-limit errors during heavy
+    // testing showed up to real customers as "não consegui localizar
+    // esse endereço" (for addresses that geocode fine moments later),
+    // with nothing in journalctl to explain why. At least two customers
+    // abandoned their order over it before this was ever noticed.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km' }
     const provider = fakeProvider({
       geocode: vi.fn(async () => {
@@ -413,6 +420,27 @@ describe('calculateDeliveryFee — global rules', () => {
     })
     const result = await calculateDeliveryFee(config, { address: 'Rua X', subtotal: 30 }, provider)
     expect(result).toEqual({ ok: false, reason: 'geocode_failed' })
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('geocode failed'), 'boom')
+    errorSpy.mockRestore()
+  })
+
+  it('fails with geocode_failed and logs it when calculateDistance itself throws — regression, 2026-08-07', async () => {
+    // Same fragility, different ORS endpoint (Directions, not geocode)
+    // — logged distinctly so journalctl doesn't conflate the two.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km' }
+    const provider = fakeProvider({
+      calculateDistance: vi.fn(async () => {
+        throw new DistanceProviderError('directions boom')
+      }),
+    })
+    const result = await calculateDeliveryFee(config, { address: 'Rua X', subtotal: 30 }, provider)
+    expect(result).toEqual({ ok: false, reason: 'geocode_failed' })
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('calculateDistance failed'),
+      'directions boom',
+    )
+    errorSpy.mockRestore()
   })
 })
 

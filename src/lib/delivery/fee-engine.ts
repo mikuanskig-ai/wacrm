@@ -194,6 +194,11 @@ export async function calculateDeliveryFee(
         resolvedLabel = reverse?.label ?? null
       } catch (err) {
         if (!(err instanceof DistanceProviderError)) throw err
+        // Best-effort and non-fatal (see comment above) — still worth a
+        // breadcrumb, since a wave of these means the provider itself is
+        // degraded (quota/outage), not that any one customer's location
+        // was bad.
+        console.error('[fee-engine] reverseGeocode failed (non-fatal):', err.message)
       }
     }
   } else if (needsDistance || needsNeighborhoodName) {
@@ -221,7 +226,19 @@ export async function calculateDeliveryFee(
     try {
       destination = await provider.geocode(address, { focus, radiusKm })
     } catch (err) {
-      if (err instanceof DistanceProviderError) return { ok: false, reason: 'geocode_failed' }
+      if (err instanceof DistanceProviderError) {
+        // Confirmed live (2026-08-07): this failure was completely
+        // invisible in server logs — a burst of these during heavy
+        // testing (ORS free-tier quota/rate-limit, same fragility
+        // already hit twice this session on other endpoints) showed up
+        // to customers as "não consegui localizar esse endereço" for
+        // addresses that geocode perfectly fine moments later, and at
+        // least two customers abandoned their order over it. Logging
+        // this is what makes that diagnosable from journalctl instead
+        // of manually replaying the same address by hand afterward.
+        console.error(`[fee-engine] geocode failed for "${address}":`, err.message)
+        return { ok: false, reason: 'geocode_failed' }
+      }
       throw err
     }
     if (!destination) return { ok: false, reason: 'geocode_failed' }
@@ -240,7 +257,15 @@ export async function calculateDeliveryFee(
         { lat: config.originLat, lng: config.originLng },
         destinationPoint,
       )
-    } catch {
+    } catch (err) {
+      // Reuses the geocode_failed reason (the customer-facing copy —
+      // "could not locate that address" — still roughly fits a routing
+      // failure), but logs distinctly so an ops read of journalctl
+      // doesn't conflate "geocode API down" with "directions API down"
+      // — same provider, same free-tier fragility, but a different
+      // ORS endpoint/quota under the hood.
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[fee-engine] calculateDistance failed:', message)
       return { ok: false, reason: 'geocode_failed' }
     }
   }
