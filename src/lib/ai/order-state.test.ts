@@ -31,6 +31,7 @@ describe('readOrderInfo', () => {
       isPickup: null,
       deliveryAddress: null,
       neighborhood: null,
+      location: null,
       paymentMethod: null,
       paymentNotes: null,
       lastFeeQuote: null,

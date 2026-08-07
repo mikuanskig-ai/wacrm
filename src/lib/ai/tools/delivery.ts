@@ -432,10 +432,17 @@ export const calculateDeliveryFeeTool: ToolDefinition = {
     // order summary. `undefined` (not `null`) for anything not given
     // this call, so a neighborhood learned earlier via update_order_info
     // isn't clobbered by an address-only call. See order-state.ts.
+    // `location` is explicit-`null` (not `undefined`) when this call
+    // was address-only — a stale coordinate from an earlier call must
+    // not survive to be reused for a since-changed address (see
+    // OrderInfo.location's doc for why this specific field can never
+    // be silently left stale: place_order's own mandatory recalculation
+    // depends on it matching whatever this quote actually used).
     const quotedAddress = address.trim() || (location ? `${location.lat},${location.lng}` : null)
     await writeOrderInfo(ctx.db, ctx.conversationId, {
       deliveryAddress: address.trim() || undefined,
       neighborhood: neighborhood || undefined,
+      location,
       lastFeeQuote: {
         subtotal,
         fee: result.fee,
@@ -539,9 +546,22 @@ export const placeOrderTool: ToolDefinition = {
     if (!isPickup) {
       // Regra 4 — the model never invents a fee, even if it already
       // called calculate_delivery_fee earlier: this is the mandatory,
-      // final calculation right before the order is created.
+      // final calculation right before the order is created. BUT this
+      // must reuse the same precise inputs that quote used — confirmed
+      // live (2026-08-07): with only `address` passed here, a customer
+      // who shared an exact WhatsApp location pin got quoted R$9 (fee
+      // computed from that precise pin) and charged R$12 (this
+      // recalculation re-geocoding the free-text address landed on a
+      // less precise point further away) for the identical order. Only
+      // trusted when `deliveryAddress` still matches what that quote
+      // was for — if the model/customer changed the address at the
+      // last step, the old coordinates belong to a different place and
+      // must not be reused (falls through to a fresh address geocode).
+      const sameAddressAsLastQuote = orderInfo.deliveryAddress === deliveryAddress
       const feeResult = await calculateDeliveryFeeForAccount(ctx.db, ctx.accountId, {
         address: deliveryAddress,
+        neighborhoodName: sameAddressAsLastQuote ? orderInfo.neighborhood : null,
+        location: sameAddressAsLastQuote ? orderInfo.location : null,
         subtotal,
       })
       if (!feeResult.ok) return { content: describeFeeFailure(feeResult.reason) }

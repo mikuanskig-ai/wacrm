@@ -610,6 +610,34 @@ describe('placeOrderTool', () => {
     await placeOrderTool.execute({}, ctxFor(db))
     expect(getOrderInfo()).toMatchObject({ customerName: 'Marcia', deliveryAddress: 'Rua X, 123', lastFeeQuote: null })
   })
+
+  it("reuses the confirmed neighborhood for its own mandatory fee recheck when the address is unchanged — regression, 2026-08-07", async () => {
+    // Live incident: a customer shared an exact WhatsApp location pin,
+    // calculate_delivery_fee used it and quoted R$9 delivery — but
+    // place_order's own "never trust a stale number" recalculation
+    // only passed the free-text address, re-geocoding it to a LESS
+    // precise point and charging R$12 for the identical order. This is
+    // the same fix's neighborhood-method case (network-free to test
+    // here; the location/coordinate case follows the identical
+    // sameAddressAsLastQuote branch in placeOrderTool).
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-8', total: 23, delivery_fee: 3, currency: 'BRL' })
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [] }],
+      businessHours: null,
+      orderInfo: { deliveryAddress: 'Rua X, 123', neighborhood: 'Centro' },
+      feeConfig: {
+        delivery_method: 'neighborhood',
+        max_distance: null,
+        free_shipping_above: null,
+        origin_lat: null,
+        origin_lng: null,
+        settings: { neighborhoods: [{ id: 'n1', name: 'Centro', price: 3 }] },
+      },
+    })
+    const res = await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(db, expect.objectContaining({ deliveryFee: 3 }))
+    expect(res.data).toMatchObject({ id: 'order-8', deliveryFee: 3 })
+  })
 })
 
 describe('updateOrderInfoTool', () => {
@@ -713,6 +741,38 @@ describe('calculateDeliveryFeeTool', () => {
     )
     expect(res.content).toMatch(/5/)
     expect(res.content).not.toMatch(/missing address/i)
+  })
+
+  it('persists the exact coordinates into order state so place_order can reuse them later — regression, 2026-08-07', async () => {
+    const { db, getOrderInfo } = makeDb({
+      cart: [],
+      feeConfig: {
+        delivery_method: 'neighborhood',
+        max_distance: null,
+        free_shipping_above: null,
+        origin_lat: null,
+        origin_lng: null,
+        settings: { neighborhoods: [{ id: 'n1', name: 'Centro', price: 5 }] },
+      },
+    })
+    await calculateDeliveryFeeTool.execute(
+      { latitude: -24.9532935, longitude: -53.4699534, neighborhood: 'Centro' },
+      ctxFor(db),
+    )
+    expect((getOrderInfo() as { location: { lat: number; lng: number } }).location).toEqual({
+      lat: -24.9532935,
+      lng: -53.4699534,
+    })
+  })
+
+  it('clears any previously stored location when this call is address-only — a stale pin must never survive to a different address', async () => {
+    const { db, getOrderInfo } = makeDb({
+      cart: [],
+      orderInfo: { location: { lat: -24.95, lng: -53.47 } },
+      feeConfig: { delivery_method: 'fixed', max_distance: null, free_shipping_above: null, origin_lat: null, origin_lng: null, settings: { fixed_price: 5 } },
+    })
+    await calculateDeliveryFeeTool.execute({ address: 'Rua Nova, 456' }, ctxFor(db))
+    expect((getOrderInfo() as { location: unknown }).location).toBeNull()
   })
 
   it('rejects when neither address nor latitude/longitude are given', async () => {

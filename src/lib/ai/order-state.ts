@@ -42,6 +42,18 @@ export interface OrderInfo {
   isPickup: boolean | null
   deliveryAddress: string | null
   neighborhood: string | null
+  /** Exact coordinates the last successful calculate_delivery_fee used
+   *  (a WhatsApp location share), when there were any. `place_order`'s
+   *  own mandatory fee recalculation (Regra 4 — never trust a stale
+   *  number) reuses this instead of re-geocoding `deliveryAddress`
+   *  from scratch: confirmed live (2026-08-07) that skipping it made
+   *  place_order derive a DIFFERENT point than the one the customer
+   *  actually confirmed a fee for — same free-text address, but the
+   *  forward-geocoder's guess landed further away than the exact pin,
+   *  so the customer was quoted R$9 and charged R$12 for the same
+   *  order. Cleared (set to null, not left stale) whenever a fee quote
+   *  is based on typed text instead — see calculateDeliveryFeeTool. */
+  location: { lat: number; lng: number } | null
   paymentMethod: string | null
   paymentNotes: string | null
   lastFeeQuote: OrderFeeQuote | null
@@ -52,6 +64,7 @@ const EMPTY_ORDER_INFO: OrderInfo = {
   isPickup: null,
   deliveryAddress: null,
   neighborhood: null,
+  location: null,
   paymentMethod: null,
   paymentNotes: null,
   lastFeeQuote: null,
