@@ -3,6 +3,14 @@
 // credit card) is enough to validate the fee engine before a
 // restaurant-count that justifies Google Maps billing.
 //
+// No longer the default as of 2026-08-07 (see locationiq.ts's header
+// for why — ORS's shared 2,500/day quota was exhausted by real usage
+// and cost real orders) — kept here as a documented, one-env-var
+// fallback via `getDistanceProvider()` below, and this file's own
+// `getDistanceProvider()` export is where that switch lives, which is
+// why it stays the home for the factory even though it may now hand
+// back a LocationIQ-backed provider by default.
+//
 // Platform-level credential (ORS_API_KEY env var), not a per-tenant
 // BYO key — same operating model as WuzAPI/AUTOMATION_CRON_SECRET:
 // one key, shared infrastructure, no per-restaurant setup burden.
@@ -43,6 +51,7 @@ import {
   type StructuredAddressParts,
 } from '../distance-provider'
 import { CachingDistanceProvider } from './caching-distance-provider'
+import { LocationIqProvider } from './locationiq'
 
 const GEOCODE_URL = 'https://api.openrouteservice.org/geocode/search'
 const GEOCODE_STRUCTURED_URL = 'https://api.openrouteservice.org/geocode/search/structured'
@@ -212,14 +221,21 @@ export class OpenRouteServiceProvider implements DistanceProvider {
 
 let cached: DistanceProvider | null = null
 
-/** Factory — today only OpenRouteService; swapping providers later is
- *  a new class + a branch here, the fee engine never changes. Wrapped
- *  in the short-lived cache (caching-distance-provider.ts) — see that
+/** Factory — swapping providers is a new class + a branch here, the
+ *  fee engine never changes. Defaults to LocationIQ (see locationiq.ts's
+ *  header for why); set `DISTANCE_PROVIDER=ors` to fall back to
+ *  OpenRouteService without a code change, e.g. if LocationIQ ever has
+ *  its own outage/quota problem. Either way the result is wrapped in
+ *  the short-lived cache (caching-distance-provider.ts) — see that
  *  file's header for why: a customer retrying the same address burns a
- *  fresh ORS call every time otherwise, and that retry pattern is
- *  exactly what exhausted the free-tier quota during heavy testing
+ *  fresh provider call every time otherwise, and that retry pattern is
+ *  exactly what exhausted ORS's free-tier quota during heavy testing
  *  (confirmed live 2026-08-07). */
 export function getDistanceProvider(): DistanceProvider {
-  if (!cached) cached = new CachingDistanceProvider(new OpenRouteServiceProvider())
+  if (!cached) {
+    const inner =
+      process.env.DISTANCE_PROVIDER === 'ors' ? new OpenRouteServiceProvider() : new LocationIqProvider()
+    cached = new CachingDistanceProvider(inner)
+  }
   return cached
 }
