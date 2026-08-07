@@ -30,7 +30,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, tools_enabled, api_key, embeddings_api_key, onboarding_tested_at',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, tools_enabled, api_key, embeddings_api_key, transcription_provider, transcription_api_key, onboarding_tested_at',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -44,13 +44,14 @@ export async function GET() {
     }
 
     if (!data) return NextResponse.json({ configured: false })
-    // The keys are selected only to derive the has_* flags; neither is
-    // returned to the client.
-    const { api_key, embeddings_api_key, onboarding_tested_at, ...safe } = data
+    // The keys are selected only to derive the has_* flags; none of
+    // them is returned to the client.
+    const { api_key, embeddings_api_key, transcription_api_key, onboarding_tested_at, ...safe } = data
     return NextResponse.json({
       configured: true,
       has_key: !!api_key,
       has_embeddings_key: !!embeddings_api_key,
+      has_transcription_key: !!transcription_api_key,
       // Onboarding checklist's "tested in Playground" step — exposing
       // just the boolean, not the raw timestamp, keeps this route's
       // contract simple for the one caller that reads it.
@@ -129,6 +130,23 @@ export async function POST(request: Request) {
         ? body.embeddings_api_key.trim()
         : ''
     const clearEmbeddingsKey = body.embeddings_api_key === null
+
+    // Transcription key (optional, for voice-note speech-to-text —
+    // migration 066): same sparse set/clear/unchanged semantics as the
+    // embeddings key above, plus the provider it's for. No live
+    // validation round-trip here (unlike the chat/embeddings keys) —
+    // there's no cheap "ping" input for a speech-to-text endpoint the
+    // way there is for text/embeddings; an invalid key just surfaces
+    // later as a logged, non-blocking failure on the next voice note
+    // (see transcription.ts / the wuzapi webhook route).
+    const rawTranscriptionKey =
+      typeof body.transcription_api_key === 'string' ? body.transcription_api_key.trim() : ''
+    const clearTranscriptionKey = body.transcription_api_key === null
+    const transcriptionProvider =
+      typeof body.transcription_provider === 'string' ? body.transcription_provider.trim() : ''
+    if (transcriptionProvider && !['groq', 'openai'].includes(transcriptionProvider)) {
+      return bad('transcription_provider must be one of: groq, openai')
+    }
 
     // Reuse the stored key when the form didn't send a fresh one.
     const { data: existing } = await supabase
@@ -220,6 +238,12 @@ export async function POST(request: Request) {
       shared.embeddings_api_key = encrypt(rawEmbeddingsKey)
     } else if (clearEmbeddingsKey) {
       shared.embeddings_api_key = null
+    }
+    if ('transcription_provider' in body) shared.transcription_provider = transcriptionProvider || null
+    if (rawTranscriptionKey) {
+      shared.transcription_api_key = encrypt(rawTranscriptionKey)
+    } else if (clearTranscriptionKey) {
+      shared.transcription_api_key = null
     }
 
     if (existing) {

@@ -6,7 +6,7 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: (v: string) => `plain:${v}`,
 }))
 
-import { loadAiConfig } from './config'
+import { loadAiConfig, loadTranscriptionConfig } from './config'
 
 function dbReturning(row: Record<string, unknown> | null): SupabaseClient {
   const chain = {
@@ -48,4 +48,25 @@ describe('loadAiConfig requireActive', () => {
       await loadAiConfig(dbReturning(null), 'acct', { requireActive: false }),
     ).toBeNull()
   })
+})
+
+describe('loadTranscriptionConfig', () => {
+  it('returns null when no transcription provider is configured', async () => {
+    expect(await loadTranscriptionConfig(dbReturning(null), 'acct')).toBeNull()
+    expect(
+      await loadTranscriptionConfig(
+        dbReturning({ transcription_provider: null, transcription_api_key: null }),
+        'acct',
+      ),
+    ).toBeNull()
+  })
+
+  it('returns the decrypted key + provider when configured, independent of is_active', async () => {
+    const config = await loadTranscriptionConfig(
+      dbReturning({ transcription_provider: 'groq', transcription_api_key: 'enc-groq-key' }),
+      'acct',
+    )
+    expect(config).toEqual({ provider: 'groq', apiKey: 'plain:enc-groq-key' })
+  })
+
 })
