@@ -1,0 +1,175 @@
+import { describe, it, expect } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CartLineItem } from '@/lib/delivery/create-order'
+import { readOrderInfo, writeOrderInfo, clearStaleFeeQuote, buildOrderStateSummary, type OrderInfo } from './order-state'
+
+function fakeDb(row: { ai_cart?: unknown; ai_order_info?: unknown }) {
+  let current = { ai_cart: row.ai_cart, ai_order_info: row.ai_order_info }
+  const updates: Record<string, unknown>[] = []
+  const db = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: current, error: null }),
+        }),
+      }),
+      update: (payload: Record<string, unknown>) => {
+        current = { ...current, ...payload }
+        updates.push(payload)
+        return { eq: () => Promise.resolve({ error: null }) }
+      },
+    }),
+  } as unknown as SupabaseClient
+  return { db, updates, getCurrent: () => current }
+}
+
+describe('readOrderInfo', () => {
+  it('returns all-null defaults when the column is empty ({})', async () => {
+    const { db } = fakeDb({ ai_order_info: {} })
+    expect(await readOrderInfo(db, 'conv-1')).toEqual({
+      customerName: null,
+      isPickup: null,
+      deliveryAddress: null,
+      neighborhood: null,
+      paymentMethod: null,
+      paymentNotes: null,
+      lastFeeQuote: null,
+    })
+  })
+
+  it('returns defaults when the column is malformed (not an object) — same discipline as readCart', async () => {
+    // A jsonb column can hold ANY JSON value — a string, a number, an
+    // array — never trust it's the shape the app wrote without a guard.
+    const { db } = fakeDb({ ai_order_info: '[]' })
+    expect((await readOrderInfo(db, 'conv-1')).customerName).toBeNull()
+  })
+
+  it('returns defaults when the row itself has no ai_order_info at all', async () => {
+    const { db } = fakeDb({})
+    expect((await readOrderInfo(db, 'conv-1')).customerName).toBeNull()
+  })
+
+  it('merges a partial stored object over the defaults', async () => {
+    const { db } = fakeDb({ ai_order_info: { customerName: 'Marcia' } })
+    const info = await readOrderInfo(db, 'conv-1')
+    expect(info.customerName).toBe('Marcia')
+    expect(info.deliveryAddress).toBeNull()
+  })
+})
+
+describe('writeOrderInfo', () => {
+  it('merges a patch into the existing stored value, leaving other fields untouched', async () => {
+    const { db, getCurrent } = fakeDb({ ai_order_info: { customerName: 'Marcia' } })
+    const merged = await writeOrderInfo(db, 'conv-1', { deliveryAddress: 'Rua X, 123' })
+    expect(merged).toMatchObject({ customerName: 'Marcia', deliveryAddress: 'Rua X, 123' })
+    expect((getCurrent().ai_order_info as OrderInfo).customerName).toBe('Marcia')
+  })
+
+  it('an explicit null clears a field, while an omitted (undefined) field leaves it alone', async () => {
+    const { db } = fakeDb({ ai_order_info: { customerName: 'Marcia', neighborhood: 'Centro' } })
+    const merged = await writeOrderInfo(db, 'conv-1', { customerName: null })
+    expect(merged.customerName).toBeNull()
+    expect(merged.neighborhood).toBe('Centro') // untouched
+  })
+})
+
+describe('clearStaleFeeQuote', () => {
+  it('clears only lastFeeQuote, keeping every other durable fact', async () => {
+    const { db, getCurrent } = fakeDb({
+      ai_order_info: {
+        customerName: 'Marcia',
+        deliveryAddress: 'Rua X, 123',
+        lastFeeQuote: { subtotal: 20, fee: 3, total: 23, address: 'Rua X, 123', resolvedAddress: null, quotedAt: 'now' },
+      },
+    })
+    await clearStaleFeeQuote(db, 'conv-1')
+    const info = getCurrent().ai_order_info as OrderInfo
+    expect(info.lastFeeQuote).toBeNull()
+    expect(info.customerName).toBe('Marcia')
+    expect(info.deliveryAddress).toBe('Rua X, 123')
+  })
+})
+
+describe('buildOrderStateSummary', () => {
+  it('returns null when there is nothing to show yet', async () => {
+    const { db } = fakeDb({ ai_cart: [], ai_order_info: {} })
+    expect(await buildOrderStateSummary(db, 'conv-1', 'BRL')).toBeNull()
+  })
+
+  it('formats the cart with subtotal, addons, and notes', async () => {
+    const cart: CartLineItem[] = [
+      {
+        product_id: 'p1',
+        product_name: 'Marmita P',
+        unit_price: 20,
+        quantity: 1,
+        addons: [],
+        notes: 'sem carne, com ovo frito',
+      },
+    ]
+    const { db } = fakeDb({ ai_cart: cart, ai_order_info: {} })
+    const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
+    expect(summary).toContain('1x Marmita P')
+    expect(summary).toContain('sem carne, com ovo frito')
+    expect(summary).toMatch(/subtotal.*20/i)
+  })
+
+  it('includes every known order-info field', async () => {
+    const { db } = fakeDb({
+      ai_cart: [],
+      ai_order_info: {
+        customerName: 'Marcia',
+        isPickup: false,
+        deliveryAddress: 'Rua X, 123',
+        neighborhood: 'Centro',
+        paymentMethod: 'dinheiro',
+        paymentNotes: 'troco para R$100',
+      },
+    })
+    const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
+    expect(summary).toContain('Marcia')
+    expect(summary).toContain('Rua X, 123')
+    expect(summary).toContain('Centro')
+    expect(summary).toContain('dinheiro')
+    expect(summary).toContain('troco para R$100')
+    expect(summary).toMatch(/delivery/i)
+  })
+
+  it('flags a fee quote as STALE when the address on file has since changed', async () => {
+    const { db } = fakeDb({
+      ai_cart: [],
+      ai_order_info: {
+        deliveryAddress: 'Rua Nova, 456',
+        lastFeeQuote: {
+          subtotal: 20,
+          fee: 3,
+          total: 23,
+          address: 'Rua Velha, 123',
+          resolvedAddress: null,
+          quotedAt: '2026-08-07T12:00:00.000Z',
+        },
+      },
+    })
+    const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
+    expect(summary).toMatch(/STALE/)
+  })
+
+  it('does not flag a fee quote as stale when the address matches', async () => {
+    const { db } = fakeDb({
+      ai_cart: [],
+      ai_order_info: {
+        deliveryAddress: 'Rua X, 123',
+        lastFeeQuote: {
+          subtotal: 20,
+          fee: 3,
+          total: 23,
+          address: 'Rua X, 123',
+          resolvedAddress: null,
+          quotedAt: '2026-08-07T12:00:00.000Z',
+        },
+      },
+    })
+    const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
+    expect(summary).not.toMatch(/STALE/)
+  })
+})

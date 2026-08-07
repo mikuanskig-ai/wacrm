@@ -25,6 +25,7 @@ import {
   addToCartTool,
   placeOrderTool,
   calculateDeliveryFeeTool,
+  updateOrderInfoTool,
   getAvailableTools,
 } from './delivery'
 
@@ -48,6 +49,10 @@ function makeDb(
      *  typing — for regression-testing readCart() against a corrupted
      *  (non-array) value already sitting in the column. */
     rawAiCart?: unknown
+    /** Seeds `conversations.ai_order_info` (order-state.ts) — the
+     *  customer-name/address/payment/last-quote object that lives
+     *  alongside the cart on the same row. */
+    orderInfo?: Record<string, unknown>
     products?: FakeProduct[]
     businessHours?: FakeBusinessHours | null
     /** Overrides the `delivery_fee_configs` row — keep the method
@@ -60,10 +65,12 @@ function makeDb(
 ) {
   let cart = opts.cart ?? []
   const hasRawOverride = 'rawAiCart' in opts
+  let orderInfo: Record<string, unknown> = opts.orderInfo ?? {}
   const products = opts.products ?? []
   const businessHours = opts.businessHours ?? null
   const feeConfig = opts.feeConfig ?? null
   const writes: CartLineItem[][] = []
+  const orderInfoWrites: Record<string, unknown>[] = []
 
   const db = {
     from: (table: string) => {
@@ -94,14 +101,28 @@ function makeDb(
             eq: () => ({
               maybeSingle: () =>
                 Promise.resolve({
-                  data: { ai_cart: hasRawOverride ? opts.rawAiCart : cart },
+                  data: {
+                    ai_cart: hasRawOverride ? opts.rawAiCart : cart,
+                    ai_order_info: orderInfo,
+                  },
                   error: null,
                 }),
             }),
           }),
-          update: (payload: { ai_cart: CartLineItem[] }) => {
-            cart = payload.ai_cart
-            writes.push(payload.ai_cart)
+          // A single mocked `conversations` row backs both `ai_cart`
+          // (readCart/writeCart) and `ai_order_info` (order-state.ts) —
+          // real code updates them independently (never both in the
+          // same call), so this only ever touches whichever key the
+          // payload actually has.
+          update: (payload: Record<string, unknown>) => {
+            if ('ai_cart' in payload) {
+              cart = payload.ai_cart as CartLineItem[]
+              writes.push(payload.ai_cart as CartLineItem[])
+            }
+            if ('ai_order_info' in payload) {
+              orderInfo = payload.ai_order_info as Record<string, unknown>
+              orderInfoWrites.push(orderInfo)
+            }
             return { eq: () => Promise.resolve({ error: null }) }
           },
         }
@@ -131,7 +152,7 @@ function makeDb(
     },
   } as unknown as SupabaseClient
 
-  return { db, writes, getCart: () => cart }
+  return { db, writes, getCart: () => cart, getOrderInfo: () => orderInfo, orderInfoWrites }
 }
 
 function ctxFor(db: SupabaseClient, overrides: Partial<ToolContext> = {}): ToolContext {
@@ -535,6 +556,86 @@ describe('placeOrderTool', () => {
     )
     expect(res.data).toMatchObject({ id: 'order-4', deliveryFee: 0 })
   })
+
+  it('falls back to name/address/is_pickup already recorded via update_order_info when the model omits them — regression, 2026-08-07', async () => {
+    // The model doesn't always re-pass something it already told the
+    // customer earlier in the conversation — without this fallback that
+    // info was silently lost right at the one step that most needed it.
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-5', total: 30, currency: 'BRL' })
+    const { db } = makeDb({
+      cart,
+      businessHours: null,
+      orderInfo: { customerName: 'Marcia', deliveryAddress: 'Rua Presidente Kennedy 183, Centro', isPickup: false },
+    })
+    const res = await placeOrderTool.execute({}, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        customerName: 'Marcia',
+        deliveryAddress: 'Rua Presidente Kennedy 183, Centro',
+      }),
+    )
+    expect(res.data).toMatchObject({ id: 'order-5' })
+  })
+
+  it('an explicit arg overrides what was previously recorded — the customer may have changed their mind', async () => {
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-6', total: 30, currency: 'BRL' })
+    const { db } = makeDb({
+      cart,
+      businessHours: null,
+      orderInfo: { customerName: 'Marcia', deliveryAddress: 'Old address', isPickup: false },
+    })
+    await placeOrderTool.execute({ customer_name: 'Rodrigo', delivery_address: 'New address' }, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ customerName: 'Rodrigo', deliveryAddress: 'New address' }),
+    )
+  })
+
+  it('clears the stale fee quote after placing, but keeps durable customer facts', async () => {
+    // The quote is tied to the cart that just got cleared — carrying it
+    // forward would show a stale total for whatever this customer
+    // orders next. Name/address/payment method are still true, though.
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-7', total: 30, currency: 'BRL' })
+    const { db, getOrderInfo } = makeDb({
+      cart,
+      businessHours: null,
+      orderInfo: {
+        customerName: 'Marcia',
+        deliveryAddress: 'Rua X, 123',
+        isPickup: false,
+        lastFeeQuote: { subtotal: 30, fee: 5, total: 35, address: 'Rua X, 123', resolvedAddress: null, quotedAt: '2026-08-07T12:00:00.000Z' },
+      },
+    })
+    await placeOrderTool.execute({}, ctxFor(db))
+    expect(getOrderInfo()).toMatchObject({ customerName: 'Marcia', deliveryAddress: 'Rua X, 123', lastFeeQuote: null })
+  })
+})
+
+describe('updateOrderInfoTool', () => {
+  it('records only the fields passed, leaving the rest untouched', async () => {
+    const { db, getOrderInfo } = makeDb({ orderInfo: { customerName: 'Marcia' } })
+    const res = await updateOrderInfoTool.execute({ delivery_address: 'Rua X, 123', neighborhood: 'Centro' }, ctxFor(db))
+    expect(getOrderInfo()).toMatchObject({
+      customerName: 'Marcia',
+      deliveryAddress: 'Rua X, 123',
+      neighborhood: 'Centro',
+    })
+    expect(res.content).toMatch(/noted/i)
+  })
+
+  it('records is_pickup: false correctly — not just truthy/falsy on the field being present', async () => {
+    const { db, getOrderInfo } = makeDb({})
+    await updateOrderInfoTool.execute({ is_pickup: false }, ctxFor(db))
+    expect(getOrderInfo()).toMatchObject({ isPickup: false })
+  })
+
+  it('rejects a call with no fields at all rather than silently no-op writing', async () => {
+    const { db, orderInfoWrites } = makeDb({})
+    const res = await updateOrderInfoTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/nothing to update/i)
+    expect(orderInfoWrites).toHaveLength(0)
+  })
 })
 
 describe('calculateDeliveryFeeTool', () => {
@@ -619,6 +720,46 @@ describe('calculateDeliveryFeeTool', () => {
     const res = await calculateDeliveryFeeTool.execute({}, ctxFor(db))
     expect(res.content).toMatch(/missing address/i)
   })
+
+  it('persists the address, neighborhood, and fee quote into order state on success — regression, 2026-08-07', async () => {
+    // So the NEXT turn's injected order-state summary already shows
+    // this quote, instead of the model having to remember it said this
+    // or recalculate just to relay the same number in the order
+    // summary. See order-state.ts.
+    const { db, getOrderInfo } = makeDb({
+      cart: [],
+      feeConfig: {
+        delivery_method: 'neighborhood',
+        max_distance: null,
+        free_shipping_above: null,
+        origin_lat: null,
+        origin_lng: null,
+        settings: { neighborhoods: [{ id: 'n1', name: 'Centro', price: 3 }] },
+      },
+    })
+    await calculateDeliveryFeeTool.execute(
+      { address: 'Rua Presidente Kennedy 183, Centro', neighborhood: 'Centro' },
+      ctxFor(db),
+    )
+    const info = getOrderInfo() as {
+      deliveryAddress: string
+      neighborhood: string
+      lastFeeQuote: { fee: number; total: number; address: string }
+    }
+    expect(info.deliveryAddress).toBe('Rua Presidente Kennedy 183, Centro')
+    expect(info.neighborhood).toBe('Centro')
+    expect(info.lastFeeQuote).toMatchObject({ fee: 3, total: 3, address: 'Rua Presidente Kennedy 183, Centro' })
+  })
+
+  it('does not overwrite a previously known neighborhood when this call only gave an address', async () => {
+    const { db, getOrderInfo } = makeDb({
+      cart: [],
+      orderInfo: { neighborhood: 'Centro' },
+      feeConfig: { delivery_method: 'fixed', max_distance: null, free_shipping_above: null, origin_lat: null, origin_lng: null, settings: { fixed_price: 5 } },
+    })
+    await calculateDeliveryFeeTool.execute({ address: 'Rua X, 123' }, ctxFor(db))
+    expect((getOrderInfo() as { neighborhood: string }).neighborhood).toBe('Centro')
+  })
 })
 
 describe('getAvailableTools', () => {
@@ -648,7 +789,7 @@ describe('getAvailableTools', () => {
     ).toEqual([])
   })
 
-  it('returns all six tools for live chat once tools_enabled is on', () => {
+  it('returns all seven tools for live chat once tools_enabled is on', () => {
     const tools = getAvailableTools({
       accountHasDeliveryModule: true,
       toolsEnabled: true,
@@ -660,6 +801,7 @@ describe('getAvailableTools', () => {
       'get_product_details',
       'place_order',
       'search_menu',
+      'update_order_info',
       'view_cart',
     ])
   })

@@ -130,8 +130,19 @@ export function buildSystemPrompt(args: {
    *  path (accounts wanting that already have the Flow-based
    *  `order_summary` node). */
   toolsActive?: boolean
+  /** Ground-truth summary of what this conversation's order already
+   *  has established (cart, name, address, payment, last fee quote) —
+   *  see `buildOrderStateSummary` (order-state.ts). Injected as fact,
+   *  not something the model has to notice or go fetch: this is the
+   *  fix for the model having no memory of its own earlier tool calls,
+   *  which was the root cause behind cart duplication, re-asking known
+   *  info, and a hallucinated order-summary total (all confirmed live
+   *  2026-08-06/07). Only meaningful alongside `toolsActive` — pass
+   *  null/omit when there's nothing yet, or outside the delivery tool
+   *  flow (Playground has no real conversation row to summarize). */
+  orderState?: string | null
 }): string {
-  const { userPrompt, mode, knowledge, toolsActive } = args
+  const { userPrompt, mode, knowledge, toolsActive, orderState } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -172,8 +183,20 @@ export function buildSystemPrompt(args: {
         '"[Customer shared their location] latitude=..., longitude=...". Use those exact numbers with calculate_delivery_fee\'s latitude/longitude ' +
         'parameters — do not ask them to type an address instead, and do not ask them to resend it in a different format. calculate_delivery_fee may ' +
         'answer with a Resolved address for that location — always read it back to the customer and get an explicit "yes, that\'s correct" before ' +
-        'using it in place_order; never place an order against a resolved address the customer has not confirmed.',
+        'using it in place_order; never place an order against a resolved address the customer has not confirmed. ' +
+        'Whenever the customer tells you their name, whether it\'s pickup or delivery, their address/neighbourhood, or how they\'re paying, call ' +
+        'update_order_info with it right away — it gets saved and handed back to you automatically at the top of every future turn (see "Order so ' +
+        'far" below, when present), so you stop needing to re-ask or re-derive it from scrolling back through the conversation.',
     )
+    if (orderState) {
+      parts.push(
+        'Order so far in this conversation (ground truth, not a suggestion) — never ask the customer again for anything listed here, and never ' +
+          'recompute or restate a number differently from what\'s shown here:\n' +
+          orderState +
+          '\nIf something above is marked STALE, or the customer states a change (a different address, a different item), treat only that ' +
+          'specific thing as needing a fresh tool call — everything else listed still holds.',
+      )
+    }
   }
 
   if (userPrompt && userPrompt.trim()) {

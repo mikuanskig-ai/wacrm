@@ -11,6 +11,7 @@ import { engineSendText } from '@/lib/flows/meta-send'
 import { getAccountCurrency } from '@/lib/flows/engine'
 import { getEnabledModules, hasModule } from '@/lib/accounts/modules'
 import { getAvailableTools, type PlacedOrderPayload } from './tools/delivery'
+import { buildOrderStateSummary, readOrderInfo } from './order-state'
 import type { ToolContext } from './tools/types'
 import { formatCurrency } from '@/lib/currency'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -220,11 +221,13 @@ export async function dispatchInboundToAiReply(
         currency,
         allowSideEffects: true,
       }
+      const orderState = await buildOrderStateSummary(db, conversationId, currency)
       const systemPrompt = buildSystemPrompt({
         userPrompt: config.systemPrompt,
         mode: 'auto_reply',
         knowledge,
         toolsActive: true,
+        orderState,
       })
       try {
         const result = await generateReplyWithTools({
@@ -329,20 +332,29 @@ export async function dispatchInboundToAiReply(
         replyCount: conv.ai_reply_count ?? 0,
         reason: providerErrored ? 'provider_error' : undefined,
       })
+      // Same reasoning for both resets below: don't resume something
+      // stale if this conversation gets re-enabled for AI later.
+      //   - ai_cart MUST be a real array, not the string '[]' —
+      //     confirmed live (2026-08-06): passing the string here made
+      //     Supabase store `ai_cart` as a JSON STRING, not a JSON array.
+      //     Every conversation that had ever been handed off once, then
+      //     re-enabled ("Retomar IA") and continued ordering, permanently
+      //     crashed on `cart.reduce is not a function` the moment any
+      //     tool touched the cart again — readCart() handed that string
+      //     straight back out, cast (not validated) as CartLineItem[].
+      //   - lastFeeQuote is tied to the cart just reset above (prices/
+      //     availability may have changed by resume time) — everything
+      //     else in order state (name, address, payment method) is left
+      //     alone, still true regardless of who's handling the thread.
+      //     One read-merge-write here, not a second separate update
+      //     call, so this stays the single write to `conversations`
+      //     this branch makes.
+      const orderInfo = await readOrderInfo(db, conversationId)
       const update: Record<string, unknown> = {
         ai_autoreply_disabled: true,
         ai_handoff_summary: summary,
-        // Don't resume a stale cart if this conversation gets
-        // re-enabled for AI later — prices/availability may have
-        // changed by then. MUST be a real array, not the string '[]' —
-        // confirmed live (2026-08-06): passing the string here made
-        // Supabase store `ai_cart` as a JSON STRING, not a JSON array.
-        // Every conversation that had ever been handed off once, then
-        // re-enabled ("Retomar IA") and continued ordering, permanently
-        // crashed on `cart.reduce is not a function` the moment any
-        // tool touched the cart again — readCart() handed that string
-        // straight back out, cast (not validated) as CartLineItem[].
         ai_cart: [],
+        ai_order_info: { ...orderInfo, lastFeeQuote: null },
       }
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.

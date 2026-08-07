@@ -13,6 +13,7 @@ import { AiError } from '@/lib/ai/types'
 import { getAccountCurrency } from '@/lib/flows/engine'
 import { getEnabledModules, hasModule } from '@/lib/accounts/modules'
 import { getAvailableTools } from '@/lib/ai/tools/delivery'
+import { buildOrderStateSummary } from '@/lib/ai/order-state'
 import type { ToolContext } from '@/lib/ai/tools/types'
 
 /**
@@ -112,23 +113,31 @@ export async function POST(request: Request) {
       allowSideEffects: false,
     })
 
+    // Read-only here (draft never mutates) — but still surfaced so the
+    // agent's draft reflects what the customer already told the bot
+    // (name, address, a prior fee quote) instead of the model having to
+    // re-derive it from the transcript. See order-state.ts.
+    const currency = tools.length > 0 ? await getAccountCurrency(supabase, accountId) : null
+    const orderState =
+      tools.length > 0 ? await buildOrderStateSummary(supabase, conversationId, currency!) : null
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'draft',
       knowledge,
       toolsActive: tools.length > 0,
+      orderState,
     })
 
     let text: string
     let usage: Awaited<ReturnType<typeof generateReply>>['usage']
     if (tools.length > 0) {
-      const currency = await getAccountCurrency(supabase, accountId)
       const toolContext: ToolContext = {
         db: supabase,
         accountId,
         conversationId,
         contactId: (conversation as { contact_id: string | null }).contact_id,
-        currency,
+        currency: currency!,
         allowSideEffects: false,
       }
       const result = await generateReplyWithTools({

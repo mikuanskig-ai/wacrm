@@ -38,6 +38,7 @@ import { formatCurrency } from '@/lib/currency'
 import { getBusinessHours, isWithinBusinessHours, closedMessage } from '@/lib/delivery/business-hours'
 import { effectivePrice, type DayPriceOverrides } from '@/lib/delivery/day-price'
 import { calculateDeliveryFeeForAccount, type DeliveryFeeFailureReason } from '@/lib/delivery/fee-engine'
+import { readOrderInfo, writeOrderInfo, clearStaleFeeQuote, type OrderInfo } from '@/lib/ai/order-state'
 import type { ToolDefinition } from './types'
 
 /** Model-facing explanation for a failed fee calculation — tells the
@@ -424,6 +425,27 @@ export const calculateDeliveryFeeTool: ToolDefinition = {
     // — see the description above for why this must be read back to
     // the customer, not silently trusted.
     const addressNote = result.resolvedLabel ? `Resolved address: ${result.resolvedLabel}. ` : ''
+
+    // Persisted so the NEXT turn's injected order-state summary already
+    // shows this quote — the model doesn't have to remember it said
+    // this, or recalculate just to relay the same number again in the
+    // order summary. `undefined` (not `null`) for anything not given
+    // this call, so a neighborhood learned earlier via update_order_info
+    // isn't clobbered by an address-only call. See order-state.ts.
+    const quotedAddress = address.trim() || (location ? `${location.lat},${location.lng}` : null)
+    await writeOrderInfo(ctx.db, ctx.conversationId, {
+      deliveryAddress: address.trim() || undefined,
+      neighborhood: neighborhood || undefined,
+      lastFeeQuote: {
+        subtotal,
+        fee: result.fee,
+        total,
+        address: quotedAddress,
+        resolvedAddress: result.resolvedLabel,
+        quotedAt: new Date().toISOString(),
+      },
+    })
+
     return {
       content:
         addressNote +
@@ -448,7 +470,8 @@ export interface PlacedOrderPayload {
 export const placeOrderTool: ToolDefinition = {
   name: 'place_order',
   description:
-    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation. Set is_pickup to true when the customer is picking the order up themselves (no delivery address needed, no delivery fee) — never leave delivery_address empty for a real delivery order.',
+    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation. Set is_pickup to true when the customer is picking the order up themselves (no delivery address needed, no delivery fee) — never leave delivery_address empty for a real delivery order. ' +
+    'Any field you omit here falls back to what update_order_info or calculate_delivery_fee already recorded earlier in this conversation (shown in the order-state summary) — you do not need to repeat information you already captured, only pass a field again if it changed.',
   parameters: {
     type: 'object',
     properties: {
@@ -477,8 +500,22 @@ export const placeOrderTool: ToolDefinition = {
       return { content: closedMessage(businessHours.hours) }
     }
 
-    const isPickup = args.is_pickup === true
-    const deliveryAddress = typeof args.delivery_address === 'string' ? args.delivery_address : null
+    // Falls back to whatever update_order_info/calculate_delivery_fee
+    // already captured this conversation — the model doesn't always
+    // re-pass something it already told the customer earlier, and
+    // without this fallback that info was silently lost right at the
+    // one step that most needed it. Explicit args always win when given
+    // (the customer may have changed their mind since).
+    const orderInfo = await readOrderInfo(ctx.db, ctx.conversationId)
+    const isPickup = typeof args.is_pickup === 'boolean' ? args.is_pickup : orderInfo.isPickup === true
+    const deliveryAddress =
+      typeof args.delivery_address === 'string' && args.delivery_address.trim()
+        ? args.delivery_address
+        : orderInfo.deliveryAddress
+    const customerName =
+      typeof args.customer_name === 'string' && args.customer_name.trim()
+        ? args.customer_name
+        : orderInfo.customerName
     if (!isPickup && !deliveryAddress?.trim()) {
       return {
         content:
@@ -520,10 +557,15 @@ export const placeOrderTool: ToolDefinition = {
       currency: ctx.currency,
       deliveryAddress: isPickup ? null : deliveryAddress,
       deliveryFee,
-      customerName: typeof args.customer_name === 'string' ? args.customer_name : null,
+      customerName,
       notes: typeof args.notes === 'string' ? args.notes : null,
     })
     await writeCart(ctx.db, ctx.conversationId, [])
+    // The quote is tied to the cart just cleared above — carrying it
+    // forward would show a stale total for whatever this customer
+    // orders next. Durable facts (name, address, payment method) are
+    // deliberately kept; see clearStaleFeeQuote's doc.
+    await clearStaleFeeQuote(ctx.db, ctx.conversationId)
 
     const payload: PlacedOrderPayload = {
       id: order.id,
@@ -538,6 +580,44 @@ export const placeOrderTool: ToolDefinition = {
       })),
     }
     return { content: `Order placed successfully (id ${order.id}).`, data: payload }
+  },
+}
+
+export const updateOrderInfoTool: ToolDefinition = {
+  name: 'update_order_info',
+  description:
+    "Record a piece of order information as soon as the customer gives it — their name, whether it's pickup or delivery, their address/neighbourhood, or payment method. This is saved and shown back to you automatically at the start of every future turn (as part of the order-state summary), so you never have to ask for it again or re-derive it from scrolling back through the conversation. Only pass the field(s) you actually just learned — anything you omit is left exactly as it was.",
+  parameters: {
+    type: 'object',
+    properties: {
+      customer_name: { type: 'string' },
+      is_pickup: { type: 'boolean', description: 'True for pickup (retirada), false for delivery.' },
+      delivery_address: { type: 'string' },
+      neighborhood: { type: 'string' },
+      payment_method: { type: 'string', description: 'e.g. "pix", "cartão", "dinheiro".' },
+      payment_notes: {
+        type: 'string',
+        description: 'Anything extra about payment, e.g. "troco para R$100".',
+      },
+    },
+    additionalProperties: false,
+  },
+  async execute(args, ctx) {
+    const patch: Partial<OrderInfo> = {}
+    if (typeof args.customer_name === 'string') patch.customerName = args.customer_name.trim() || null
+    if (typeof args.is_pickup === 'boolean') patch.isPickup = args.is_pickup
+    if (typeof args.delivery_address === 'string') {
+      patch.deliveryAddress = args.delivery_address.trim() || null
+    }
+    if (typeof args.neighborhood === 'string') patch.neighborhood = args.neighborhood.trim() || null
+    if (typeof args.payment_method === 'string') patch.paymentMethod = args.payment_method.trim() || null
+    if (typeof args.payment_notes === 'string') patch.paymentNotes = args.payment_notes.trim() || null
+
+    if (Object.keys(patch).length === 0) {
+      return { content: 'Nothing to update — pass at least one field (customer_name, is_pickup, delivery_address, neighborhood, payment_method, or payment_notes).' }
+    }
+    await writeOrderInfo(ctx.db, ctx.conversationId, patch)
+    return { content: 'Noted — saved for the rest of this conversation.' }
   },
 }
 
@@ -563,5 +643,6 @@ export function getAvailableTools(args: {
     calculateDeliveryFeeTool,
     addToCartTool,
     placeOrderTool,
+    updateOrderInfoTool,
   ]
 }
