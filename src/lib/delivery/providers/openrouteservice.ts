@@ -42,6 +42,7 @@ import {
   type GeocodeResult,
   type StructuredAddressParts,
 } from '../distance-provider'
+import { CachingDistanceProvider } from './caching-distance-provider'
 
 const GEOCODE_URL = 'https://api.openrouteservice.org/geocode/search'
 const GEOCODE_STRUCTURED_URL = 'https://api.openrouteservice.org/geocode/search/structured'
@@ -212,8 +213,13 @@ export class OpenRouteServiceProvider implements DistanceProvider {
 let cached: DistanceProvider | null = null
 
 /** Factory — today only OpenRouteService; swapping providers later is
- *  a new class + a branch here, the fee engine never changes. */
+ *  a new class + a branch here, the fee engine never changes. Wrapped
+ *  in the short-lived cache (caching-distance-provider.ts) — see that
+ *  file's header for why: a customer retrying the same address burns a
+ *  fresh ORS call every time otherwise, and that retry pattern is
+ *  exactly what exhausted the free-tier quota during heavy testing
+ *  (confirmed live 2026-08-07). */
 export function getDistanceProvider(): DistanceProvider {
-  if (!cached) cached = new OpenRouteServiceProvider()
+  if (!cached) cached = new CachingDistanceProvider(new OpenRouteServiceProvider())
   return cached
 }

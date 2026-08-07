@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { OpenRouteServiceProvider } from './openrouteservice'
+import { OpenRouteServiceProvider, getDistanceProvider } from './openrouteservice'
+import { CachingDistanceProvider } from './caching-distance-provider'
 import { DistanceProviderError } from '../distance-provider'
 
 function okResponse(body: unknown): Response {
@@ -220,6 +221,50 @@ describe('OpenRouteServiceProvider', () => {
     })
   })
 
+  describe('reverseGeocode', () => {
+    it('resolves coordinates to a label + neighbourhood, hitting the reverse endpoint', async () => {
+      fetchMock.mockResolvedValueOnce(
+        okResponse({
+          features: [
+            {
+              geometry: { coordinates: [-53.479192, -24.949824] },
+              properties: { neighbourhood: 'Centro', label: 'Rua X, 123, Pato Branco, PR, Brazil', layer: 'address' },
+            },
+          ],
+        }),
+      )
+
+      const provider = new OpenRouteServiceProvider()
+      const result = await provider.reverseGeocode({ lat: -24.949824, lng: -53.479192 })
+
+      expect(result).toEqual({
+        lat: -24.949824,
+        lng: -53.479192,
+        neighborhood: 'Centro',
+        label: 'Rua X, 123, Pato Branco, PR, Brazil',
+        layer: 'address',
+      })
+      const [url] = fetchMock.mock.calls[0]
+      const parsed = new URL(String(url))
+      expect(parsed.origin + parsed.pathname).toBe('https://api.openrouteservice.org/geocode/reverse')
+      expect(parsed.searchParams.get('point.lat')).toBe('-24.949824')
+      expect(parsed.searchParams.get('point.lon')).toBe('-53.479192')
+      expect(parsed.searchParams.get('boundary.country')).toBe('BR')
+    })
+
+    it('returns null when nothing is found nearby', async () => {
+      fetchMock.mockResolvedValueOnce(okResponse({ features: [] }))
+      const provider = new OpenRouteServiceProvider()
+      expect(await provider.reverseGeocode({ lat: 0, lng: 0 })).toBeNull()
+    })
+
+    it('throws DistanceProviderError on a non-2xx response', async () => {
+      fetchMock.mockResolvedValueOnce(new Response('', { status: 500 }))
+      const provider = new OpenRouteServiceProvider()
+      await expect(provider.reverseGeocode({ lat: 0, lng: 0 })).rejects.toThrow(DistanceProviderError)
+    })
+  })
+
   describe('calculateDistance', () => {
     it('posts both coordinates to the directions endpoint and converts meters to km', async () => {
       fetchMock.mockResolvedValueOnce(okResponse({ routes: [{ summary: { distance: 4200, duration: 600 } }] }))
@@ -261,6 +306,16 @@ describe('OpenRouteServiceProvider', () => {
       await expect(
         provider.calculateDistance({ lat: 0, lng: 0 }, { lat: 1, lng: 1 }),
       ).rejects.toThrow(DistanceProviderError)
+    })
+  })
+
+  describe('getDistanceProvider', () => {
+    it('wraps the real provider in the short-lived cache — see caching-distance-provider.ts', () => {
+      expect(getDistanceProvider()).toBeInstanceOf(CachingDistanceProvider)
+    })
+
+    it('returns the same instance on repeated calls (one shared cache, not one per request)', () => {
+      expect(getDistanceProvider()).toBe(getDistanceProvider())
     })
   })
 })
