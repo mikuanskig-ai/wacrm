@@ -52,11 +52,21 @@ export interface CalculateFeeArgs {
   /** Customer's free-text delivery address. Required whenever the
    *  config needs a distance (max_distance set, or method is
    *  distance_range/per_km) or when `neighborhoodName` is omitted for
-   *  the neighborhood method. */
+   *  the neighborhood method — unless `destinationLat`/`destinationLng`
+   *  are given instead. */
   address?: string | null
   /** Explicit neighbourhood pick (e.g. the customer chose one from a
    *  list) — skips the geocode-based auto-match entirely. */
   neighborhoodName?: string | null
+  /** Exact destination coordinates — e.g. from a shared WhatsApp
+   *  location pin. Strictly more accurate than any address-text
+   *  geocode (device GPS vs a street-level guess), so when both are
+   *  set this always wins over `address` and skips geocoding
+   *  entirely. Doesn't help the `neighborhood` method without an
+   *  explicit `neighborhoodName` — matching a name from coordinates
+   *  alone would need reverse geocoding, which this doesn't do. */
+  destinationLat?: number | null
+  destinationLng?: number | null
   subtotal: number
 }
 
@@ -160,14 +170,23 @@ export async function calculateDeliveryFee(
 ): Promise<DeliveryFeeResult> {
   const needsDistance =
     config.maxDistance != null || config.method === 'distance_range' || config.method === 'per_km'
+  const hasExactCoords = args.destinationLat != null && args.destinationLng != null
   const needsGeocode =
-    needsDistance || (config.method === 'neighborhood' && !args.neighborhoodName?.trim())
+    !hasExactCoords && (needsDistance || (config.method === 'neighborhood' && !args.neighborhoodName?.trim()))
 
   let distanceKm: number | null = null
   let geocodedNeighborhood: string | null = null
   let resolvedLabel: string | null = null
+  let destinationPoint: { lat: number; lng: number } | null = null
 
-  if (needsGeocode) {
+  if (hasExactCoords) {
+    // Ground-truth GPS — e.g. a shared WhatsApp location pin. Always
+    // wins over `address` when both are present and needs no geocode
+    // call at all: a device's own GPS is strictly more accurate than
+    // any text-address geocode could be.
+    destinationPoint = { lat: args.destinationLat as number, lng: args.destinationLng as number }
+    resolvedLabel = 'Shared WhatsApp location'
+  } else if (needsGeocode) {
     const address = args.address?.trim()
     if (!address) return { ok: false, reason: 'address_required' }
 
@@ -198,19 +217,21 @@ export async function calculateDeliveryFee(
     if (!destination) return { ok: false, reason: 'geocode_failed' }
     geocodedNeighborhood = destination.neighborhood
     resolvedLabel = destination.label
+    destinationPoint = { lat: destination.lat, lng: destination.lng }
+  }
 
-    if (needsDistance) {
-      if (config.originLat == null || config.originLng == null) {
-        return { ok: false, reason: 'origin_not_configured' }
-      }
-      try {
-        distanceKm = await provider.calculateDistance(
-          { lat: config.originLat, lng: config.originLng },
-          { lat: destination.lat, lng: destination.lng },
-        )
-      } catch {
-        return { ok: false, reason: 'geocode_failed' }
-      }
+  if (needsDistance) {
+    if (!destinationPoint) return { ok: false, reason: 'address_required' }
+    if (config.originLat == null || config.originLng == null) {
+      return { ok: false, reason: 'origin_not_configured' }
+    }
+    try {
+      distanceKm = await provider.calculateDistance(
+        { lat: config.originLat, lng: config.originLng },
+        destinationPoint,
+      )
+    } catch {
+      return { ok: false, reason: 'geocode_failed' }
     }
   }
 

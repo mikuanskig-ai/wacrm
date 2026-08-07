@@ -45,7 +45,7 @@ import type { ToolDefinition } from './types'
 function describeFeeFailure(reason: DeliveryFeeFailureReason): string {
   switch (reason) {
     case 'address_required':
-      return 'A delivery address is required to calculate the fee. Ask the customer for their full delivery address.'
+      return 'A delivery address is required to calculate the fee. Ask the customer for their full delivery address, or ask them to share their location pin in WhatsApp instead.'
     case 'origin_not_configured':
       return "This account hasn't configured a delivery origin address yet — a staff member needs to set this up in Settings before delivery orders can be placed."
     case 'geocode_failed':
@@ -70,6 +70,47 @@ async function readCart(db: SupabaseClient, conversationId: string): Promise<Car
 
 async function writeCart(db: SupabaseClient, conversationId: string, cart: CartLineItem[]): Promise<void> {
   await db.from('conversations').update({ ai_cart: cart }).eq('id', conversationId)
+}
+
+// A shared WhatsApp location pin always ends up as the last ` - `-
+// joined segment of the message's content_text — "lat,lng" — even
+// when the pin has no saved name/address (see parseWuzapiEvent in
+// the webhook route). This is the one place that format gets read
+// back out.
+const LOCATION_COORDS_RE = /(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)\s*$/
+
+function parseSharedLocation(text: string | null): { lat: number; lng: number } | null {
+  if (!text) return null
+  const match = LOCATION_COORDS_RE.exec(text.trim())
+  if (!match) return null
+  const lat = Number(match[1])
+  const lng = Number(match[2])
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null
+}
+
+/** The customer's most recent message, when it was a shared WhatsApp
+ *  location pin — GPS is strictly more accurate than any address text
+ *  could be (see fee-engine.ts's destinationLat/destinationLng), so
+ *  calculate_delivery_fee/place_order prefer it over making the model
+ *  turn raw coordinates into a fake street address. Only the LATEST
+ *  customer message counts — not "any location ever shared in this
+ *  conversation" — so a text address given afterward correctly takes
+ *  over instead of a stale pin winning forever. */
+async function mostRecentSharedLocation(
+  db: SupabaseClient,
+  conversationId: string,
+): Promise<{ lat: number; lng: number } | null> {
+  const { data } = await db
+    .from('messages')
+    .select('content_type, content_text')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const row = data as { content_type: string; content_text: string | null } | null
+  if (!row || row.content_type !== 'location') return null
+  return parseSharedLocation(row.content_text)
 }
 
 export const searchMenuTool: ToolDefinition = {
@@ -277,23 +318,35 @@ export const addToCartTool: ToolDefinition = {
 export const calculateDeliveryFeeTool: ToolDefinition = {
   name: 'calculate_delivery_fee',
   description:
-    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change.",
+    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change. If the customer's last message was a shared WhatsApp location (a GPS pin, not text), you don't need to ask for a street address at all — this tool detects it and uses the exact coordinates automatically; just call it (address can be omitted).",
   parameters: {
     type: 'object',
     properties: {
-      address: { type: 'string', description: "The customer's full delivery address." },
+      address: {
+        type: 'string',
+        description: "The customer's full delivery address. Omit if their last message was a shared location pin.",
+      },
     },
-    required: ['address'],
     additionalProperties: false,
   },
   async execute(args, ctx) {
     const address = typeof args.address === 'string' ? args.address : ''
-    if (!address.trim()) return { content: 'Missing address — ask the customer for their delivery address first.' }
+    const sharedLocation = await mostRecentSharedLocation(ctx.db, ctx.conversationId)
+    if (!sharedLocation && !address.trim()) {
+      return {
+        content: 'Missing address — ask the customer for their delivery address, or ask them to share their location pin in WhatsApp.',
+      }
+    }
 
     const cart = await readCart(ctx.db, ctx.conversationId)
     const { subtotal } = computeCartTotal(cart)
 
-    const result = await calculateDeliveryFeeForAccount(ctx.db, ctx.accountId, { address, subtotal })
+    const result = await calculateDeliveryFeeForAccount(ctx.db, ctx.accountId, {
+      address: sharedLocation ? undefined : address,
+      destinationLat: sharedLocation?.lat,
+      destinationLng: sharedLocation?.lng,
+      subtotal,
+    })
     if (!result.ok) return { content: describeFeeFailure(result.reason) }
 
     const freeNote = result.freeShipping ? ' (free shipping applied)' : ''
@@ -315,7 +368,7 @@ export interface PlacedOrderPayload {
 export const placeOrderTool: ToolDefinition = {
   name: 'place_order',
   description:
-    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation.',
+    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation. delivery_address can be omitted if the customer shared a WhatsApp location pin instead — it is picked up automatically.',
   parameters: {
     type: 'object',
     properties: {
@@ -340,16 +393,28 @@ export const placeOrderTool: ToolDefinition = {
     }
 
     const deliveryAddress = typeof args.delivery_address === 'string' ? args.delivery_address : null
+    const sharedLocation = await mostRecentSharedLocation(ctx.db, ctx.conversationId)
 
     // Regra 4 — the model never invents a fee, even if it already
     // called calculate_delivery_fee earlier: this is the mandatory,
     // final calculation right before the order is created.
     const { subtotal } = computeCartTotal(cart)
     const feeResult = await calculateDeliveryFeeForAccount(ctx.db, ctx.accountId, {
-      address: deliveryAddress,
+      address: sharedLocation ? undefined : deliveryAddress,
+      destinationLat: sharedLocation?.lat,
+      destinationLng: sharedLocation?.lng,
       subtotal,
     })
     if (!feeResult.ok) return { content: describeFeeFailure(feeResult.reason) }
+
+    // A driver can't navigate off bare "lat,lng" digits on a printed
+    // ticket — when the customer never gave a text address at all
+    // (pin only), store a tappable Maps link instead of nothing, so
+    // the order stays actually deliverable. Any text the customer did
+    // give (even alongside a pin) always wins.
+    const storedAddress =
+      deliveryAddress?.trim() ||
+      (sharedLocation ? `https://www.google.com/maps?q=${sharedLocation.lat},${sharedLocation.lng}` : null)
 
     const order = await finalizeDeliveryOrder(ctx.db, {
       accountId: ctx.accountId,
@@ -358,7 +423,7 @@ export const placeOrderTool: ToolDefinition = {
       source: 'ai_chat',
       cart,
       currency: ctx.currency,
-      deliveryAddress,
+      deliveryAddress: storedAddress,
       deliveryFee: feeResult.fee,
       customerName: typeof args.customer_name === 'string' ? args.customer_name : null,
       notes: typeof args.notes === 'string' ? args.notes : null,

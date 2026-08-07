@@ -23,6 +23,7 @@ import {
   getProductDetailsTool,
   viewCartTool,
   addToCartTool,
+  calculateDeliveryFeeTool,
   placeOrderTool,
   getAvailableTools,
 } from './delivery'
@@ -45,15 +46,28 @@ function makeDb(
     cart?: CartLineItem[]
     products?: FakeProduct[]
     businessHours?: FakeBusinessHours | null
+    /** The customer's most recent message — feeds mostRecentSharedLocation. */
+    lastCustomerMessage?: { content_type: string; content_text: string | null } | null
   } = {},
 ) {
   let cart = opts.cart ?? []
   const products = opts.products ?? []
   const businessHours = opts.businessHours ?? null
+  const lastCustomerMessage = opts.lastCustomerMessage ?? null
   const writes: CartLineItem[][] = []
 
   const db = {
     from: (table: string) => {
+      if (table === 'messages') {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: () => Promise.resolve({ data: lastCustomerMessage, error: null }),
+        }
+        return chain
+      }
       if (table === 'delivery_business_hours') {
         return {
           select: () => ({
@@ -327,6 +341,31 @@ describe('addToCartTool', () => {
   })
 })
 
+describe('calculateDeliveryFeeTool', () => {
+  it('requires an address when nothing was shared', async () => {
+    const { db } = makeDb({})
+    const res = await calculateDeliveryFeeTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/missing address/i)
+  })
+
+  it('does not require an address when the customer\'s last message was a shared location pin', async () => {
+    const { db } = makeDb({
+      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+    })
+    const res = await calculateDeliveryFeeTool.execute({}, ctxFor(db))
+    expect(res.content).not.toMatch(/missing address/i)
+    expect(res.content).toMatch(/delivery fee/i)
+  })
+
+  it('ignores a shared location that is not the customer\'s most recent message type', async () => {
+    const { db } = makeDb({
+      lastCustomerMessage: { content_type: 'text', content_text: 'oi' },
+    })
+    const res = await calculateDeliveryFeeTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/missing address/i)
+  })
+})
+
 describe('placeOrderTool', () => {
   it('refuses to place an order from an empty cart', async () => {
     const { db } = makeDb({ cart: [] })
@@ -349,6 +388,42 @@ describe('placeOrderTool', () => {
     )
     expect(writes[writes.length - 1]).toEqual([]) // cart cleared
     expect(res.data).toMatchObject({ id: 'order-1', total: 30, currency: 'BRL' })
+  })
+
+  it('stores a tappable Maps link when only a location pin was shared, never bare digits', async () => {
+    const cart: CartLineItem[] = [
+      { product_id: 'p1', product_name: 'Pizza', unit_price: 30, quantity: 1, addons: [] },
+    ]
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-loc', total: 30, currency: 'BRL' })
+    const { db } = makeDb({
+      cart,
+      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+    })
+    await placeOrderTool.execute({}, ctxFor(db))
+
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        deliveryAddress: 'https://www.google.com/maps?q=-24.9532935,-53.4699534',
+      }),
+    )
+  })
+
+  it('keeps a customer-given text address over a shared location, when both are present', async () => {
+    const cart: CartLineItem[] = [
+      { product_id: 'p1', product_name: 'Pizza', unit_price: 30, quantity: 1, addons: [] },
+    ]
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-both', total: 30, currency: 'BRL' })
+    const { db } = makeDb({
+      cart,
+      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+    })
+    await placeOrderTool.execute({ delivery_address: 'Portão azul, fundos' }, ctxFor(db))
+
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ deliveryAddress: 'Portão azul, fundos' }),
+    )
   })
 
   const cart: CartLineItem[] = [

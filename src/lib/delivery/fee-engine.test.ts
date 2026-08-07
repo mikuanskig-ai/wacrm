@@ -333,6 +333,98 @@ describe('calculateDeliveryFee — global rules', () => {
   })
 })
 
+describe('calculateDeliveryFee — exact coordinates (e.g. a shared WhatsApp location pin)', () => {
+  it('skips geocoding entirely when destinationLat/Lng are given', async () => {
+    const config: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'per_km',
+      settings: { base_price: 4, price_per_km: 1.5 },
+    }
+    const provider = fakeProvider({ calculateDistance: vi.fn(async () => 6) })
+    const result = await calculateDeliveryFee(
+      config,
+      { destinationLat: -24.95, destinationLng: -53.46, subtotal: 30 },
+      provider,
+    )
+    expect(provider.geocode).not.toHaveBeenCalled()
+    expect(provider.calculateDistance).toHaveBeenCalledWith(
+      { lat: -23.5, lng: -46.6 },
+      { lat: -24.95, lng: -53.46 },
+    )
+    expect(result).toEqual({
+      ok: true,
+      fee: 13,
+      distanceKm: 6,
+      resolvedLabel: 'Shared WhatsApp location',
+      freeShipping: false,
+      method: 'per_km',
+    })
+  })
+
+  it('coordinates win over a text address when both are given', async () => {
+    const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km' }
+    const provider = fakeProvider({ calculateDistance: vi.fn(async () => 6) })
+    await calculateDeliveryFee(
+      config,
+      { address: 'Rua X, 100', destinationLat: -24.95, destinationLng: -53.46, subtotal: 30 },
+      provider,
+    )
+    expect(provider.geocode).not.toHaveBeenCalled()
+  })
+
+  it('still honors max_distance out_of_range with exact coordinates', async () => {
+    const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'fixed', maxDistance: 5 }
+    const provider = fakeProvider({ calculateDistance: vi.fn(async () => 6) })
+    const result = await calculateDeliveryFee(
+      config,
+      { destinationLat: -24.95, destinationLng: -53.46, subtotal: 30 },
+      provider,
+    )
+    expect(result).toEqual({ ok: false, reason: 'out_of_range' })
+  })
+
+  it('fails with origin_not_configured when the account has no origin set, even with exact coordinates', async () => {
+    const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km', originLat: null, originLng: null }
+    const provider = fakeProvider()
+    const result = await calculateDeliveryFee(
+      config,
+      { destinationLat: -24.95, destinationLng: -53.46, subtotal: 30 },
+      provider,
+    )
+    expect(result).toEqual({ ok: false, reason: 'origin_not_configured' })
+  })
+
+  it('cannot resolve the neighborhood method from coordinates alone (no reverse geocoding) — needs an explicit neighborhoodName', async () => {
+    const config: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'neighborhood',
+      settings: { neighborhoods: [{ id: '1', name: 'Centro', price: 5 }] },
+    }
+    const provider = fakeProvider()
+    const withoutName = await calculateDeliveryFee(
+      config,
+      { destinationLat: -24.95, destinationLng: -53.46, subtotal: 30 },
+      provider,
+    )
+    expect(withoutName).toEqual({ ok: false, reason: 'neighborhood_not_found' })
+    expect(provider.geocode).not.toHaveBeenCalled()
+
+    const withName = await calculateDeliveryFee(
+      config,
+      { destinationLat: -24.95, destinationLng: -53.46, neighborhoodName: 'Centro', subtotal: 30 },
+      provider,
+    )
+    expect(withName).toEqual({
+      ok: true,
+      fee: 5,
+      distanceKm: null,
+      resolvedLabel: 'Shared WhatsApp location',
+      freeShipping: false,
+      method: 'neighborhood',
+    })
+  })
+})
+
 describe('getDeliveryFeeConfig', () => {
   function fakeDb(row: unknown) {
     return {
