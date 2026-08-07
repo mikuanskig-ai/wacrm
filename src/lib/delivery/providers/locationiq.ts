@@ -44,6 +44,27 @@ function apiKey(): string {
   return key
 }
 
+/** Retries once (short backoff) on 429 and — confirmed live 2026-08-07
+ *  — 400: LocationIQ's free tier caps concurrent/per-second throughput
+ *  tighter than its 5,000/day headline number suggests, and under
+ *  concurrent load from this app it was observed returning 400 rather
+ *  than 429 for what a burst-replay proved was the exact same
+ *  transient overload (two test conversations resolving the identical
+ *  address within the same second). The `CachingDistanceProvider`
+ *  wrapping this (openrouteservice.ts's getDistanceProvider) already
+ *  de-duplicates truly concurrent identical requests — this is the
+ *  complementary defense for concurrent DIFFERENT requests (different
+ *  customers, different addresses) that don't share a cache key but
+ *  still collide on the same per-second cap. A single retry is enough
+ *  to absorb that; a real 400 (malformed input) fails identically on
+ *  the retry and still surfaces as an error, just ~300ms later. */
+async function fetchWithRetry(url: string): Promise<Response> {
+  const res = await fetch(url)
+  if (res.status !== 429 && res.status !== 400) return res
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  return fetch(url)
+}
+
 interface LocationIqAddress {
   suburb?: string
   neighbourhood?: string
@@ -112,7 +133,7 @@ export class LocationIqProvider implements DistanceProvider {
     url.searchParams.set('limit', '1')
     applyBoundingBox(url, options)
 
-    const res = await fetch(url.toString())
+    const res = await fetchWithRetry(url.toString())
     // LocationIQ answers "no match" as a 404 (unlike ORS's 200 + empty
     // features array) — treated the same way here: null, not an error.
     if (res.status === 404) return null
@@ -141,7 +162,7 @@ export class LocationIqProvider implements DistanceProvider {
     url.searchParams.set('limit', '1')
     applyBoundingBox(url, options)
 
-    const res = await fetch(url.toString())
+    const res = await fetchWithRetry(url.toString())
     if (res.status === 404) return null
     if (!res.ok) {
       throw new DistanceProviderError(`LocationIQ structured geocode failed with status ${res.status}`)
@@ -157,7 +178,7 @@ export class LocationIqProvider implements DistanceProvider {
     url.searchParams.set('lon', String(point.lng))
     url.searchParams.set('format', 'json')
 
-    const res = await fetch(url.toString())
+    const res = await fetchWithRetry(url.toString())
     if (res.status === 404) return null
     if (!res.ok) {
       throw new DistanceProviderError(`LocationIQ reverse geocode failed with status ${res.status}`)
@@ -176,7 +197,7 @@ export class LocationIqProvider implements DistanceProvider {
     url.searchParams.set('key', apiKey())
     url.searchParams.set('overview', 'false')
 
-    const res = await fetch(url.toString())
+    const res = await fetchWithRetry(url.toString())
     if (!res.ok) {
       throw new DistanceProviderError(`LocationIQ directions failed with status ${res.status}`)
     }

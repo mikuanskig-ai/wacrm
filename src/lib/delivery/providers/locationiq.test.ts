@@ -111,6 +111,42 @@ describe('LocationIqProvider', () => {
       fetchMock.mockResolvedValueOnce(new Response('', { status: 500 }))
       const provider = new LocationIqProvider()
       await expect(provider.geocode('Rua X, 123')).rejects.toThrow(DistanceProviderError)
+      // A plain 500 isn't retried — only 429/400 are (see fetchWithRetry).
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('retries once on a 429 and succeeds if the retry lands clean — regression, 2026-08-07', async () => {
+      // LocationIQ's free tier caps concurrent/per-second throughput
+      // tighter than its 5,000/day headline suggests — confirmed live
+      // right after switching from ORS: two test conversations
+      // resolving the identical address within the same second tripped
+      // this. A short retry absorbs a transient collision like that.
+      fetchMock
+        .mockResolvedValueOnce(new Response('', { status: 429 }))
+        .mockResolvedValueOnce(okResponse([{ lat: '-24.95', lon: '-53.48' }]))
+      const provider = new LocationIqProvider()
+      const result = await provider.geocode('Rua X, 123')
+      expect(result).toEqual({ lat: -24.95, lng: -53.48, neighborhood: null, label: null, layer: null })
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('retries once on a 400 too — confirmed live to be how LocationIQ surfaces the same overload under some concurrency shapes', async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response('', { status: 400 }))
+        .mockResolvedValueOnce(okResponse([{ lat: '-24.95', lon: '-53.48' }]))
+      const provider = new LocationIqProvider()
+      const result = await provider.geocode('Rua X, 123')
+      expect(result?.lat).toBe(-24.95)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('still throws if the retry also fails — a genuinely malformed request only costs one extra round-trip, not an infinite loop', async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response('', { status: 400 }))
+        .mockResolvedValueOnce(new Response('', { status: 400 }))
+      const provider = new LocationIqProvider()
+      await expect(provider.geocode('Rua X, 123')).rejects.toThrow(DistanceProviderError)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
     })
 
     it('throws DistanceProviderError when LOCATIONIQ_API_KEY is not configured', async () => {

@@ -10,12 +10,26 @@
 // address that resolves fine moments later. Caching identical lookups
 // for a few minutes turns a retry storm into one real API call.
 //
+// Also de-duplicates truly CONCURRENT identical lookups (in-flight
+// requests share one provider call, not one each) — the cache above
+// only protects sequential retries; two callers arriving before either
+// has finished both miss the cache the same way one would. Confirmed
+// live (2026-08-07, right after LocationIQ replaced ORS): two test
+// conversations sent the same address seconds apart, both calculate_
+// delivery_fee calls landed concurrently, and the resulting duplicate
+// request tripped LocationIQ's per-second concurrency limit — exactly
+// the kind of collision this second mechanism exists to avoid.
+//
 // Deliberately NOT caching failures: if the inner provider throws
 // (rate limit, timeout, ORS down), that error propagates uncached — a
 // cached failure would lock a customer out of ordering for the whole
 // TTL even after the provider recovers, which is worse than the
 // problem this exists to fix. Only a genuine answer (a match, or a
-// confirmed "no match" `null`) is worth remembering.
+// confirmed "no match" `null`) is worth remembering. Concurrent callers
+// sharing an in-flight call that ends up rejecting all see the same
+// rejection — no worse than each having failed independently, and the
+// in-flight entry is cleared either way so the next call gets a fresh
+// attempt rather than being stuck replaying a dead promise.
 //
 // Process-local and unpersisted — a restart clears it, which is fine;
 // this is a rate-limit shock absorber, not a source of truth. Shared
@@ -64,6 +78,15 @@ export class CachingDistanceProvider implements DistanceProvider {
   private readonly reverseGeocodeCache = new Map<string, CacheEntry<GeocodeResult | null>>()
   private readonly distanceCache = new Map<string, CacheEntry<number>>()
 
+  // Concurrent calls for the same key share one in-flight provider
+  // call instead of each firing their own — see the file header for
+  // the live incident this fixes. Cleared (success or failure) as soon
+  // as the shared call settles, so the next call after that always
+  // gets a fresh attempt rather than reusing a resolved/rejected one.
+  private readonly geocodeInFlight = new Map<string, Promise<GeocodeResult | null>>()
+  private readonly reverseGeocodeInFlight = new Map<string, Promise<GeocodeResult | null>>()
+  private readonly distanceInFlight = new Map<string, Promise<number>>()
+
   constructor(
     private readonly inner: DistanceProvider,
     private readonly ttlMs: number = DISTANCE_CACHE_TTL_MS,
@@ -88,16 +111,48 @@ export class CachingDistanceProvider implements DistanceProvider {
     cache.set(key, { value, expiresAt: this.now() + this.ttlMs })
   }
 
-  async geocode(address: string, options?: GeocodeOptions): Promise<GeocodeResult | null> {
+  /** Cache check → in-flight join → fresh call, in that order. The
+   *  in-flight map holds the RAW fetch-in-progress promise (not this
+   *  wrapper method's own returned promise, which is one more async-
+   *  function-adopts-a-promise hop away) — every joined caller `await`s
+   *  that same raw promise directly, so a rejection reaches all of them
+   *  without ever reaching `write` (never cached, see file header). The
+   *  `finally` below always clears the in-flight entry, success or
+   *  failure, so the next call after this one settles gets a fresh
+   *  attempt rather than replaying a dead promise. */
+  private dedupe<T>(
+    cache: Map<string, CacheEntry<T>>,
+    inFlight: Map<string, Promise<T>>,
+    key: string,
+    fetcher: () => Promise<T>,
+  ): Promise<T> {
+    const cached = this.read(cache, key)
+    if (cached.hit) return Promise.resolve(cached.value)
+    const pending = inFlight.get(key)
+    if (pending) return pending
+
+    const promise = fetcher()
+    // Attach BEFORE storing — every caller (including this one) always
+    // awaits the exact promise below, so cache-write/cleanup runs once
+    // regardless of how many callers joined it.
+    const tracked = promise.then(
+      (result) => {
+        inFlight.delete(key)
+        this.write(cache, key, result)
+        return result
+      },
+      (err) => {
+        inFlight.delete(key)
+        throw err
+      },
+    )
+    inFlight.set(key, tracked)
+    return tracked
+  }
+
+  geocode(address: string, options?: GeocodeOptions): Promise<GeocodeResult | null> {
     const key = geocodeKey(address, options)
-    const cached = this.read(this.geocodeCache, key)
-    if (cached.hit) return cached.value
-    // Not try/catch-wrapped on purpose — a thrown error propagates to
-    // the caller without ever reaching `write`, so failures are never
-    // cached (see file header).
-    const result = await this.inner.geocode(address, options)
-    this.write(this.geocodeCache, key, result)
-    return result
+    return this.dedupe(this.geocodeCache, this.geocodeInFlight, key, () => this.inner.geocode(address, options))
   }
 
   // Only used for the account's own origin address (Settings form) — a
@@ -108,24 +163,20 @@ export class CachingDistanceProvider implements DistanceProvider {
     return this.inner.geocodeStructured(parts, options)
   }
 
-  async reverseGeocode(point: { lat: number; lng: number }): Promise<GeocodeResult | null> {
+  reverseGeocode(point: { lat: number; lng: number }): Promise<GeocodeResult | null> {
     const key = pointKey(point)
-    const cached = this.read(this.reverseGeocodeCache, key)
-    if (cached.hit) return cached.value
-    const result = await this.inner.reverseGeocode(point)
-    this.write(this.reverseGeocodeCache, key, result)
-    return result
+    return this.dedupe(this.reverseGeocodeCache, this.reverseGeocodeInFlight, key, () =>
+      this.inner.reverseGeocode(point),
+    )
   }
 
-  async calculateDistance(
+  calculateDistance(
     origin: { lat: number; lng: number },
     destination: { lat: number; lng: number },
   ): Promise<number> {
     const key = `${pointKey(origin)}>${pointKey(destination)}`
-    const cached = this.read(this.distanceCache, key)
-    if (cached.hit) return cached.value
-    const result = await this.inner.calculateDistance(origin, destination)
-    this.write(this.distanceCache, key, result)
-    return result
+    return this.dedupe(this.distanceCache, this.distanceInFlight, key, () =>
+      this.inner.calculateDistance(origin, destination),
+    )
   }
 }

@@ -192,3 +192,100 @@ describe('CachingDistanceProvider — bounded size', () => {
     expect((inner.geocode as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsBefore + 1)
   })
 })
+
+/** A promise the test controls the resolution of — used to simulate two
+ *  callers arriving while the first provider call is still in flight,
+ *  which `await`ing a fast-resolving mock can't reliably reproduce. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (err: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+describe('CachingDistanceProvider — concurrent request de-duplication', () => {
+  // Confirmed live (2026-08-07, right after switching to LocationIQ):
+  // two test conversations sent the same address seconds apart, both
+  // calculate_delivery_fee calls landed concurrently before either had
+  // a chance to populate the cache above, and the resulting duplicate
+  // request tripped the provider's per-second concurrency limit. The
+  // TTL cache alone only protects sequential retries — this is what
+  // protects genuinely simultaneous ones.
+  it('two concurrent geocode calls for the same key share one inner call', async () => {
+    const d = deferred<GeocodeResult | null>()
+    const inner = fakeInner({ geocode: vi.fn(() => d.promise) })
+    const cache = new CachingDistanceProvider(inner)
+
+    const first = cache.geocode('Rua X, 123')
+    const second = cache.geocode('Rua X, 123') // fires before `first` has resolved
+    expect(inner.geocode).toHaveBeenCalledTimes(1) // not 2 — joined the same call
+
+    d.resolve(RESULT)
+    expect(await first).toEqual(RESULT)
+    expect(await second).toEqual(RESULT)
+  })
+
+  it('concurrent calls for different keys are never joined together', async () => {
+    const inner = fakeInner()
+    const cache = new CachingDistanceProvider(inner)
+    await Promise.all([cache.geocode('Rua X, 123'), cache.geocode('Rua Y, 456')])
+    expect(inner.geocode).toHaveBeenCalledTimes(2)
+  })
+
+  it('two concurrent calls that both join a failing in-flight request both see the rejection', async () => {
+    const inner = fakeInner({
+      geocode: vi.fn(async () => {
+        throw new DistanceProviderError('overloaded')
+      }),
+    })
+    const cache = new CachingDistanceProvider(inner)
+    const [firstResult, secondResult] = await Promise.allSettled([
+      cache.geocode('Rua X, 123'),
+      cache.geocode('Rua X, 123'),
+    ])
+    expect(firstResult.status).toBe('rejected')
+    expect(secondResult.status).toBe('rejected')
+    // Only ONE inner call for both joined callers — the whole point of
+    // de-duplication — not one each.
+    expect(inner.geocode).toHaveBeenCalledTimes(1)
+  })
+
+  it('a failed call is not cached, and clears so the NEXT (sequential) call gets a fresh attempt', async () => {
+    const inner = fakeInner({
+      geocode: vi.fn(async () => {
+        throw new DistanceProviderError('overloaded')
+      }),
+    })
+    const cache = new CachingDistanceProvider(inner)
+    await expect(cache.geocode('Rua X, 123')).rejects.toThrow(DistanceProviderError)
+    // The failed in-flight entry must be gone — a call after it settles
+    // gets a brand new attempt, not stuck replaying the dead promise.
+    await expect(cache.geocode('Rua X, 123')).rejects.toThrow(DistanceProviderError)
+    expect(inner.geocode).toHaveBeenCalledTimes(2)
+  })
+
+  it('does the same for reverseGeocode and calculateDistance', async () => {
+    const dReverse = deferred<GeocodeResult | null>()
+    const dDistance = deferred<number>()
+    const inner = fakeInner({
+      reverseGeocode: vi.fn(() => dReverse.promise),
+      calculateDistance: vi.fn(() => dDistance.promise),
+    })
+    const cache = new CachingDistanceProvider(inner)
+    const point = { lat: -24.95, lng: -53.47 }
+
+    const r1 = cache.reverseGeocode(point)
+    const r2 = cache.reverseGeocode(point)
+    const dist1 = cache.calculateDistance(point, point)
+    const dist2 = cache.calculateDistance(point, point)
+    expect(inner.reverseGeocode).toHaveBeenCalledTimes(1)
+    expect(inner.calculateDistance).toHaveBeenCalledTimes(1)
+
+    dReverse.resolve(RESULT)
+    dDistance.resolve(5)
+    await Promise.all([r1, r2, dist1, dist2])
+  })
+})
