@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isWithinBusinessHours, closedMessage, type BusinessHoursWeek } from "./business-hours";
+import {
+  isWithinBusinessHours,
+  closedMessage,
+  parseBusinessHoursWeek,
+  type BusinessHoursWeek,
+} from "./business-hours";
 
 // 2026-07-28 is a Tuesday.
 const TUESDAY_NOON_UTC = new Date("2026-07-28T12:00:00Z");
@@ -70,5 +75,39 @@ describe("closedMessage", () => {
 
   it("still returns a message with no schedule to show", () => {
     expect(closedMessage({})).toContain("fechados");
+  });
+});
+
+describe("parseBusinessHoursWeek", () => {
+  it("accepts a valid week with a mix of open/closed days", () => {
+    const input = {
+      mon: { open: "09:00", close: "18:00" },
+      tue: null,
+    };
+    expect(parseBusinessHoursWeek(input)).toEqual(input);
+  });
+
+  it("accepts an empty object (all days closed)", () => {
+    expect(parseBusinessHoursWeek({})).toEqual({});
+  });
+
+  it("rejects a non-object input", () => {
+    expect(parseBusinessHoursWeek(null)).toBeNull();
+    expect(parseBusinessHoursWeek("mon")).toBeNull();
+    expect(parseBusinessHoursWeek(42)).toBeNull();
+  });
+
+  it("rejects an unknown day key", () => {
+    expect(parseBusinessHoursWeek({ someday: { open: "09:00", close: "18:00" } })).toBeNull();
+  });
+
+  it("rejects a malformed HH:mm value", () => {
+    expect(parseBusinessHoursWeek({ mon: { open: "9:00", close: "18:00" } })).toBeNull();
+    expect(parseBusinessHoursWeek({ mon: { open: "09:00", close: "25:00" } })).toBeNull();
+  });
+
+  it("rejects close <= open (no overnight-crossing spans)", () => {
+    expect(parseBusinessHoursWeek({ mon: { open: "18:00", close: "18:00" } })).toBeNull();
+    expect(parseBusinessHoursWeek({ mon: { open: "18:00", close: "09:00" } })).toBeNull();
   });
 });

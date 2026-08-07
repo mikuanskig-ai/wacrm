@@ -14,6 +14,7 @@ import { getAvailableTools, type PlacedOrderPayload } from './tools/delivery'
 import type { ToolContext } from './tools/types'
 import { formatCurrency } from '@/lib/currency'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { getAiBusinessHours, isWithinBusinessHours } from '@/lib/delivery/business-hours'
 import type { AiUsage } from './types'
 
 interface DispatchArgs {
@@ -63,6 +64,11 @@ function formatOrderConfirmation(order: PlacedOrderPayload): string {
  *
  * Eligibility gates (any → silent no-op):
  *   - AI off / auto-reply disabled for the account
+ *   - outside the account's configured AI hours (migration 067),
+ *     when that schedule is enabled — no auto-message either, just
+ *     silence: the same WhatsApp number is often used for things
+ *     other than orders outside those hours, so a "we're closed"
+ *     reply would frequently be the wrong context to assume
  *   - the ticket is in the ABERTO bucket (status='open') — an agent is
  *     actively handling it and the AI must never talk over them. Every
  *     current write path that sets status='open' also stamps
@@ -91,6 +97,12 @@ export async function dispatchInboundToAiReply(
 
     const config = await loadAiConfig(db, accountId)
     if (!config || !config.autoReplyEnabled) return
+
+    // Cheapest gate first — no DB read beyond the config already
+    // loaded above. Outside the window, the bot goes fully silent
+    // (no auto-message) — see the doc comment above for why.
+    const aiHours = await getAiBusinessHours(db, accountId)
+    if (aiHours?.enabled && !isWithinBusinessHours(aiHours.hours, aiHours.timezone)) return
 
     // Deterministic, user-configured responders win over the LLM — the
     // caller already excludes messages a Flow consumed. Message-level
