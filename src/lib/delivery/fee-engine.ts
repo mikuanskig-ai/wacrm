@@ -423,10 +423,25 @@ export async function calculateDeliveryFee(
       // on a routing provider hiccup — `distanceEstimated: true` below
       // is how a caller (or a future admin view) can tell the two apart.
       const message = err instanceof Error ? err.message : String(err)
-      console.error('[fee-engine] calculateDistance failed, falling back to straight-line estimate:', message)
       distanceKm = estimateStraightLineDistanceKm(
         { lat: config.originLat, lng: config.originLng },
         destinationPoint,
+      )
+      // TEMP diagnostic (2026-08-09): logging the actual origin/
+      // destination/estimate every time this fires — a live report of
+      // an absurdly large fee (thousands of km) on an address that
+      // geocodes to a sane point in isolated manual testing needs the
+      // exact runtime coordinates to diagnose, not another guess.
+      // Remove once that's root-caused.
+      console.error(
+        '[fee-engine] calculateDistance failed, falling back to straight-line estimate:',
+        message,
+        JSON.stringify({
+          origin: { lat: config.originLat, lng: config.originLng },
+          destination: destinationPoint,
+          resolvedLabel,
+          estimateKm: distanceKm,
+        }),
       )
       distanceEstimated = true
     }

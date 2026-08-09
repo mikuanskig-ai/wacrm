@@ -608,6 +608,7 @@ describe('calculateDeliveryFee — global rules (cont.)', () => {
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('calculateDistance failed, falling back to straight-line estimate'),
       'directions boom',
+      expect.any(String),
     )
     errorSpy.mockRestore()
   })
