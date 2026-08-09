@@ -89,6 +89,54 @@ async function writeCart(db: SupabaseClient, conversationId: string, cart: CartL
   await db.from('conversations').update({ ai_cart: cart }).eq('id', conversationId)
 }
 
+// A shared WhatsApp location pin's stored content_text is built by the
+// wuzapi webhook route as `[name, address, "lat,lng"].filter(Boolean).
+// join(' - ')` — the coordinate pair is always the last segment when
+// present. Same pattern context.ts's formatLocationMessage reformats
+// for the model's transcript; duplicated here (rather than imported)
+// so this stays a self-contained, deterministic check — see
+// mostRecentSharedLocation for why.
+const TRAILING_LAT_LNG = /(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/
+
+function parseSharedLocation(contentText: string | null): { lat: number; lng: number } | null {
+  if (!contentText) return null
+  const match = TRAILING_LAT_LNG.exec(contentText.trim())
+  if (!match) return null
+  const lat = Number(match[1])
+  const lng = Number(match[2])
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null
+}
+
+/** The customer's most recent message, when it was a shared WhatsApp
+ *  location pin — GPS is strictly more accurate than any address text
+ *  could be, so calculate_delivery_fee/place_order fall back to it
+ *  automatically instead of depending on the model having noticed and
+ *  correctly parsed the "[Customer shared their location]" transcript
+ *  line itself (confirmed live: it didn't always, and the model just
+ *  asked for a typed address instead — same result as no pin at all).
+ *  Only the LATEST customer message counts — not "any location ever
+ *  shared in this conversation" — so a text address given afterward
+ *  correctly takes over instead of a stale pin winning forever. (A
+ *  bounded lookback over several recent messages, for when a customer
+ *  follows up a pin with a separate "apto 302" text, is a deliberate
+ *  follow-up improvement, not done here.) */
+async function mostRecentSharedLocation(
+  db: SupabaseClient,
+  conversationId: string,
+): Promise<{ lat: number; lng: number } | null> {
+  const { data } = await db
+    .from('messages')
+    .select('content_type, content_text')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const row = data as { content_type: string; content_text: string | null } | null
+  if (!row || row.content_type !== 'location') return null
+  return parseSharedLocation(row.content_text)
+}
+
 export const searchMenuTool: ToolDefinition = {
   name: 'search_menu',
   description:
@@ -368,7 +416,7 @@ export const calculateDeliveryFeeTool: ToolDefinition = {
   name: 'calculate_delivery_fee',
   description:
     "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change. If you already asked the customer for their neighbourhood/bairro separately, ALWAYS pass it as `neighborhood` too — accounts using a fixed per-neighbourhood fee can then skip address lookup (and its external-service dependency) entirely instead of guessing the neighbourhood from the free-text address. " +
-    "If the customer shared a WhatsApp location pin instead of typing an address — the transcript will show a message like '[Customer shared their location] latitude=..., longitude=...' — pass those exact numbers as `latitude`/`longitude` instead of (or alongside) `address`; it's more accurate than any typed address and you can omit `address` entirely in that case. " +
+    "If the customer's last message was a shared WhatsApp location (a GPS pin, not typed text), you don't need to look up or pass any coordinates yourself — this tool detects it automatically and uses the exact numbers, which is more accurate than any typed address; just call it, `address` can be omitted entirely. You may still pass `latitude`/`longitude` explicitly if you already have them for some other reason. " +
     "The response may include a Resolved address for that location/address — always read it back to the customer and get their explicit confirmation ('is this address correct?') before calling place_order; never assume a resolved address or coordinates are correct without asking. " +
     "The response also includes the cart Subtotal and the Total (subtotal + fee) — when you write the order summary, copy those two numbers character-for-character from here. Doing that arithmetic yourself is exactly how a wrong total gets shown to the customer (confirmed live 2026-08-06: a single R$25 item was summarized as a R$100 subtotal).",
   parameters: {
@@ -398,13 +446,25 @@ export const calculateDeliveryFeeTool: ToolDefinition = {
     const address = typeof args.address === 'string' ? args.address : ''
     const lat = typeof args.latitude === 'number' ? args.latitude : null
     const lng = typeof args.longitude === 'number' ? args.longitude : null
-    const location = lat != null && lng != null ? { lat, lng } : null
+    let location = lat != null && lng != null ? { lat, lng } : null
     const neighborhood = typeof args.neighborhood === 'string' ? args.neighborhood : null
+
+    // Deterministic fallback: the model has no memory of its own prior
+    // tool calls, and can fail to notice/parse the "[Customer shared
+    // their location]" transcript line — when it calls this tool with
+    // neither an address nor coordinates, check directly whether the
+    // customer's own last message actually was a shared location pin
+    // and use it automatically, rather than erroring out and having
+    // the model re-ask for an address the customer already gave (as
+    // GPS, not text).
+    if (!address.trim() && !location) {
+      location = await mostRecentSharedLocation(ctx.db, ctx.conversationId)
+    }
 
     if (!address.trim() && !location) {
       return {
         content:
-          'Missing address — ask the customer for their delivery address, or use the latitude/longitude from a location they shared.',
+          'Missing address — ask the customer for their delivery address, or ask them to share their location pin in WhatsApp.',
       }
     }
 
@@ -484,7 +544,7 @@ export interface PlacedOrderPayload {
 export const placeOrderTool: ToolDefinition = {
   name: 'place_order',
   description:
-    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation. Set is_pickup to true when the customer is picking the order up themselves (no delivery address needed, no delivery fee) — never leave delivery_address empty for a real delivery order. ' +
+    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation. Set is_pickup to true when the customer is picking the order up themselves (no delivery address needed, no delivery fee) — never leave delivery_address empty for a real delivery order, unless the customer only ever shared a WhatsApp location pin, which is picked up automatically. ' +
     'Any field you omit here falls back to what update_order_info or calculate_delivery_fee already recorded earlier in this conversation (shown in the order-state summary) — you do not need to repeat information you already captured, only pass a field again if it changed.',
   parameters: {
     type: 'object',
@@ -530,10 +590,30 @@ export const placeOrderTool: ToolDefinition = {
       typeof args.customer_name === 'string' && args.customer_name.trim()
         ? args.customer_name
         : orderInfo.customerName
-    if (!isPickup && !deliveryAddress?.trim()) {
+
+    // A driver can't navigate off nothing — when the customer only
+    // ever shared a WhatsApp location pin and never gave any text
+    // address at all, fall back to a tappable Google Maps link for
+    // the stored/printed address instead of hard-blocking the order.
+    // Deliberately NOT fed back into `deliveryAddress` itself — that
+    // variable still drives the fee recalculation below, which must
+    // stay free-text-or-null so the `sameAddressAsLastQuote` check
+    // (Regra 4) correctly takes the `orderInfo.location` bypass
+    // instead of trying to geocode a Maps URL as if it were an
+    // address. Any text address the customer gave, even a partial
+    // one, always wins.
+    const sharedLocation =
+      !isPickup && !deliveryAddress?.trim()
+        ? await mostRecentSharedLocation(ctx.db, ctx.conversationId)
+        : null
+    const storedAddress =
+      deliveryAddress?.trim() ||
+      (sharedLocation ? `https://www.google.com/maps?q=${sharedLocation.lat},${sharedLocation.lng}` : null)
+
+    if (!isPickup && !storedAddress) {
       return {
         content:
-          'Missing delivery_address for a delivery order. Ask the customer for their full delivery address, or call this again with is_pickup: true if they are picking it up themselves.',
+          'Missing delivery_address for a delivery order. Ask the customer for their full delivery address, or ask them to share their location pin in WhatsApp, or call this again with is_pickup: true if they are picking it up themselves.',
       }
     }
 
@@ -582,7 +662,7 @@ export const placeOrderTool: ToolDefinition = {
       source: 'ai_chat',
       cart,
       currency: ctx.currency,
-      deliveryAddress: isPickup ? null : deliveryAddress,
+      deliveryAddress: isPickup ? null : storedAddress,
       deliveryFee,
       customerName,
       notes: typeof args.notes === 'string' ? args.notes : null,

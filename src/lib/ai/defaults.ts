@@ -179,11 +179,10 @@ export function buildSystemPrompt(args: {
         'Every money figure in the order summary (Subtotal, delivery fee, Total) must be copied character-for-character from a tool response — ' +
         'view_cart for the subtotal, calculate_delivery_fee for the fee and the already-added-up total. NEVER add, multiply, or otherwise compute a ' +
         'money figure yourself, even something as simple as subtotal + fee — that arithmetic is exactly how a wrong total reaches the customer. ' +
-        "If the customer shares their WhatsApp location instead of typing an address, it appears in this conversation as " +
-        '"[Customer shared their location] latitude=..., longitude=...". Use those exact numbers with calculate_delivery_fee\'s latitude/longitude ' +
-        'parameters — do not ask them to type an address instead, and do not ask them to resend it in a different format. calculate_delivery_fee may ' +
-        'answer with a Resolved address for that location — always read it back to the customer and get an explicit "yes, that\'s correct" before ' +
-        'using it in place_order; never place an order against a resolved address the customer has not confirmed. ' +
+        'If the customer shares their WhatsApp location (a GPS pin) instead of typing an address, do NOT ask them for a street address — call ' +
+        'calculate_delivery_fee / place_order right away, they pick the shared location up automatically and it is more accurate than any typed ' +
+        'address. calculate_delivery_fee may answer with a Resolved address for that location — always read it back to the customer and get an ' +
+        'explicit "yes, that\'s correct" before using it in place_order; never place an order against a resolved address the customer has not confirmed. ' +
         'Whenever the customer tells you their name, whether it\'s pickup or delivery, their address/neighbourhood, or how they\'re paying, call ' +
         'update_order_info with it right away — it gets saved and handed back to you automatically at the top of every future turn (see "Order so ' +
         'far" below, when present), so you stop needing to re-ask or re-derive it from scrolling back through the conversation.',

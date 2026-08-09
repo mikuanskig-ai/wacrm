@@ -61,6 +61,12 @@ function makeDb(
      *  real network via the real DistanceProvider. Full calculation
      *  coverage lives in fee-engine.test.ts (fake provider, no I/O). */
     feeConfig?: Record<string, unknown> | null
+    /** The customer's most recent message row, as `mostRecentSharedLocation`
+     *  (tools/delivery.ts) reads it — defaults to none, so every
+     *  existing test that never shared a location keeps behaving
+     *  exactly as before. Set `content_type: 'location'` to simulate a
+     *  just-shared WhatsApp pin. */
+    lastCustomerMessage?: { content_type: string; content_text: string | null } | null
   } = {},
 ) {
   let cart = opts.cart ?? []
@@ -69,6 +75,7 @@ function makeDb(
   const products = opts.products ?? []
   const businessHours = opts.businessHours ?? null
   const feeConfig = opts.feeConfig ?? null
+  const lastCustomerMessage = opts.lastCustomerMessage ?? null
   const writes: CartLineItem[][] = []
   const orderInfoWrites: Record<string, unknown>[] = []
 
@@ -125,6 +132,21 @@ function makeDb(
             }
             return { eq: () => Promise.resolve({ error: null }) }
           },
+        }
+      }
+      if (table === 'messages') {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                order: () => ({
+                  limit: () => ({
+                    maybeSingle: () => Promise.resolve({ data: lastCustomerMessage, error: null }),
+                  }),
+                }),
+              }),
+            }),
+          }),
         }
       }
       if (table === 'delivery_products') {
@@ -638,6 +660,42 @@ describe('placeOrderTool', () => {
     expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(db, expect.objectContaining({ deliveryFee: 3 }))
     expect(res.data).toMatchObject({ id: 'order-8', deliveryFee: 3 })
   })
+
+  it('stores a tappable Google Maps link when the customer only ever shared a location pin, never a text address', async () => {
+    // A driver can't navigate off nothing on the printed ticket — this
+    // is the pin-only path with no update_order_info/calculate_delivery_fee
+    // call ever having recorded a text address either.
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-9', total: 25, currency: 'BRL' })
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita M', unit_price: 25, quantity: 1, addons: [] }],
+      businessHours: null,
+      feeConfig: { delivery_method: 'fixed', max_distance: null, free_shipping_above: null, origin_lat: null, origin_lng: null, settings: { fixed_price: 0 } },
+      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+    })
+    const res = await placeOrderTool.execute({}, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        deliveryAddress: 'https://www.google.com/maps?q=-24.9532935,-53.4699534',
+      }),
+    )
+    expect(res.data).toMatchObject({ id: 'order-9' })
+  })
+
+  it('a text delivery_address always wins over an auto-detected pin, even when the customer just shared one', async () => {
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-10', total: 25, currency: 'BRL' })
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita M', unit_price: 25, quantity: 1, addons: [] }],
+      businessHours: null,
+      feeConfig: { delivery_method: 'fixed', max_distance: null, free_shipping_above: null, origin_lat: null, origin_lng: null, settings: { fixed_price: 0 } },
+      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+    })
+    await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ deliveryAddress: 'Rua X, 123' }),
+    )
+  })
 })
 
 describe('updateOrderInfoTool', () => {
@@ -819,6 +877,51 @@ describe('calculateDeliveryFeeTool', () => {
     })
     await calculateDeliveryFeeTool.execute({ address: 'Rua X, 123' }, ctxFor(db))
     expect((getOrderInfo() as { neighborhood: string }).neighborhood).toBe('Centro')
+  })
+
+  it('auto-detects a just-shared WhatsApp location pin when neither address nor lat/lng are given', async () => {
+    // The model has no memory of its own tool calls and can fail to
+    // notice/parse the reformatted "[Customer shared their location]"
+    // transcript line — this is the deterministic fallback for that,
+    // network-free the same way the explicit lat/lng test above is.
+    const { db, getOrderInfo } = makeDb({
+      cart: [],
+      feeConfig: {
+        delivery_method: 'neighborhood',
+        max_distance: null,
+        free_shipping_above: null,
+        origin_lat: null,
+        origin_lng: null,
+        settings: { neighborhoods: [{ id: 'n1', name: 'Centro', price: 5 }] },
+      },
+      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+    })
+    const res = await calculateDeliveryFeeTool.execute({ neighborhood: 'Centro' }, ctxFor(db))
+    expect(res.content).toMatch(/5/)
+    expect(res.content).not.toMatch(/missing address/i)
+    expect((getOrderInfo() as { location: { lat: number; lng: number } }).location).toEqual({
+      lat: -24.9532935,
+      lng: -53.4699534,
+    })
+  })
+
+  it('does not auto-detect when the customer\'s last message was text, not a location', async () => {
+    const { db } = makeDb({
+      cart: [],
+      lastCustomerMessage: { content_type: 'text', content_text: 'oi, quero fazer um pedido' },
+    })
+    const res = await calculateDeliveryFeeTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/missing address/i)
+  })
+
+  it('an explicit address always wins over an auto-detected pin, even when the customer just shared one', async () => {
+    const { db } = makeDb({
+      cart: [],
+      feeConfig: { delivery_method: 'fixed', max_distance: null, free_shipping_above: null, origin_lat: null, origin_lng: null, settings: { fixed_price: 5 } },
+      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+    })
+    const res = await calculateDeliveryFeeTool.execute({ address: 'Rua X, 123' }, ctxFor(db))
+    expect(res.content).toMatch(/5/)
   })
 })
 
