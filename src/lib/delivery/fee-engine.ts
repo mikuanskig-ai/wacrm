@@ -14,8 +14,63 @@
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { DistanceProviderError, type DistanceProvider } from './distance-provider'
+import {
+  DistanceProviderError,
+  isPreciseGeocode,
+  type DistanceProvider,
+  type GeocodeOptions,
+  type GeocodeResult,
+} from './distance-provider'
 import { getDistanceProvider } from './providers/openrouteservice'
+
+/** Geocodes one address, swallowing a provider/network failure into
+ *  `null` (logged) rather than throwing — lets the caller retry with a
+ *  simplified query instead of failing outright on the first attempt.
+ *  A non-DistanceProviderError (a real bug) still propagates. */
+async function tryGeocode(
+  provider: DistanceProvider,
+  address: string,
+  options: GeocodeOptions,
+): Promise<GeocodeResult | null> {
+  try {
+    return await provider.geocode(address, options)
+  } catch (err) {
+    if (err instanceof DistanceProviderError) {
+      // Never silently discard *why* — a real address the provider
+      // genuinely can't match looks identical to our own key being
+      // invalid/rate-limited/the provider being down (both surface as
+      // the same 'geocode_failed' reason to the customer), but they
+      // need completely different fixes. This is the only place that
+      // ever sees the provider's actual error detail for this call.
+      console.error(`[fee-engine] geocode failed for "${address}":`, err.message)
+      return null
+    }
+    throw err
+  }
+}
+
+// Real, observed failure: a customer's complete, correct address
+// ("Av Carlos Gomes 2166, Parque São Paulo Cascavel") failed to
+// geocode outright via free-text search — Pelias's exact-housenumber
+// coverage is thin for some streets (the same failure mode already
+// worked around for the store's own origin address, see
+// distance-provider.ts's isPreciseGeocode / fee-config/route.ts's
+// retry). Stripping the house number and retrying often recovers at
+// least a street-level match — an approximate point is far better
+// than blocking the order entirely on "address not found" when the
+// address was fine. Only strips the FIRST standalone 1-6 digit run
+// (the house number, virtually always near the start) — deliberately
+// conservative so it doesn't mangle a postal code elsewhere in the
+// string; worst case the retry just doesn't help, it can never make
+// the result worse (see the two call sites: the retry is only ever
+// used when it beats what's already there).
+function stripFirstHouseNumber(address: string): string | null {
+  const stripped = address
+    .replace(/,?\s*\b\d{1,6}\b\s*,?/, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return stripped && stripped !== address.trim() ? stripped : null
+}
 
 export type DeliveryMethod = 'fixed' | 'neighborhood' | 'distance_range' | 'per_km'
 
@@ -207,14 +262,26 @@ export async function calculateDeliveryFee(
         : undefined
     const radiusKm = focus ? (config.maxDistance ?? 50) : undefined
 
-    let destination
-    try {
-      destination = await provider.geocode(address, { focus, radiusKm })
-    } catch (err) {
-      if (err instanceof DistanceProviderError) return { ok: false, reason: 'geocode_failed' }
-      throw err
+    let destination = await tryGeocode(provider, address, { focus, radiusKm })
+
+    // Total failure, or a match too coarse to trust (see
+    // isPreciseGeocode) — retry once with the house number stripped
+    // before giving up. Only ever adopts the retry when it's an
+    // improvement (fills a null, or upgrades a coarse match to a
+    // precise one); a worse/equal retry result is discarded and the
+    // original stands.
+    if (!destination || !isPreciseGeocode(destination.layer)) {
+      const simplified = stripFirstHouseNumber(address)
+      if (simplified) {
+        const retry = await tryGeocode(provider, simplified, { focus, radiusKm })
+        if (retry && (!destination || isPreciseGeocode(retry.layer))) destination = retry
+      }
     }
-    if (!destination) return { ok: false, reason: 'geocode_failed' }
+
+    if (!destination) {
+      console.error(`[fee-engine] geocode returned no match for "${address}"`)
+      return { ok: false, reason: 'geocode_failed' }
+    }
     geocodedNeighborhood = destination.neighborhood
     resolvedLabel = destination.label
     destinationPoint = { lat: destination.lat, lng: destination.lng }
@@ -230,7 +297,15 @@ export async function calculateDeliveryFee(
         { lat: config.originLat, lng: config.originLng },
         destinationPoint,
       )
-    } catch {
+    } catch (err) {
+      // Same reasoning as the geocode catch above — this fires
+      // regardless of whether destinationPoint came from geocoding
+      // text or from an exact shared-location pin, so if the root
+      // cause is a broken/rate-limited provider key, a location share
+      // fails here too. Log so that's distinguishable from "this one
+      // address is unreachable" in production.
+      const detail = err instanceof Error ? err.message : String(err)
+      console.error('[fee-engine] calculateDistance failed:', detail)
       return { ok: false, reason: 'geocode_failed' }
     }
   }

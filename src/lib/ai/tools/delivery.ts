@@ -49,7 +49,14 @@ function describeFeeFailure(reason: DeliveryFeeFailureReason): string {
     case 'origin_not_configured':
       return "This account hasn't configured a delivery origin address yet — a staff member needs to set this up in Settings before delivery orders can be placed."
     case 'geocode_failed':
-      return "Could not locate that address. Ask the customer to double-check it or provide more detail (street, number, neighborhood, city)."
+      // Real, observed failure: our map provider sometimes can't pinpoint a
+      // genuinely correct, complete address (street + number + neighbourhood
+      // + city) — asking the customer to repeat the exact same details they
+      // already gave reads as broken/ignoring them. WhatsApp's shared
+      // location pin skips this failure mode entirely (exact GPS, no
+      // geocoding needed — see calculate_delivery_fee/place_order), so lead
+      // with that instead of re-asking for text.
+      return "Could not automatically locate that address (this can happen even with a correct, complete address — it's a limitation on our side, not necessarily a mistake in what the customer typed). Do NOT just ask them to repeat the same street/number/neighbourhood/city again. Instead, ask them to share their exact location in WhatsApp (attachment icon → Location) — that lets us calculate the fee precisely with no further back-and-forth. Only fall back to asking for a rewritten address if they say they can't share their location."
     case 'out_of_range':
       return "Sorry, we currently don't deliver to that address — it's outside our service area."
     case 'neighborhood_not_found':

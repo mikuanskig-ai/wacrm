@@ -333,6 +333,86 @@ describe('calculateDeliveryFee — global rules', () => {
   })
 })
 
+describe('calculateDeliveryFee — geocode retry (strips the house number)', () => {
+  const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km' }
+
+  it('retries without the house number when the full address has no match at all', async () => {
+    const geocode = vi.fn(async (addr: string) =>
+      addr === 'Av Carlos Gomes Parque São Paulo Cascavel'
+        ? { lat: -24.95, lng: -53.46, neighborhood: null, label: 'Av Carlos Gomes, Cascavel - PR', layer: 'street' }
+        : null,
+    )
+    const provider = fakeProvider({ geocode })
+    const result = await calculateDeliveryFee(
+      config,
+      { address: 'Av Carlos Gomes 2166, Parque São Paulo Cascavel', subtotal: 30 },
+      provider,
+    )
+    expect(geocode).toHaveBeenCalledTimes(2)
+    expect(geocode).toHaveBeenNthCalledWith(
+      2,
+      'Av Carlos Gomes Parque São Paulo Cascavel',
+      expect.anything(),
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('upgrades a coarse (city-level) match to a precise one from the retry', async () => {
+    const geocode = vi.fn(async (addr: string) =>
+      addr.includes('2166')
+        ? { lat: -24.9, lng: -53.4, neighborhood: null, label: 'Cascavel, PR, Brazil', layer: 'locality' }
+        : { lat: -24.95, lng: -53.46, neighborhood: null, label: 'Av Carlos Gomes, Cascavel', layer: 'street' },
+    )
+    const provider = fakeProvider({ geocode })
+    const result = await calculateDeliveryFee(
+      config,
+      { address: 'Av Carlos Gomes 2166, Cascavel', subtotal: 30 },
+      provider,
+    )
+    expect(geocode).toHaveBeenCalledTimes(2)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.resolvedLabel).toBe('Av Carlos Gomes, Cascavel')
+  })
+
+  it('keeps the original coarse match when the retry does not improve on it', async () => {
+    const geocode = vi.fn(async () => ({
+      lat: -24.9,
+      lng: -53.4,
+      neighborhood: null,
+      label: 'Cascavel, PR, Brazil',
+      layer: 'locality',
+    }))
+    const provider = fakeProvider({ geocode })
+    const result = await calculateDeliveryFee(
+      config,
+      { address: 'Rua Sem Nome 42, Cascavel', subtotal: 30 },
+      provider,
+    )
+    expect(geocode).toHaveBeenCalledTimes(2)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.resolvedLabel).toBe('Cascavel, PR, Brazil')
+  })
+
+  it('does not retry when the address has no house number to strip', async () => {
+    const geocode = vi.fn(async () => null)
+    const provider = fakeProvider({ geocode })
+    await calculateDeliveryFee(config, { address: 'Centro, Cascavel', subtotal: 30 }, provider)
+    expect(geocode).toHaveBeenCalledTimes(1)
+  })
+
+  it('still fails with geocode_failed when both the original and the retry come up empty', async () => {
+    const geocode = vi.fn(async () => null)
+    const provider = fakeProvider({ geocode })
+    const result = await calculateDeliveryFee(
+      config,
+      { address: 'Rua Inexistente 999, Cascavel', subtotal: 30 },
+      provider,
+    )
+    expect(geocode).toHaveBeenCalledTimes(2)
+    expect(result).toEqual({ ok: false, reason: 'geocode_failed' })
+  })
+})
+
 describe('calculateDeliveryFee — exact coordinates (e.g. a shared WhatsApp location pin)', () => {
   it('skips geocoding entirely when destinationLat/Lng are given', async () => {
     const config: DeliveryFeeConfig = {
