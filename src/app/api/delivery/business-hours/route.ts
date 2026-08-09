@@ -1,35 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import type { BusinessHoursWeek, DayHours, DayKey } from '@/lib/delivery/business-hours'
-
-const DAY_KEYS: DayKey[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
+import { parseBusinessHoursWeek } from '@/lib/delivery/business-hours'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
-}
-
-/** Validates the caller-supplied `hours` shape — every present day is
- *  either null (closed) or a { open, close } pair where close > open
- *  (no overnight-crossing spans, see the Fase 5 plan). */
-function parseHours(input: unknown): BusinessHoursWeek | null {
-  if (typeof input !== 'object' || input === null) return null
-  const out: BusinessHoursWeek = {}
-  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    if (!DAY_KEYS.includes(key as DayKey)) return null
-    if (value === null) {
-      out[key as DayKey] = null
-      continue
-    }
-    if (typeof value !== 'object') return null
-    const { open, close } = value as Partial<DayHours>
-    if (typeof open !== 'string' || typeof close !== 'string') return null
-    if (!HHMM.test(open) || !HHMM.test(close)) return null
-    if (close <= open) return null
-    out[key as DayKey] = { open, close }
-  }
-  return out
 }
 
 /**
@@ -79,7 +54,7 @@ export async function POST(request: Request) {
     const timezone = typeof body.timezone === 'string' && body.timezone.trim() ? body.timezone.trim() : null
     if (!timezone) return bad('timezone is required')
 
-    const hours = parseHours(body.hours)
+    const hours = parseBusinessHoursWeek(body.hours)
     if (!hours) return bad('hours must be a map of day -> {open, close} | null')
 
     const { data: existing } = await supabase

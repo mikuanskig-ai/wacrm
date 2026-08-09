@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Sparkles, CheckCircle2, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Sparkles, CheckCircle2, Trash2, Eye, EyeOff, Clock } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
@@ -39,8 +39,22 @@ import type { AccountMember } from '@/types';
 import { fetchAccountMembers, memberLabel } from '@/lib/account/members';
 import { useTranslations } from 'next-intl';
 import { useConfirmDialog } from '@/hooks/use-confirm-dialog';
+import type { BusinessHoursWeek, DayHours, DayKey } from '@/lib/delivery/business-hours';
 
 const MASKED_KEY = '••••••••••••••••';
+
+const HOURS_DAY_KEYS: DayKey[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const DEFAULT_DAY_HOURS: DayHours = { open: '09:00', close: '22:00' };
+const HOURS_TIMEZONES = [
+  'America/Sao_Paulo',
+  'America/Manaus',
+  'America/Bahia',
+  'America/Recife',
+  'America/Fortaleza',
+  'America/Rio_Branco',
+  'America/Noronha',
+  'UTC',
+];
 
 // Whisper-compatible transcription is only offered under these two —
 // Anthropic/Gemini/OpenRouter have no audio-transcription endpoint
@@ -73,6 +87,7 @@ export function AiConfig() {
   const canEdit = accountRole ? canEditSettings(accountRole) : false;
   const t = useTranslations('Settings.aiConfig');
   const tCommon = useTranslations('Common');
+  const tDay = useTranslations('Delivery.weekdays');
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   const [loading, setLoading] = useState(true);
@@ -94,6 +109,9 @@ export function AiConfig() {
   const [transcriptionKey, setTranscriptionKey] = useState('');
   const [transcriptionKeyEdited, setTranscriptionKeyEdited] = useState(false);
   const [hasStoredTranscriptionKey, setHasStoredTranscriptionKey] = useState(false);
+  const [hoursEnabled, setHoursEnabled] = useState(false);
+  const [hoursTimezone, setHoursTimezone] = useState('America/Sao_Paulo');
+  const [hours, setHours] = useState<BusinessHoursWeek>({});
   const [systemPrompt, setSystemPrompt] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
@@ -142,6 +160,9 @@ export function AiConfig() {
         setHasStoredTranscriptionKey(Boolean(data.has_transcription_key));
         setTranscriptionKey(data.has_transcription_key ? MASKED_KEY : '');
         setTranscriptionKeyEdited(false);
+        setHoursEnabled(Boolean(data.hours_enabled));
+        setHoursTimezone(data.hours_timezone ?? 'America/Sao_Paulo');
+        setHours((data.hours as BusinessHoursWeek) ?? {});
       }
     } catch {
       toast.error(t('loadFailed'));
@@ -187,6 +208,17 @@ export function AiConfig() {
   const transcriptionKeyPayload = () =>
     transcriptionKeyEdited ? transcriptionKey.trim() || null : undefined;
 
+  const toggleHoursDay = (day: DayKey, open: boolean) => {
+    setHours((prev) => ({ ...prev, [day]: open ? { ...DEFAULT_DAY_HOURS, ...prev[day] } : null }));
+  };
+
+  const setHoursDayTime = (day: DayKey, field: 'open' | 'close', value: string) => {
+    setHours((prev) => {
+      const current = prev[day] ?? DEFAULT_DAY_HOURS;
+      return { ...prev, [day]: { ...current, [field]: value } };
+    });
+  };
+
   const buildBody = () => ({
     provider,
     model: model.trim(),
@@ -201,6 +233,9 @@ export function AiConfig() {
     auto_reply_max_per_conversation: maxPerConversation,
     max_tool_iterations: maxToolIterations,
     handoff_agent_id: handoffAgentId || null,
+    hours_enabled: hoursEnabled,
+    hours_timezone: hoursTimezone,
+    hours,
   });
 
   const handleTest = async () => {
@@ -720,6 +755,74 @@ export function AiConfig() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="h-4 w-4 text-primary" /> {t('hoursTitle')}
+            </CardTitle>
+            <CardDescription>{t('hoursDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{t('hoursEnforce')}</p>
+                <p className="text-xs text-muted-foreground">{t('hoursEnforceDesc')}</p>
+              </div>
+              <Switch checked={hoursEnabled} onCheckedChange={setHoursEnabled} disabled={disabled} />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">{t('hoursTimezone')}</label>
+              <select
+                value={hoursTimezone}
+                onChange={(e) => setHoursTimezone(e.target.value)}
+                disabled={disabled}
+                className="w-full rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+              >
+                {HOURS_TIMEZONES.map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              {HOURS_DAY_KEYS.map((day) => {
+                const dayHours = hours[day];
+                const open = Boolean(dayHours);
+                return (
+                  <div key={day} className="flex items-center gap-3 rounded-md border border-border p-2.5">
+                    <span className="w-20 shrink-0 text-sm text-foreground">{tDay(day)}</span>
+                    <Switch checked={open} onCheckedChange={(v) => toggleHoursDay(day, v)} disabled={disabled} />
+                    {open ? (
+                      <div className="flex items-center gap-2 text-sm">
+                        <input
+                          type="time"
+                          value={dayHours?.open ?? DEFAULT_DAY_HOURS.open}
+                          onChange={(e) => setHoursDayTime(day, 'open', e.target.value)}
+                          disabled={disabled}
+                          className="rounded-md border border-border bg-muted px-2 py-1 text-foreground"
+                        />
+                        <span className="text-muted-foreground">–</span>
+                        <input
+                          type="time"
+                          value={dayHours?.close ?? DEFAULT_DAY_HOURS.close}
+                          onChange={(e) => setHoursDayTime(day, 'close', e.target.value)}
+                          disabled={disabled}
+                          className="rounded-md border border-border bg-muted px-2 py-1 text-foreground"
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{t('hoursClosedAllDay')}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>

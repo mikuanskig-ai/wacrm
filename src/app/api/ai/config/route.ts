@@ -10,6 +10,7 @@ import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, AI_PROVIDERS, type AiProvider } from '@/lib/ai/types'
 import { MAX_TOOL_ITERATIONS_DEFAULT, MAX_TOOL_ITERATIONS_CEILING } from '@/lib/ai/defaults'
+import { parseBusinessHoursWeek } from '@/lib/delivery/business-hours'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -31,7 +32,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, tools_enabled, max_tool_iterations, api_key, embeddings_api_key, transcription_provider, transcription_api_key, onboarding_tested_at',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, tools_enabled, max_tool_iterations, api_key, embeddings_api_key, transcription_provider, transcription_api_key, hours_enabled, hours_timezone, hours, onboarding_tested_at',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -111,6 +112,16 @@ export async function POST(request: Request) {
     let maxToolIter = Number(body.max_tool_iterations)
     if (!Number.isFinite(maxToolIter)) maxToolIter = MAX_TOOL_ITERATIONS_DEFAULT
     maxToolIter = Math.min(MAX_TOOL_ITERATIONS_CEILING, Math.max(1, Math.floor(maxToolIter)))
+
+    // AI auto-reply's own schedule (migration 070) — independent of
+    // delivery_business_hours; see auto-reply.ts's dispatch gate.
+    const hoursEnabled = body.hours_enabled === true
+    const hoursTimezone =
+      typeof body.hours_timezone === 'string' && body.hours_timezone.trim()
+        ? body.hours_timezone.trim()
+        : 'America/Sao_Paulo'
+    const hours = parseBusinessHoursWeek(body.hours ?? {})
+    if (!hours) return bad('hours must be a map of day -> {open, close} | null')
 
     // Handoff routing target for auto-reply. A non-empty string must be a
     // member of this account (else the conversation would be assigned to a
@@ -243,6 +254,9 @@ export async function POST(request: Request) {
       auto_reply_max_per_conversation: maxPer,
       tools_enabled: toolsEnabled,
       max_tool_iterations: maxToolIter,
+      hours_enabled: hoursEnabled,
+      hours_timezone: hoursTimezone,
+      hours,
     }
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.

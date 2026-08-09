@@ -1,5 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+// Despite the folder, the pure time-window check here
+// (isWithinBusinessHours) is schema-agnostic and reused beyond
+// Delivery — see getAiBusinessHours below, which gates the AI
+// auto-reply bot's own (separate, optional) schedule, independent of
+// delivery_business_hours / the Delivery module.
+
 export interface DayHours {
   open: string // "HH:mm", 24h
   close: string // "HH:mm", 24h — no overnight-crossing spans (close must be > open)
@@ -14,6 +20,36 @@ export interface BusinessHoursConfig {
   enabled: boolean
   timezone: string
   hours: BusinessHoursWeek
+}
+
+const DAY_KEYS: DayKey[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
+
+/**
+ * Validates a caller-supplied `hours` shape — every present day is
+ * either null (closed) or a { open, close } pair where close > open
+ * (no overnight-crossing spans, see the Fase 5 plan). Shared by both
+ * /api/delivery/business-hours and /api/ai/config so the two
+ * schedules (order-taking vs the AI bot's own) can never silently
+ * drift apart on what counts as a valid week.
+ */
+export function parseBusinessHoursWeek(input: unknown): BusinessHoursWeek | null {
+  if (typeof input !== 'object' || input === null) return null
+  const out: BusinessHoursWeek = {}
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!DAY_KEYS.includes(key as DayKey)) return null
+    if (value === null) {
+      out[key as DayKey] = null
+      continue
+    }
+    if (typeof value !== 'object') return null
+    const { open, close } = value as Partial<DayHours>
+    if (typeof open !== 'string' || typeof close !== 'string') return null
+    if (!HHMM.test(open) || !HHMM.test(close)) return null
+    if (close <= open) return null
+    out[key as DayKey] = { open, close }
+  }
+  return out
 }
 
 /**
@@ -35,6 +71,32 @@ export async function getBusinessHours(
   return {
     enabled: data.enabled,
     timezone: data.timezone,
+    hours: (data.hours ?? {}) as BusinessHoursWeek,
+  }
+}
+
+/**
+ * Loads the account's AI-assistant business-hours config (migration
+ * 070) — independent of delivery_business_hours: an account may run
+ * the AI bot with no Delivery module at all, or want a different
+ * schedule for "does the bot reply" than "do we take orders" (the
+ * same WhatsApp number is often used for things other than orders
+ * outside those hours). Same "no row = disabled" convention.
+ */
+export async function getAiBusinessHours(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<BusinessHoursConfig | null> {
+  const { data } = await db
+    .from('ai_configs')
+    .select('hours_enabled, hours_timezone, hours')
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  if (!data) return null
+  return {
+    enabled: data.hours_enabled,
+    timezone: data.hours_timezone,
     hours: (data.hours ?? {}) as BusinessHoursWeek,
   }
 }

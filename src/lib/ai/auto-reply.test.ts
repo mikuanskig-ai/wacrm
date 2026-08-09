@@ -18,6 +18,9 @@ const h = vi.hoisted(() => ({
     enabledModules: [] as string[],
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
+    // null = no AI-hours row configured — getAiBusinessHours returns
+    // null, same as today's behavior (no hours gate at all).
+    aiHours: null as { hours_enabled: boolean; hours_timezone: string; hours: unknown } | null,
   },
 }))
 
@@ -54,6 +57,17 @@ vi.mock('./admin-client', () => ({
                   data: { enabled_modules: h.state.enabledModules },
                   error: null,
                 }),
+            }),
+          }),
+        }
+      }
+      if (table === 'ai_configs') {
+        // Only the hours-gate query in this module (getAiBusinessHours)
+        // hits ai_configs directly — loadAiConfig itself is mocked above.
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () => Promise.resolve({ data: h.state.aiHours, error: null }),
             }),
           }),
         }
@@ -119,6 +133,7 @@ beforeEach(() => {
   h.state.enabledModules = []
   h.state.updatePayload = null
   h.state.rpcCalls = []
+  h.state.aiHours = null
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
@@ -179,6 +194,23 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     h.loadAiConfig.mockResolvedValue(aiConfig({ autoReplyEnabled: false }))
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('skips silently — no auto-message — when outside the account-configured AI hours', async () => {
+    // Empty `hours` = closed every day (same convention as
+    // business-hours.test.ts) — deterministic regardless of when this
+    // test actually runs, no fake timers needed.
+    h.state.aiHours = { hours_enabled: true, hours_timezone: 'UTC', hours: {} }
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toBeNull() // no handoff/state write either — true silence
+  })
+
+  it('ignores a configured hours schedule when hours_enabled is false', async () => {
+    h.state.aiHours = { hours_enabled: false, hours_timezone: 'UTC', hours: {} }
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalled()
   })
 
   it('skips when a human agent is assigned', async () => {
