@@ -145,9 +145,10 @@ describe('LocationIqProvider', () => {
         .mockResolvedValueOnce(new Response('', { status: 400 }))
         .mockResolvedValueOnce(new Response('', { status: 400 }))
         .mockResolvedValueOnce(new Response('', { status: 400 }))
+        .mockResolvedValueOnce(new Response('', { status: 400 }))
       const provider = new LocationIqProvider()
       await expect(provider.geocode('Rua X, 123')).rejects.toThrow(DistanceProviderError)
-      expect(fetchMock).toHaveBeenCalledTimes(3) // 1 initial attempt + 2 retries, then gives up
+      expect(fetchMock).toHaveBeenCalledTimes(4) // 1 initial attempt + 3 retries, then gives up
     })
 
     it('throws DistanceProviderError when LOCATIONIQ_API_KEY is not configured', async () => {

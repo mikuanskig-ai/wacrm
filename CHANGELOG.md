@@ -1,3 +1,5 @@
+# SEMPRE EM PORTUGUÊS BRASIL
+
 # Changelog
 
 User-visible changes in `wacrm`. Self-hosters: when pulling an update,

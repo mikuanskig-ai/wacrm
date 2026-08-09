@@ -92,9 +92,21 @@ const limiter = new ConcurrencyLimiter(2)
  *  concurrent request still collides with (the limiter caps OUR
  *  concurrency, not everyone else hitting the same shared free-tier
  *  key/IP). A genuine 400 (malformed input) fails identically on every
- *  attempt and still surfaces as an error, just up to ~1.2s later. */
+ *  attempt and still surfaces as an error, just later.
+ *
+ *  Widened from [300, 900] (2 retries) to [500, 1200, 2500] (3
+ *  retries) — confirmed live again 2026-08-08, same account, same
+ *  exact route, recurring across the day. Reproduced by hand: this
+ *  exact origin/destination pair succeeds 100% of the time when
+ *  requests are spaced ~300ms+ apart, and only fails under genuine
+ *  concurrent bursts (verified: firing 6-8 requests at once
+ *  reproducibly triggers LocationIQ's "Rate Limited Second") — so
+ *  more spacing, not a smarter query, is the actual fix available to
+ *  us here. Worst case now ~4.2s of added latency across all retries,
+ *  which is acceptable against a WhatsApp reply the customer is
+ *  already waiting on either way. */
 async function fetchWithRetry(url: string): Promise<Response> {
-  const delaysMs = [300, 900]
+  const delaysMs = [500, 1200, 2500]
   let res = await limiter.run(() => fetch(url))
   for (const delay of delaysMs) {
     if (res.status !== 429 && res.status !== 400) return res
