@@ -58,6 +58,16 @@ function describeFeeFailure(reason: DeliveryFeeFailureReason): string {
       // geocoding needed — see calculate_delivery_fee/place_order), so lead
       // with that instead of re-asking for text.
       return "Could not automatically locate that address (this can happen even with a correct, complete address — it's a limitation on our side, not necessarily a mistake in what the customer typed). Do NOT just ask them to repeat the same street/number/neighbourhood/city again. Instead, ask them to share their exact location in WhatsApp (attachment icon → Location) — that lets us calculate the fee precisely with no further back-and-forth. Only fall back to asking for a rewritten address if they say they can't share their location."
+    case 'distance_failed':
+      // Different failure from geocode_failed — the address (or a
+      // shared location pin) WAS found/resolved fine, it's the
+      // route/distance calculation itself that failed. Telling the
+      // customer to share their location does NOT help here (a pin
+      // goes through this exact same distance step too) — confirmed
+      // live (2026-08-08): that advice was given anyway and would not
+      // have fixed anything. This is usually transient on the map
+      // provider's side, so a short wait and retry is the honest fix.
+      return "Found the address/location fine, but could not calculate the route distance right now — a temporary issue on our mapping provider's side, not a problem with the address itself. Do NOT ask the customer to share their location or retype their address, that would not help (the same distance step is needed either way). Ask them to wait a moment and try again shortly, or let them know a staff member can help if it keeps failing."
     case 'out_of_range':
       return "Sorry, we currently don't deliver to that address — it's outside our service area."
     case 'neighborhood_not_found':

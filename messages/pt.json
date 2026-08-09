@@ -2490,6 +2490,7 @@
       "addressRequired": "Informe seu endereço de entrega para calcular a taxa.",
       "originNotConfigured": "A taxa de entrega está temporariamente indisponível. Tente novamente em instantes.",
       "geocodeFailed": "Não conseguimos localizar esse endereço. Verifique e tente novamente.",
+      "distanceFailed": "Localizamos o endereço, mas não conseguimos calcular a rota de entrega no momento. Tente novamente em instantes.",
       "outOfRange": "Desculpe, no momento não realizamos entregas nessa região.",
       "neighborhoodNotFound": "Esse bairro não está na nossa área de entrega. Informe um endereço mais completo.",
       "noMatchingDistanceRange": "Não conseguimos calcular a taxa de entrega para esse endereço."

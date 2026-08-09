@@ -141,6 +141,16 @@ export type DeliveryFeeFailureReason =
   | 'address_required'
   | 'origin_not_configured'
   | 'geocode_failed'
+  /** The address (or shared location pin) WAS found/resolved fine — the
+   *  routing/distance call itself failed. Kept distinct from
+   *  'geocode_failed': the two need different customer-facing advice
+   *  (see describeFeeFailure in tools/delivery.ts) — telling the
+   *  customer to share their location "fixes" a bad address, but a
+   *  pin goes through this exact same distance call too, so it does
+   *  nothing for this one. Confirmed live (2026-08-08): the model told
+   *  a customer whose address geocoded perfectly to share their
+   *  location instead, which would have hit the identical failure. */
+  | 'distance_failed'
   | 'out_of_range'
   | 'neighborhood_not_found'
   | 'no_matching_distance_range'
@@ -361,18 +371,20 @@ export async function calculateDeliveryFee(
         destinationPoint,
       )
     } catch (err) {
-      // Reuses the geocode_failed reason (the customer-facing copy —
-      // "could not locate that address" — still roughly fits a routing
-      // failure), but logs distinctly so an ops read of journalctl
-      // doesn't conflate "geocode API down" with "directions API down"
-      // — same provider, same free-tier fragility, but a different
-      // endpoint/quota under the hood. Fires regardless of whether
-      // destinationPoint came from geocoding text or an exact shared-
-      // location pin, so a broken/rate-limited provider key surfaces
-      // here too, not just on the geocode path.
+      // Distinct reason from geocode_failed (see DeliveryFeeFailureReason's
+      // doc) — the address/pin was already resolved fine, this is the
+      // routing step failing on its own, so the customer needs
+      // different advice than "the address wasn't found". Logged
+      // distinctly too, so an ops read of journalctl doesn't conflate
+      // "geocode API down" with "directions API down" — same provider,
+      // same free-tier fragility, but a different endpoint/quota under
+      // the hood. Fires regardless of whether destinationPoint came
+      // from geocoding text or an exact shared-location pin, so a
+      // broken/rate-limited provider key surfaces here too, not just
+      // on the geocode path.
       const message = err instanceof Error ? err.message : String(err)
       console.error('[fee-engine] calculateDistance failed:', message)
-      return { ok: false, reason: 'geocode_failed' }
+      return { ok: false, reason: 'distance_failed' }
     }
   }
 

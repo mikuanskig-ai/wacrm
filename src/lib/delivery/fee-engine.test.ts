@@ -547,9 +547,14 @@ describe('calculateDeliveryFee — geocode retry (strips the house number)', () 
 })
 
 describe('calculateDeliveryFee — global rules (cont.)', () => {
-  it('fails with geocode_failed and logs it when calculateDistance itself throws — regression, 2026-08-07', async () => {
-    // Same fragility, different ORS endpoint (Directions, not geocode)
-    // — logged distinctly so journalctl doesn't conflate the two.
+  it('fails with distance_failed (not geocode_failed) and logs it when calculateDistance itself throws — regression, 2026-08-08', async () => {
+    // Distinct reason from geocode_failed on purpose: the address WAS
+    // resolved fine here, only the routing call failed — confirmed
+    // live that conflating the two led the model to tell a customer
+    // whose address geocoded correctly to share their location
+    // instead, which goes through this identical distance call and
+    // would not have helped. Logged distinctly too, different
+    // endpoint, so journalctl doesn't conflate the two failure modes.
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km' }
     const provider = fakeProvider({
@@ -558,7 +563,7 @@ describe('calculateDeliveryFee — global rules (cont.)', () => {
       }),
     })
     const result = await calculateDeliveryFee(config, { address: 'Rua X', subtotal: 30 }, provider)
-    expect(result).toEqual({ ok: false, reason: 'geocode_failed' })
+    expect(result).toEqual({ ok: false, reason: 'distance_failed' })
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('calculateDistance failed'),
       'directions boom',

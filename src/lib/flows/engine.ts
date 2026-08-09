@@ -103,6 +103,8 @@ function deliveryFeeFailureMessage(reason: DeliveryFeeFailureReason): string {
       return "Desculpe, não conseguimos calcular a taxa de entrega para esse endereço.";
     case "geocode_failed":
       return "Não conseguimos localizar esse endereço. Poderia conferir e enviar novamente com mais detalhes (rua, número, bairro)?";
+    case "distance_failed":
+      return "Localizamos o endereço, mas não conseguimos calcular a rota de entrega no momento — problema temporário do nosso lado, não do endereço. Poderia tentar novamente em instantes?";
     case "address_required":
       return "Precisamos do endereço de entrega para calcular a taxa. Poderia informá-lo?";
     case "origin_not_configured":
