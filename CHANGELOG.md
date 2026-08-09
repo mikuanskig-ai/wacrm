@@ -2,6 +2,86 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.9.1] — 2026-08-09
+
+Continuação direta da rodada de confiabilidade do delivery via IA
+(0.9.0) — um bug real de configuração da LocationIQ, uma conta de taxa
+por km que superfaturava todo pedido, um conflito entre o prompt
+próprio da conta e a regra anti-alucinação de valores, e uma forma de
+nunca mais travar um pedido só porque o provedor de rotas engasgou.
+Fecha também com um pedido novo: chave Pix própria, enviada
+automaticamente na confirmação do pedido.
+
+> **Migration required:** aplique
+> `supabase/migrations/071_payment_pix_key.sql`. Idempotente —
+> relaxa `mp_access_token`/`mp_webhook_secret` pra aceitar nulo e
+> adiciona `payment_configs.pix_key`.
+
+### Corrigido
+
+- **Método "por bairro" estava com o casamento de bairro quebrado
+  silenciosamente desde a troca pra LocationIQ (07/08).** Nenhuma das
+  três chamadas de geocodificação pedia `addressdetails=1` — sem esse
+  parâmetro a resposta da LocationIQ não vem com o bloco `address`
+  nenhum, então o bairro devolvido era sempre `null`, não importa o
+  que a API realmente soubesse sobre o lugar. Só não tinha aparecido
+  antes porque na maioria das vezes o modelo já passava o bairro
+  explícito como argumento, contornando o bug sem querer. Confirmado
+  ao vivo: um cliente respondeu só o nome do bairro (batendo exato com
+  o cadastrado) duas vezes seguidas, e a IA disse as duas vezes que não
+  reconheceu.
+- **`base_price` do método "por km" estava sendo somado à taxa por
+  distância em vez de servir como valor mínimo.** Confirmado com o
+  dono da conta: `base_price` é o piso pra uma corrida bem curta
+  (~1km ou menos), não um adicional em cima de toda entrega — a
+  fórmula original (`base + distância × taxa`) superfaturava
+  literalmente todo pedido por km, não só os curtos. Uma entrega de
+  6,35km com mínimo R$6 e R$2,20/km saía R$19,96 em vez do correto
+  R$13,97. Rótulo em Configurações renomeado de "Taxa base" pra "Taxa
+  mínima" com uma explicação, pra não induzir a mesma configuração
+  errada de novo.
+- **Retentativas da LocationIQ alargadas** (300ms/900ms → 500ms/
+  1.200ms/2.500ms, 2 → 3 tentativas) — confirmado ao vivo que o limite
+  por segundo do plano grátis ainda estava sendo atingido com
+  frequência incômoda mesmo com o limitador de concorrência já no ar;
+  espaçar mais reduziu bastante a chance de cair numa rajada.
+- **O prompt próprio da conta podia sobrepor a regra de "nunca invente
+  um valor, sempre copie exato da ferramenta".** Um prompt customizado
+  que pede um resumo de pedido num formato específico (com espaços
+  "R$ __" pra preencher) é a instrução mais recente e específica que o
+  modelo vê antes de responder — e passou a vencer a regra genérica
+  anterior sobre nunca calcular valores. A regra agora é repetida
+  logo depois do prompt da própria conta, cobrindo explicitamente o
+  caso de template: preencha os espaços só com o que a ferramenta
+  devolveu, nunca com um número inventado.
+
+### Adicionado
+
+- **Nunca mais trava um pedido por instabilidade do provedor de
+  rotas.** Quando o cálculo de distância real falha mesmo depois de
+  todas as tentativas (confirmado ao vivo: a mesma rota falhou 8 vezes
+  num único dia, mesmo já com retry alargado), o sistema agora estima
+  a distância em linha reta com uma margem de 35% (sempre arredondando
+  pra cima, nunca deixa o cliente pagar menos por uma rota que na
+  verdade é mais longa) em vez de simplesmente falhar. O pedido segue
+  com uma taxa aproximada em vez de pedir pro cliente esperar — na
+  esmagadora maioria das vezes o cálculo exato continua sendo usado
+  normalmente.
+- **Chave Pix própria da conta**, em Configurações → Pagamento,
+  independente do Mercado Pago (não precisa configurar checkout online
+  pra usar isso). Assim que a IA confirma um pedido pago via Pix, a
+  chave é incluída automaticamente na mensagem de confirmação —
+  substitui o método anterior de colar a chave direto no prompt da IA,
+  que não tinha garantia nenhuma de ser realmente enviada.
+
+### Alterado
+
+- **Mensagem final da confirmação de pedido**: "Em breve confirmamos o
+  seu pedido." → "Seu pedido foi enviado para a cozinha."
+- O motivo de falha `distance_failed` foi removido — com o fallback de
+  estimativa acima, o cálculo de distância não falha mais de verdade,
+  só produz um valor aproximado.
+
 ## [0.9.0] — 2026-08-08
 
 Uma rodada de confiabilidade no **fluxo de pedidos por delivery via
