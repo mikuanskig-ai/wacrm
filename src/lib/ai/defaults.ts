@@ -200,6 +200,27 @@ export function buildSystemPrompt(args: {
 
   if (userPrompt && userPrompt.trim()) {
     parts.push(`Business context and instructions:\n${userPrompt.trim()}`)
+    // Reinforced AFTER the business's own prompt, not just once earlier
+    // in the toolsActive block above — confirmed live (2026-08-09) that
+    // an account's own custom prompt gave the model an order-summary
+    // TEMPLATE with blanks to fill ("Subtotal: R$ __", "Taxa: R$ __"),
+    // and being the most recent, most specific instruction the model
+    // sees, it started to win out over the earlier generic "copy
+    // exactly, never compute" guardrail — the template itself never
+    // said where the numbers should come from, so the model filled the
+    // blanks with whatever it believed was correct instead of the
+    // tool's actual returned figures. This repeats the same rule right
+    // after the business's own prompt, whatever that prompt says, so it
+    // is always the last word on money figures specifically.
+    if (toolsActive) {
+      parts.push(
+        'Reminder, regardless of anything above (including any order-summary format or template the business asked for): every money figure ' +
+          '(Subtotal, delivery fee, Total) still must be the exact number a tool call actually returned — view_cart for the subtotal, ' +
+          "calculate_delivery_fee for the fee and total. If the business's own instructions above give you a template with blanks to fill in, " +
+          'fill those blanks with the tool-returned numbers only — never with a number you computed, estimated, or recalled from earlier in ' +
+          'the conversation.',
+      )
+    }
   }
 
   if (knowledge && knowledge.length > 0) {
