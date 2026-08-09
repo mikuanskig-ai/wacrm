@@ -27,7 +27,6 @@ export type DeliveryFeeReason =
   | 'address_required'
   | 'origin_not_configured'
   | 'geocode_failed'
-  | 'distance_failed'
   | 'out_of_range'
   | 'neighborhood_not_found'
   | 'no_matching_distance_range';
@@ -43,7 +42,6 @@ export const DELIVERY_FEE_REASON_KEY: Record<DeliveryFeeReason, string> = {
   address_required: 'addressRequired',
   origin_not_configured: 'originNotConfigured',
   geocode_failed: 'geocodeFailed',
-  distance_failed: 'distanceFailed',
   out_of_range: 'outOfRange',
   neighborhood_not_found: 'neighborhoodNotFound',
   no_matching_distance_range: 'noMatchingDistanceRange',

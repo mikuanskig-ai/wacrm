@@ -2490,7 +2490,6 @@
       "addressRequired": "Enter your delivery address to calculate the fee.",
       "originNotConfigured": "Delivery fee is temporarily unavailable. Please try again shortly.",
       "geocodeFailed": "Could not locate that address. Please check it and try again.",
-      "distanceFailed": "Found the address, but could not calculate the delivery route right now. Please try again shortly.",
       "outOfRange": "Sorry, we don't currently deliver to that address.",
       "neighborhoodNotFound": "That neighborhood isn't in our delivery area. Please provide a more complete address.",
       "noMatchingDistanceRange": "We couldn't calculate a delivery fee for that address."

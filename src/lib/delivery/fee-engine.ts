@@ -141,16 +141,6 @@ export type DeliveryFeeFailureReason =
   | 'address_required'
   | 'origin_not_configured'
   | 'geocode_failed'
-  /** The address (or shared location pin) WAS found/resolved fine — the
-   *  routing/distance call itself failed. Kept distinct from
-   *  'geocode_failed': the two need different customer-facing advice
-   *  (see describeFeeFailure in tools/delivery.ts) — telling the
-   *  customer to share their location "fixes" a bad address, but a
-   *  pin goes through this exact same distance call too, so it does
-   *  nothing for this one. Confirmed live (2026-08-08): the model told
-   *  a customer whose address geocoded perfectly to share their
-   *  location instead, which would have hit the identical failure. */
-  | 'distance_failed'
   | 'out_of_range'
   | 'neighborhood_not_found'
   | 'no_matching_distance_range'
@@ -169,6 +159,13 @@ export type DeliveryFeeResult =
       resolvedLabel: string | null
       freeShipping: boolean
       method: DeliveryMethod
+      /** True when `distanceKm` came from the straight-line fallback
+       *  (see `estimateStraightLineDistanceKm`) because the routing
+       *  provider's Directions call failed on every retry — the fee is
+       *  a real number the order can proceed on, just not driving-
+       *  route-accurate. Always false when the method needs no
+       *  distance at all (`fixed`) or the real call succeeded. */
+      distanceEstimated: boolean
     }
   | { ok: false; reason: DeliveryFeeFailureReason }
 
@@ -253,6 +250,38 @@ function enrichAddressWithOriginCity(address: string, city: string | null, state
   return `${address}, ${suffix}`
 }
 
+/** A driving route is always at least as long as the straight line
+ *  between two points, and in practice noticeably longer (rivers,
+ *  highways forcing detours, one-way streets) — this padding
+ *  approximates that gap for typical Brazilian street grids. Picked
+ *  deliberately conservative (rounds the estimate UP, never down) so
+ *  a customer is never undercharged for a genuinely longer route; the
+ *  business absorbs the (usually small) opposite risk of a slightly
+ *  padded fee on a route that happened to be close to a straight
+ *  line. */
+const STRAIGHT_LINE_ROAD_PADDING = 1.35
+
+/** Great-circle distance between two points, in km (haversine
+ *  formula) — the fallback used only when the real Directions call
+ *  fails on every retry (see the calculateDistance catch below).
+ *  Confirmed live (2026-08-08): even with a widened retry schedule,
+ *  the provider's Directions endpoint kept intermittently failing for
+ *  one particular route several times in under an hour, blocking a
+ *  real order each time despite the address/pin having resolved just
+ *  fine — an order should never dead-end on a routing hiccup when a
+ *  reasonable estimate is one multiplication away. */
+function estimateStraightLineDistanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371 // Earth's mean radius, km
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const sinLat = Math.sin(dLat / 2)
+  const sinLng = Math.sin(dLng / 2)
+  const h = sinLat * sinLat + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLng * sinLng
+  const straightLineKm = 2 * R * Math.asin(Math.sqrt(h))
+  return straightLineKm * STRAIGHT_LINE_ROAD_PADDING
+}
+
 function matchNeighborhood(rules: NeighborhoodRule[], name: string): NeighborhoodRule | null {
   const target = normalizeName(name)
   return rules.find((r) => normalizeName(r.name) === target) ?? null
@@ -281,6 +310,7 @@ export async function calculateDeliveryFee(
   let geocodedNeighborhood: string | null = null
   let resolvedLabel: string | null = null
   let destinationPoint: { lat: number; lng: number } | null = null
+  let distanceEstimated = false
 
   if (args.location) {
     // Exact coordinates already known (e.g. a WhatsApp location share)
@@ -371,20 +401,29 @@ export async function calculateDeliveryFee(
         destinationPoint,
       )
     } catch (err) {
-      // Distinct reason from geocode_failed (see DeliveryFeeFailureReason's
-      // doc) — the address/pin was already resolved fine, this is the
-      // routing step failing on its own, so the customer needs
-      // different advice than "the address wasn't found". Logged
-      // distinctly too, so an ops read of journalctl doesn't conflate
-      // "geocode API down" with "directions API down" — same provider,
-      // same free-tier fragility, but a different endpoint/quota under
-      // the hood. Fires regardless of whether destinationPoint came
-      // from geocoding text or an exact shared-location pin, so a
-      // broken/rate-limited provider key surfaces here too, not just
-      // on the geocode path.
+      // The routing call itself failed (not the geocode — the address/
+      // pin already resolved fine above), even after every retry the
+      // provider wrapper already attempts internally. Logged distinctly
+      // from a geocode failure so an ops read of journalctl doesn't
+      // conflate "geocode API down" with "directions API down" — same
+      // provider, same free-tier fragility, but a different endpoint/
+      // quota under the hood.
+      //
+      // Falls back to a straight-line estimate (padded — see
+      // estimateStraightLineDistanceKm) rather than failing the whole
+      // calculation: confirmed live (2026-08-08) that a customer whose
+      // address geocoded correctly still got dead-ended repeatedly by
+      // this exact failure within the same hour, even with retries. An
+      // approximate fee that lets the order proceed beats blocking it
+      // on a routing provider hiccup — `distanceEstimated: true` below
+      // is how a caller (or a future admin view) can tell the two apart.
       const message = err instanceof Error ? err.message : String(err)
-      console.error('[fee-engine] calculateDistance failed:', message)
-      return { ok: false, reason: 'distance_failed' }
+      console.error('[fee-engine] calculateDistance failed, falling back to straight-line estimate:', message)
+      distanceKm = estimateStraightLineDistanceKm(
+        { lat: config.originLat, lng: config.originLng },
+        destinationPoint,
+      )
+      distanceEstimated = true
     }
   }
 
@@ -393,13 +432,13 @@ export async function calculateDeliveryFee(
   }
 
   if (config.freeShippingAbove != null && args.subtotal >= config.freeShippingAbove) {
-    return { ok: true, fee: 0, distanceKm, resolvedLabel, freeShipping: true, method: config.method }
+    return { ok: true, fee: 0, distanceKm, resolvedLabel, freeShipping: true, method: config.method, distanceEstimated }
   }
 
   switch (config.method) {
     case 'fixed': {
       const fee = roundCents(config.settings.fixed_price ?? 0)
-      return { ok: true, fee, distanceKm, resolvedLabel, freeShipping: false, method: 'fixed' }
+      return { ok: true, fee, distanceKm, resolvedLabel, freeShipping: false, method: 'fixed', distanceEstimated }
     }
     case 'neighborhood': {
       const name = args.neighborhoodName?.trim() || geocodedNeighborhood
@@ -413,6 +452,7 @@ export async function calculateDeliveryFee(
         resolvedLabel,
         freeShipping: false,
         method: 'neighborhood',
+        distanceEstimated,
       }
     }
     case 'distance_range': {
@@ -426,6 +466,7 @@ export async function calculateDeliveryFee(
         resolvedLabel,
         freeShipping: false,
         method: 'distance_range',
+        distanceEstimated,
       }
     }
     case 'per_km': {
@@ -439,6 +480,7 @@ export async function calculateDeliveryFee(
         resolvedLabel,
         freeShipping: false,
         method: 'per_km',
+        distanceEstimated,
       }
     }
   }

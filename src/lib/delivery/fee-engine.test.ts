@@ -47,6 +47,7 @@ describe('calculateDeliveryFee — fixed', () => {
       resolvedLabel: null,
       freeShipping: false,
       method: 'fixed',
+      distanceEstimated: false,
     })
     expect(provider.geocode).not.toHaveBeenCalled()
     expect(provider.calculateDistance).not.toHaveBeenCalled()
@@ -62,6 +63,7 @@ describe('calculateDeliveryFee — fixed', () => {
       resolvedLabel: null,
       freeShipping: false,
       method: 'fixed',
+      distanceEstimated: false,
     })
   })
 })
@@ -87,6 +89,7 @@ describe('calculateDeliveryFee — neighborhood', () => {
       resolvedLabel: null,
       freeShipping: false,
       method: 'neighborhood',
+      distanceEstimated: false,
     })
   })
 
@@ -103,6 +106,7 @@ describe('calculateDeliveryFee — neighborhood', () => {
       resolvedLabel: null,
       freeShipping: false,
       method: 'neighborhood',
+      distanceEstimated: false,
     })
   })
 
@@ -118,6 +122,7 @@ describe('calculateDeliveryFee — neighborhood', () => {
       resolvedLabel: null,
       freeShipping: false,
       method: 'neighborhood',
+      distanceEstimated: false,
     })
   })
 
@@ -176,6 +181,7 @@ describe('calculateDeliveryFee — distance_range', () => {
       resolvedLabel: null,
       freeShipping: false,
       method: 'distance_range',
+      distanceEstimated: false,
     })
   })
 
@@ -191,6 +197,7 @@ describe('calculateDeliveryFee — distance_range', () => {
       resolvedLabel: null,
       freeShipping: false,
       method: 'distance_range',
+      distanceEstimated: false,
     })
 
     const atUpperBound = fakeProvider({ calculateDistance: vi.fn(async () => 8) })
@@ -201,6 +208,7 @@ describe('calculateDeliveryFee — distance_range', () => {
       resolvedLabel: null,
       freeShipping: false,
       method: 'distance_range',
+      distanceEstimated: false,
     })
   })
 
@@ -313,6 +321,7 @@ describe('calculateDeliveryFee — location (WhatsApp share)', () => {
       resolvedLabel: 'Rua Presidente Kennedy 183, Centro, Pato Branco - PR',
       freeShipping: false,
       method: 'neighborhood',
+      distanceEstimated: false,
     })
   })
 
@@ -381,6 +390,7 @@ describe('calculateDeliveryFee — global rules', () => {
       resolvedLabel: null,
       freeShipping: true,
       method: 'per_km',
+      distanceEstimated: false,
     })
   })
 
@@ -400,6 +410,7 @@ describe('calculateDeliveryFee — global rules', () => {
       resolvedLabel: null,
       freeShipping: false,
       method: 'fixed',
+      distanceEstimated: false,
     })
   })
 
@@ -547,28 +558,52 @@ describe('calculateDeliveryFee — geocode retry (strips the house number)', () 
 })
 
 describe('calculateDeliveryFee — global rules (cont.)', () => {
-  it('fails with distance_failed (not geocode_failed) and logs it when calculateDistance itself throws — regression, 2026-08-08', async () => {
-    // Distinct reason from geocode_failed on purpose: the address WAS
-    // resolved fine here, only the routing call failed — confirmed
-    // live that conflating the two led the model to tell a customer
-    // whose address geocoded correctly to share their location
-    // instead, which goes through this identical distance call and
-    // would not have helped. Logged distinctly too, different
-    // endpoint, so journalctl doesn't conflate the two failure modes.
+  it('falls back to a padded straight-line estimate instead of failing when calculateDistance itself throws — regression, 2026-08-08', async () => {
+    // Confirmed live: even with a widened retry schedule (see
+    // locationiq.ts's fetchWithRetry), the routing call kept
+    // intermittently failing for one particular route several times
+    // within the same hour — repeatedly dead-ending a real order even
+    // though the address had already geocoded fine. An order should
+    // never block on a routing-provider hiccup when a reasonable
+    // estimate (see estimateStraightLineDistanceKm) is one
+    // multiplication away.
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km' }
+    const config: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'per_km',
+      originLat: 0,
+      originLng: 0,
+      settings: { base_price: 4, price_per_km: 1.5 },
+    }
     const provider = fakeProvider({
+      geocode: vi.fn(async () => ({ lat: 1, lng: 0, neighborhood: null, label: null, layer: 'address' })),
       calculateDistance: vi.fn(async () => {
         throw new DistanceProviderError('directions boom')
       }),
     })
     const result = await calculateDeliveryFee(config, { address: 'Rua X', subtotal: 30 }, provider)
-    expect(result).toEqual({ ok: false, reason: 'distance_failed' })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      // ~111.2km great-circle for 1° of latitude, padded 35% — not
+      // asserted to the exact decimal, just the right ballpark.
+      expect(result.distanceKm).toBeGreaterThan(140)
+      expect(result.distanceKm).toBeLessThan(160)
+      expect(result.distanceEstimated).toBe(true)
+      expect(result.fee).toBeCloseTo(4 + result.distanceKm! * 1.5, 2)
+    }
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('calculateDistance failed'),
+      expect.stringContaining('calculateDistance failed, falling back to straight-line estimate'),
       'directions boom',
     )
     errorSpy.mockRestore()
+  })
+
+  it('never estimates when calculateDistance succeeds — distanceEstimated only ever true on the fallback path', async () => {
+    const config: DeliveryFeeConfig = { ...BASE_CONFIG, method: 'per_km' }
+    const provider = fakeProvider({ calculateDistance: vi.fn(async () => 5) })
+    const result = await calculateDeliveryFee(config, { address: 'Rua X', subtotal: 30 }, provider)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.distanceEstimated).toBe(false)
   })
 })
 
