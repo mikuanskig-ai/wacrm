@@ -9,6 +9,144 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.9.0] — 2026-08-08
+
+A reliability pass on the **AI delivery-ordering path**, driven by live
+production testing (real customers, real bugs, same day). The AI chat
+agent gains three new capabilities — WhatsApp location-pin ordering,
+voice-note transcription, and its own business-hours schedule — plus a
+structural fix (persistent order state) for the root cause behind most
+of the ordering bugs found this cycle: the model has **no memory of
+its own tool calls from earlier turns**, only the human-readable
+transcript, which repeatedly caused duplicate cart lines, re-asked
+questions, and a stale-quote price mismatch.
+
+> **Note for other devs:** `dev/alteracoes` (tags `v6`–`v9`) diverged
+> from `main` on 2026-08-05 and kept getting worked independently —
+> some of it (audio transcription, business hours, the geocode
+> house-number retry) got cherry-picked/hand-merged into `main` days
+> later, on top of unrelated same-day work here, which is why
+> migrations 066–070 don't line up cleanly with any single branch's
+> own numbering. If you're picking up `dev/alteracoes` again: diff it
+> against current `main` first, don't assume it's a clean fast-forward
+> — the WhatsApp-location handling in particular was reimplemented
+> from scratch on `main` (`OrderInfo.location` + a deterministic
+> `mostRecentSharedLocation` DB check) rather than taken as-is, because
+> it landed on top of newer `location`-object plumbing in
+> `fee-engine.ts` that predates `dev/alteracoes`'s own version of it.
+
+> **Migration required:** apply, in order,
+> `supabase/migrations/066_ai_reply_debounce.sql` through
+> `070_ai_business_hours.sql` (066–070). All five are idempotent
+> (`ADD COLUMN IF NOT EXISTS`) — safe to re-run.
+
+> **New env var (self-hosted, Delivery module only):**
+> `LOCATIONIQ_API_KEY` — required as of the provider switch below.
+> Get a free key at [locationiq.com](https://locationiq.com) (no card
+> needed, 5,000 requests/day). `DISTANCE_PROVIDER=ors` rolls back to
+> the previous OpenRouteService provider if you'd rather keep your
+> existing `ORS_API_KEY`.
+
+### Added
+
+- **WhatsApp location-pin ordering.** A customer can drop a GPS
+  location pin instead of typing an address — `calculate_delivery_fee`
+  / `place_order` detect it automatically (a deterministic check
+  against the customer's own last message, not dependent on the model
+  noticing/parsing anything) and use the exact coordinates, skipping
+  geocoding entirely. When the customer only ever shares a pin and
+  never types an address, the order stores a tappable Google Maps link
+  instead of leaving the delivery address empty.
+- **Voice-note transcription.** Inbound WhatsApp audio messages are
+  transcribed (Whisper-compatible, Groq or OpenAI, BYO key — same
+  pattern as the embeddings key) so both the AI and human agents can
+  read what was said. Optional and independent of the chat provider;
+  untranscribed audio still stores/plays exactly as before.
+- **AI-specific business hours.** A separate, optional schedule from
+  `delivery_business_hours` — an account may run the AI bot on a
+  WhatsApp number used for more than just orders, so "when do we take
+  orders" and "when does the bot auto-reply" are now independently
+  configurable under **Settings → AI**. Outside the window the bot
+  goes fully silent (no auto-message).
+- **Persistent order state.** `conversations.ai_order_info` (alongside
+  the existing `ai_cart`) tracks customer name, pickup/delivery,
+  address, neighbourhood, payment method, and the last fee quote
+  across turns, injected into the system prompt every turn as ground
+  truth. New `update_order_info` tool lets the model record a detail
+  the moment it's given instead of re-deriving it from scrolling back
+  through the conversation.
+- **Per-account tool-loop ceiling.** `ai_configs.max_tool_iterations`
+  (Settings → AI) replaces a hardcoded constant — a business taking
+  full orders via chat can need more tool round-trips per turn than
+  any one global default fit.
+
+### Changed
+
+- **Default distance/geocoding provider switched to LocationIQ**
+  (from OpenRouteService) — 5,000 requests/day on a free key, split
+  across geocode/reverse/directions rather than one small shared quota
+  (2,500/day), which was repeatedly exhausted by real traffic and cost
+  at least two real customer orders. ORS stays in the codebase as a
+  documented one-env-var rollback (`DISTANCE_PROVIDER=ors`).
+- **Geocode/directions results are now cached (15 min TTL) and
+  de-duplicated** for identical concurrent requests, and this
+  process's own outbound LocationIQ requests are capped to 2
+  concurrent — two customers testing with the same address at the
+  same time no longer trip the provider's own rate limit against each
+  other.
+- **A customer's free-text address is auto-enriched with the
+  account's registered city/state** before geocoding, when the
+  customer's text doesn't already name one — nobody locally prefixes
+  their own street with their city, and every account's customers
+  have this exact blind spot.
+- **Geocode failures now retry once with the house number stripped**
+  before giving up (thin exact-housenumber coverage on some streets
+  otherwise dead-ended a genuinely correct, complete address), and
+  are logged server-side with the provider's real error — previously
+  silent, only diagnosable by hand-replaying the address afterward.
+- **`distance_failed` split from `geocode_failed`** as its own failure
+  reason — an address that geocoded fine but then failed at the
+  routing/distance step needs different customer-facing advice ("wait
+  and retry") than one that couldn't be found at all ("try sharing
+  your location") — conflating the two had the bot tell a customer
+  whose address was already found correctly to share their location,
+  which goes through the identical distance call and wouldn't help.
+- **`place_order`'s mandatory final fee recalculation now reuses the
+  exact address/coordinates its own confirmed quote used**, instead of
+  re-deriving from free text — fixes a live case where a customer was
+  quoted R$9 (from an exact shared-location pin) and charged R$11.82
+  (the recheck re-geocoded the address text to a less precise point).
+- **Settings → AI's on/off and auto-reply toggles now save
+  immediately** on click, instead of only on the form's "Save" button
+  — the bot was confirmed live to keep responding for ~17 minutes
+  after an admin visually toggled it off.
+
+### Fixed
+
+- **`add_to_cart` no longer creates duplicate cart lines** for the
+  same item across separate tool calls in the same conversation — the
+  model has no memory of its own earlier calls, so a bare "add" call
+  followed by a customization note, or any exact repeat, now merges
+  into the existing line instead of doubling it (confirmed live: a
+  R$20 item shown as R$40).
+- **Rapid back-to-back customer messages no longer trigger duplicate
+  AI replies** that silently doubled the per-conversation reply-cap
+  burn rate — a 2-second debounce lets a burst settle into one reply.
+- **`conversations.ai_cart` no longer corrupts to a JSON string on
+  handoff**, which used to permanently crash `cart.reduce` for any
+  conversation resumed after a human take-over.
+- **The order summary's subtotal/total is now always copied
+  character-for-character from a tool response**, never computed by
+  the model itself — confirmed live: a single R$25 item was
+  hallucinated into a R$100 subtotal.
+- **A pickup order (`is_pickup: true`) no longer requires a delivery
+  address or triggers fee calculation** — previously any
+  distance-based fee method demanded an address the customer had
+  already said they didn't need.
+- Tool-loop exhaustion and an empty provider response mid-loop are now
+  logged and retried once instead of silently stranding an order
+  mid-flow.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same
