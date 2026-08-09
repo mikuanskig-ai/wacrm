@@ -17,6 +17,7 @@ import { formatCurrency } from '@/lib/currency'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { sleep } from './debounce'
 import { getAiBusinessHours, isWithinBusinessHours } from '@/lib/delivery/business-hours'
+import { getPixKey } from '@/lib/payments/config'
 import type { AiUsage } from './types'
 
 interface DispatchArgs {
@@ -56,17 +57,25 @@ const AI_REPLY_DEBOUNCE_MS = 2000
  *  PT-BR, same reasoning as `closedMessage()`/`deliveryFeeFailureMessage()`
  *  (business-hours.ts / flows/engine.ts) — a deterministic message sent
  *  straight to the end customer, not panel UI, so it isn't run through
- *  next-intl. */
-function formatOrderConfirmation(order: PlacedOrderPayload): string {
+ *  next-intl.
+ *
+ *  `pixKey` (migration 071) is appended only when the customer's
+ *  captured payment method actually mentions Pix — requested
+ *  (2026-08-09) so payment collection doesn't depend on the model
+ *  remembering to relay a key it was only ever told about in its own
+ *  free-text system prompt. */
+function formatOrderConfirmation(order: PlacedOrderPayload, pixKey: string | null): string {
   const lines = order.items.map(
     (item) => `${item.quantity}x ${item.product_name} — ${formatCurrency(item.line_total, order.currency)}`,
   )
+  const isPix = order.paymentMethod?.trim().toLowerCase().includes('pix') ?? false
   return [
     'Pedido recebido! 🎉',
     ...lines,
     ...(order.deliveryFee > 0 ? [`Taxa de entrega: ${formatCurrency(order.deliveryFee, order.currency)}`] : []),
     `Total: ${formatCurrency(order.total, order.currency)}`,
-    'Em breve confirmamos o seu pedido.',
+    ...(isPix && pixKey ? [`Chave Pix para pagamento: ${pixKey}`] : []),
+    'Seu pedido foi enviado para a cozinha.',
   ].join('\n')
 }
 
@@ -259,7 +268,10 @@ export async function dispatchInboundToAiReply(
           )
           return
         }
-        text = result.placedOrder ? formatOrderConfirmation(result.placedOrder) : result.text
+        // Only looked up when an order was actually placed — no need to
+        // spend a query on every ordinary turn.
+        const pixKey = result.placedOrder ? await getPixKey(db, accountId) : null
+        text = result.placedOrder ? formatOrderConfirmation(result.placedOrder, pixKey) : result.text
         handoff = result.handoff
         usage = result.usage
         placedOrder = result.placedOrder

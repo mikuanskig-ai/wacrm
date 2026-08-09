@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, CreditCard, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, CreditCard, Trash2, Eye, EyeOff, QrCode } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,7 @@ export function PaymentConfig() {
   const [configured, setConfigured] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [publicKey, setPublicKey] = useState('');
+  const [pixKey, setPixKey] = useState('');
 
   const [accessToken, setAccessToken] = useState('');
   const [accessTokenEdited, setAccessTokenEdited] = useState(false);
@@ -69,6 +70,7 @@ export function PaymentConfig() {
         setWebhookSecret(data.has_webhook_secret ? MASKED_SECRET : '');
         setWebhookSecretEdited(false);
       }
+      setPixKey(data.pix_key ?? '');
     } catch {
       toast.error(t('loadFailed'));
     } finally {
@@ -86,11 +88,16 @@ export function PaymentConfig() {
   const webhookSecretPayload = () => (webhookSecretEdited ? webhookSecret.trim() : undefined);
 
   const handleSave = async () => {
-    if (!configured && !accessTokenEdited) {
+    // MP credentials are only required when actually turning checkout
+    // on — saving just a Pix key (checkout left off) never needs them.
+    // Checked against hasStoredAccessToken/hasStoredWebhookSecret, not
+    // `configured` — a row can already exist from a Pix-key-only save
+    // with no MP credentials in it at all.
+    if (enabled && !hasStoredAccessToken && !accessTokenEdited) {
       toast.error(t('missingAccessToken'));
       return;
     }
-    if (!configured && !webhookSecretEdited) {
+    if (enabled && !hasStoredWebhookSecret && !webhookSecretEdited) {
       toast.error(t('missingWebhookSecret'));
       return;
     }
@@ -104,6 +111,7 @@ export function PaymentConfig() {
           mp_public_key: publicKey.trim() || null,
           mp_access_token: accessTokenPayload(),
           mp_webhook_secret: webhookSecretPayload(),
+          pix_key: pixKey.trim() || null,
         }),
       });
       const data = await res.json();
@@ -135,6 +143,7 @@ export function PaymentConfig() {
         setWebhookSecret('');
         setWebhookSecretEdited(false);
         setHasStoredWebhookSecret(false);
+        setPixKey('');
       } else {
         const data = await res.json();
         toast.error(data.error ?? t('removeFailed'));
@@ -167,6 +176,26 @@ export function PaymentConfig() {
       )}
 
       <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <QrCode className="h-4 w-4 text-primary" /> {t('pixTitle')}
+            </CardTitle>
+            <CardDescription>{t('pixDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Label htmlFor="pix-key">{t('pixKeyLabel')}</Label>
+            <Input
+              id="pix-key"
+              value={pixKey}
+              onChange={(e) => setPixKey(e.target.value)}
+              placeholder="45999526657"
+              disabled={disabled}
+            />
+            <p className="text-xs text-muted-foreground">{t('pixKeyHint')}</p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">

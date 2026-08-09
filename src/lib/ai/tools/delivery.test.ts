@@ -515,6 +515,28 @@ describe('placeOrderTool', () => {
     expect(res.data).toMatchObject({ id: 'order-1', total: 30, currency: 'BRL' })
   })
 
+  it('includes the captured payment method in the placed-order payload — regression, 2026-08-09', async () => {
+    // Lets the deterministic order-confirmation message (auto-reply.ts)
+    // decide whether to append the account's Pix key, without depending
+    // on the model to remember to relay it.
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-9', total: 30, currency: 'BRL' })
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Pizza', unit_price: 30, quantity: 1, addons: [] }],
+      orderInfo: { paymentMethod: 'Pix' },
+    })
+    const res = await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
+    expect(res.data).toMatchObject({ paymentMethod: 'Pix' })
+  })
+
+  it('places a payment method of null when the customer never said how they\'re paying', async () => {
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-10', total: 30, currency: 'BRL' })
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Pizza', unit_price: 30, quantity: 1, addons: [] }],
+    })
+    const res = await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
+    expect(res.data).toMatchObject({ paymentMethod: null })
+  })
+
   const cart: CartLineItem[] = [
     { product_id: 'p1', product_name: 'Pizza', unit_price: 30, quantity: 1, addons: [] },
   ]

@@ -539,6 +539,11 @@ export interface PlacedOrderPayload {
   deliveryFee: number
   currency: string
   items: { product_name: string; quantity: number; line_total: number }[]
+  /** Whatever the customer told update_order_info earlier (e.g. "pix",
+   *  "cartão", "dinheiro"), free text, null if never captured. Lets the
+   *  deterministic order-confirmation message (auto-reply.ts) decide
+   *  whether to append the account's Pix key. */
+  paymentMethod: string | null
 }
 
 export const placeOrderTool: ToolDefinition = {
@@ -685,6 +690,7 @@ export const placeOrderTool: ToolDefinition = {
         line_total:
           (item.unit_price + (item.addons ?? []).reduce((s, a) => s + a.price_delta, 0)) * item.quantity,
       })),
+      paymentMethod: orderInfo.paymentMethod,
     }
     return { content: `Order placed successfully (id ${order.id}).`, data: payload }
   },

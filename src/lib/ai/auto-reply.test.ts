@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   getAccountCurrency: vi.fn(),
   engineSendText: vi.fn(),
   sleep: vi.fn(),
+  getPixKey: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -34,6 +35,7 @@ vi.mock('./generate', () => ({
 vi.mock('./debounce', () => ({ sleep: h.sleep }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('@/lib/flows/engine', () => ({ getAccountCurrency: h.getAccountCurrency }))
+vi.mock('@/lib/payments/config', () => ({ getPixKey: h.getPixKey }))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -138,6 +140,7 @@ beforeEach(() => {
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
+  h.getPixKey.mockResolvedValue(null)
   h.generateReplyWithTools.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.getAccountCurrency.mockResolvedValue('BRL')
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
@@ -386,6 +389,51 @@ describe('dispatchInboundToAiReply — tool-calling path', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).toHaveBeenCalledWith(
       expect.objectContaining({ text: expect.stringContaining('Pizza') }),
+    )
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Seu pedido foi enviado para a cozinha.') }),
+    )
+  })
+
+  it('appends the account\'s Pix key when the order was paid via Pix — regression, 2026-08-09', async () => {
+    h.getPixKey.mockResolvedValue('45999526657')
+    h.generateReplyWithTools.mockResolvedValue({
+      text: '',
+      handoff: false,
+      usage: null,
+      placedOrder: {
+        id: 'order-1',
+        total: 42,
+        deliveryFee: 0,
+        currency: 'BRL',
+        items: [{ product_name: 'Pizza', quantity: 1, line_total: 42 }],
+        paymentMethod: 'Pix',
+      },
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Chave Pix para pagamento: 45999526657') }),
+    )
+  })
+
+  it('never looks up or appends a Pix key when the payment method is not Pix', async () => {
+    h.getPixKey.mockResolvedValue('45999526657')
+    h.generateReplyWithTools.mockResolvedValue({
+      text: '',
+      handoff: false,
+      usage: null,
+      placedOrder: {
+        id: 'order-1',
+        total: 42,
+        deliveryFee: 0,
+        currency: 'BRL',
+        items: [{ product_name: 'Pizza', quantity: 1, line_total: 42 }],
+        paymentMethod: 'Cartão na entrega',
+      },
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.not.stringContaining('Chave Pix') }),
     )
   })
 
