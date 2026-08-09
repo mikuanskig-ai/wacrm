@@ -46,14 +46,15 @@ function makeDb(
     cart?: CartLineItem[]
     products?: FakeProduct[]
     businessHours?: FakeBusinessHours | null
-    /** The customer's most recent message — feeds mostRecentSharedLocation. */
-    lastCustomerMessage?: { content_type: string; content_text: string | null } | null
+    /** The customer's last few messages, most-recent-first — feeds
+     *  mostRecentSharedLocation's lookback. */
+    recentCustomerMessages?: { content_type: string; content_text: string | null }[]
   } = {},
 ) {
   let cart = opts.cart ?? []
   const products = opts.products ?? []
   const businessHours = opts.businessHours ?? null
-  const lastCustomerMessage = opts.lastCustomerMessage ?? null
+  const recentCustomerMessages = opts.recentCustomerMessages ?? []
   const writes: CartLineItem[][] = []
 
   const db = {
@@ -63,8 +64,7 @@ function makeDb(
           select: () => chain,
           eq: () => chain,
           order: () => chain,
-          limit: () => chain,
-          maybeSingle: () => Promise.resolve({ data: lastCustomerMessage, error: null }),
+          limit: () => Promise.resolve({ data: recentCustomerMessages, error: null }),
         }
         return chain
       }
@@ -350,16 +350,31 @@ describe('calculateDeliveryFeeTool', () => {
 
   it('does not require an address when the customer\'s last message was a shared location pin', async () => {
     const { db } = makeDb({
-      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+      recentCustomerMessages: [{ content_type: 'location', content_text: '-24.9532935,-53.4699534' }],
     })
     const res = await calculateDeliveryFeeTool.execute({}, ctxFor(db))
     expect(res.content).not.toMatch(/missing address/i)
     expect(res.content).toMatch(/delivery fee/i)
   })
 
-  it('ignores a shared location that is not the customer\'s most recent message type', async () => {
+  it('finds a location shared a couple of messages back — not just the literal last one', async () => {
+    // WhatsApp can't attach text to a location share, so a follow-up
+    // like "apto 302" is a normal, expected next message, not a
+    // replacement for the pin (most-recent-first, matching the DB
+    // order the real query returns).
     const { db } = makeDb({
-      lastCustomerMessage: { content_type: 'text', content_text: 'oi' },
+      recentCustomerMessages: [
+        { content_type: 'text', content_text: 'apto 302' },
+        { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+      ],
+    })
+    const res = await calculateDeliveryFeeTool.execute({}, ctxFor(db))
+    expect(res.content).not.toMatch(/missing address/i)
+  })
+
+  it('requires an address when no location appears in the recent history at all', async () => {
+    const { db } = makeDb({
+      recentCustomerMessages: [{ content_type: 'text', content_text: 'oi' }],
     })
     const res = await calculateDeliveryFeeTool.execute({}, ctxFor(db))
     expect(res.content).toMatch(/missing address/i)
@@ -397,7 +412,7 @@ describe('placeOrderTool', () => {
     h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-loc', total: 30, currency: 'BRL' })
     const { db } = makeDb({
       cart,
-      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+      recentCustomerMessages: [{ content_type: 'location', content_text: '-24.9532935,-53.4699534' }],
     })
     await placeOrderTool.execute({}, ctxFor(db))
 
@@ -409,20 +424,22 @@ describe('placeOrderTool', () => {
     )
   })
 
-  it('keeps a customer-given text address over a shared location, when both are present', async () => {
+  it('combines the customer-given text (house number/reference) with a Maps link when both a text address and a shared location are present — the driver needs both', async () => {
     const cart: CartLineItem[] = [
       { product_id: 'p1', product_name: 'Pizza', unit_price: 30, quantity: 1, addons: [] },
     ]
     h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-both', total: 30, currency: 'BRL' })
     const { db } = makeDb({
       cart,
-      lastCustomerMessage: { content_type: 'location', content_text: '-24.9532935,-53.4699534' },
+      recentCustomerMessages: [{ content_type: 'location', content_text: '-24.9532935,-53.4699534' }],
     })
     await placeOrderTool.execute({ delivery_address: 'Portão azul, fundos' }, ctxFor(db))
 
     expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(
       db,
-      expect.objectContaining({ deliveryAddress: 'Portão azul, fundos' }),
+      expect.objectContaining({
+        deliveryAddress: 'Portão azul, fundos — https://www.google.com/maps?q=-24.9532935,-53.4699534',
+      }),
     )
   })
 

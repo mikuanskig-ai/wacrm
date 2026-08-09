@@ -54,9 +54,14 @@ function describeFeeFailure(reason: DeliveryFeeFailureReason): string {
       // + city) — asking the customer to repeat the exact same details they
       // already gave reads as broken/ignoring them. WhatsApp's shared
       // location pin skips this failure mode entirely (exact GPS, no
-      // geocoding needed — see calculate_delivery_fee/place_order), so lead
-      // with that instead of re-asking for text.
-      return "Could not automatically locate that address (this can happen even with a correct, complete address — it's a limitation on our side, not necessarily a mistake in what the customer typed). Do NOT just ask them to repeat the same street/number/neighbourhood/city again. Instead, ask them to share their exact location in WhatsApp (attachment icon → Location) — that lets us calculate the fee precisely with no further back-and-forth. Only fall back to asking for a rewritten address if they say they can't share their location."
+      // geocoding needed — see calculate_delivery_fee/place_order). But a
+      // pin alone never carries the apartment/unit number or a reference
+      // point the driver needs (WhatsApp doesn't let a location carry a
+      // caption) — ask for BOTH, not location as a replacement for the
+      // number, and calculate_delivery_fee/place_order already combine them
+      // automatically whenever both are given (see place_order's
+      // storedAddress).
+      return "Could not automatically locate that address from text alone (this can happen even with a correct, complete address — it's a limitation on our side, not necessarily a mistake in what the customer typed). Do NOT just ask them to repeat the same street/number/neighbourhood/city again. Instead, ask the customer to share their exact WhatsApp location (attachment icon → Location) so the fee can be calculated precisely — AND, since a location pin alone doesn't carry it, also confirm the house/apartment number and any reference point (e.g. 'apto 302', 'portão azul') in a text message, since the delivery driver needs that regardless of the pin. Both together give the most reliable delivery. If they can't share their location, ask them to retype the full address instead."
     case 'out_of_range':
       return "Sorry, we currently don't deliver to that address — it's outside our service area."
     case 'neighborhood_not_found':
@@ -95,14 +100,23 @@ function parseSharedLocation(text: string | null): { lat: number; lng: number } 
   return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null
 }
 
-/** The customer's most recent message, when it was a shared WhatsApp
- *  location pin — GPS is strictly more accurate than any address text
- *  could be (see fee-engine.ts's destinationLat/destinationLng), so
+/** The customer's most recent shared WhatsApp location pin, looking
+ *  back over their last few messages — not just the literal latest
+ *  one. GPS is strictly more accurate than any address text could be
+ *  (see fee-engine.ts's destinationLat/destinationLng), so
  *  calculate_delivery_fee/place_order prefer it over making the model
- *  turn raw coordinates into a fake street address. Only the LATEST
- *  customer message counts — not "any location ever shared in this
- *  conversation" — so a text address given afterward correctly takes
- *  over instead of a stale pin winning forever. */
+ *  turn raw coordinates into a fake street address.
+ *
+ *  WhatsApp doesn't let a customer attach text to a location share, so
+ *  the real flow is almost always two separate messages: share the
+ *  pin, then a short follow-up like "apto 302" or "portão azul" — a
+ *  COMPLEMENT to the pin, not a replacement for it (observed live:
+ *  only checking the literal last message lost the location the
+ *  moment the customer added the apartment number, which the delivery
+ *  driver genuinely needs — see place_order's storedAddress). Small
+ *  bounded lookback (last 5 customer messages), not "ever shared in
+ *  this conversation", so an address given well after/instead of a
+ *  pin isn't dragged back to a stale one from earlier in a long chat. */
 async function mostRecentSharedLocation(
   db: SupabaseClient,
   conversationId: string,
@@ -113,11 +127,11 @@ async function mostRecentSharedLocation(
     .eq('conversation_id', conversationId)
     .eq('sender_type', 'customer')
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  const row = data as { content_type: string; content_text: string | null } | null
-  if (!row || row.content_type !== 'location') return null
-  return parseSharedLocation(row.content_text)
+    .limit(5)
+  for (const row of (data ?? []) as { content_type: string; content_text: string | null }[]) {
+    if (row.content_type === 'location') return parseSharedLocation(row.content_text)
+  }
+  return null
 }
 
 export const searchMenuTool: ToolDefinition = {
@@ -375,7 +389,7 @@ export interface PlacedOrderPayload {
 export const placeOrderTool: ToolDefinition = {
   name: 'place_order',
   description:
-    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation. delivery_address can be omitted if the customer shared a WhatsApp location pin instead — it is picked up automatically.',
+    'Finalize the order from the current cart. Only call this AFTER the customer has explicitly confirmed the itemized cart and total earlier in this conversation. If the customer shared a WhatsApp location pin, it is picked up automatically — you do not need to pass its coordinates. Still pass delivery_address with the house/apartment number or a reference point when the customer gave one (even alongside a shared pin) — the pin alone never carries that, and the delivery driver needs it.',
   parameters: {
     type: 'object',
     properties: {
@@ -414,14 +428,17 @@ export const placeOrderTool: ToolDefinition = {
     })
     if (!feeResult.ok) return { content: describeFeeFailure(feeResult.reason) }
 
-    // A driver can't navigate off bare "lat,lng" digits on a printed
-    // ticket — when the customer never gave a text address at all
-    // (pin only), store a tappable Maps link instead of nothing, so
-    // the order stays actually deliverable. Any text the customer did
-    // give (even alongside a pin) always wins.
-    const storedAddress =
-      deliveryAddress?.trim() ||
-      (sharedLocation ? `https://www.google.com/maps?q=${sharedLocation.lat},${sharedLocation.lng}` : null)
+    // The delivery driver needs BOTH when available: the house/
+    // apartment number and any reference point (from text — a GPS pin
+    // alone never carries "apto 302" or "portão azul") AND a tappable
+    // Maps link for exact navigation (a bare address can be ambiguous
+    // or hard to type into a map app while riding). Neither one alone
+    // is reliably enough to find the customer — store both, joined,
+    // whenever both are present; fall back to whichever one exists.
+    const mapsLink = sharedLocation
+      ? `https://www.google.com/maps?q=${sharedLocation.lat},${sharedLocation.lng}`
+      : null
+    const storedAddress = [deliveryAddress?.trim(), mapsLink].filter(Boolean).join(' — ') || null
 
     const order = await finalizeDeliveryOrder(ctx.db, {
       accountId: ctx.accountId,
