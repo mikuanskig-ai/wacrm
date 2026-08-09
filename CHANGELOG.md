@@ -1,619 +1,668 @@
-# SEMPRE EM PORTUGUÊS BRASIL
-
 # Changelog
 
-User-visible changes in `wacrm`. Self-hosters: when pulling an update,
-check this file for any **migration required** notes and apply the
-matching SQL files from `supabase/migrations/` against your Supabase
-project before restarting the app.
+> Este arquivo é sempre escrito em português.
 
-Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
-and polish.
+Mudanças visíveis para o usuário no `wacrm`. Quem hospeda a própria
+instância: ao atualizar, confira este arquivo por qualquer nota de
+**migration required** e aplique os arquivos SQL correspondentes de
+`supabase/migrations/` no seu projeto Supabase antes de reiniciar o
+app.
+
+Versões seguem o [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Antes da 1.0, bumps de `MINOR` cobrem novos módulos; bumps de `PATCH`
+cobrem correções de bugs e polimento.
 
 ## [0.9.0] — 2026-08-08
 
-A reliability pass on the **AI delivery-ordering path**, driven by live
-production testing (real customers, real bugs, same day). The AI chat
-agent gains three new capabilities — WhatsApp location-pin ordering,
-voice-note transcription, and its own business-hours schedule — plus a
-structural fix (persistent order state) for the root cause behind most
-of the ordering bugs found this cycle: the model has **no memory of
-its own tool calls from earlier turns**, only the human-readable
-transcript, which repeatedly caused duplicate cart lines, re-asked
-questions, and a stale-quote price mismatch.
+Uma rodada de confiabilidade no **fluxo de pedidos por delivery via
+IA**, feita em cima de teste em produção ao vivo (clientes reais, bugs
+reais, no mesmo dia). O agente de chat da IA ganha três capacidades
+novas — pedido via localização compartilhada do WhatsApp, transcrição
+de áudio, e horário de funcionamento próprio — mais uma correção
+estrutural (estado persistente do pedido) para a causa raiz da maioria
+dos bugs de pedido encontrados neste ciclo: o modelo **não tem memória
+das próprias chamadas de ferramenta em turnos anteriores**, só do
+transcript legível por humano, o que repetidamente causava linhas
+duplicadas no carrinho, perguntas repetidas, e uma discrepância de
+preço por cotação desatualizada.
 
-> **Note for other devs:** `dev/alteracoes` (tags `v6`–`v9`) diverged
-> from `main` on 2026-08-05 and kept getting worked independently —
-> some of it (audio transcription, business hours, the geocode
-> house-number retry) got cherry-picked/hand-merged into `main` days
-> later, on top of unrelated same-day work here, which is why
-> migrations 066–070 don't line up cleanly with any single branch's
-> own numbering. If you're picking up `dev/alteracoes` again: diff it
-> against current `main` first, don't assume it's a clean fast-forward
-> — the WhatsApp-location handling in particular was reimplemented
-> from scratch on `main` (`OrderInfo.location` + a deterministic
-> `mostRecentSharedLocation` DB check) rather than taken as-is, because
-> it landed on top of newer `location`-object plumbing in
-> `fee-engine.ts` that predates `dev/alteracoes`'s own version of it.
+> **Nota para outros devs:** `dev/alteracoes` (tags `v6`–`v9`) divergiu
+> da `main` em 2026-08-05 e continuou sendo trabalhada
+> independentemente — parte dela (transcrição de áudio, horário de
+> funcionamento, o retry de geocode sem número da casa) foi trazida via
+> cherry-pick/merge manual pra `main` dias depois, em cima de trabalho
+> não relacionado feito no mesmo dia aqui, e é por isso que as
+> migrations 066–070 não batem de forma limpa com a numeração de
+> nenhuma branch isolada. Se for retomar a `dev/alteracoes`: compare
+> (diff) com a `main` atual primeiro, não assuma que é um fast-forward
+> limpo — o tratamento de localização do WhatsApp em particular foi
+> reimplementado do zero na `main` (`OrderInfo.location` + uma checagem
+> determinística `mostRecentSharedLocation` no banco) em vez de
+> aproveitado como estava, porque foi construído em cima de uma
+> estrutura `location` no `fee-engine.ts` mais nova que a própria
+> versão da `dev/alteracoes`.
 
-> **Migration required:** apply, in order,
-> `supabase/migrations/066_ai_reply_debounce.sql` through
-> `070_ai_business_hours.sql` (066–070). All five are idempotent
-> (`ADD COLUMN IF NOT EXISTS`) — safe to re-run.
+> **Migration required:** aplique, em ordem,
+> `supabase/migrations/066_ai_reply_debounce.sql` até
+> `070_ai_business_hours.sql` (066–070). As cinco são idempotentes
+> (`ADD COLUMN IF NOT EXISTS`) — seguras pra rodar de novo.
 
-> **New env var (self-hosted, Delivery module only):**
-> `LOCATIONIQ_API_KEY` — required as of the provider switch below.
-> Get a free key at [locationiq.com](https://locationiq.com) (no card
-> needed, 5,000 requests/day). `DISTANCE_PROVIDER=ors` rolls back to
-> the previous OpenRouteService provider if you'd rather keep your
-> existing `ORS_API_KEY`.
+> **Nova variável de ambiente (self-hosted, só módulo Delivery):**
+> `LOCATIONIQ_API_KEY` — obrigatória a partir da troca de provedor
+> abaixo. Pegue uma chave grátis em
+> [locationiq.com](https://locationiq.com) (sem cartão, 5.000
+> requisições/dia). `DISTANCE_PROVIDER=ors` volta pro provedor
+> OpenRouteService anterior, se preferir manter seu `ORS_API_KEY`
+> existente.
 
-### Added
+### Adicionado
 
-- **WhatsApp location-pin ordering.** A customer can drop a GPS
-  location pin instead of typing an address — `calculate_delivery_fee`
-  / `place_order` detect it automatically (a deterministic check
-  against the customer's own last message, not dependent on the model
-  noticing/parsing anything) and use the exact coordinates, skipping
-  geocoding entirely. When the customer only ever shares a pin and
-  never types an address, the order stores a tappable Google Maps link
-  instead of leaving the delivery address empty.
-- **Voice-note transcription.** Inbound WhatsApp audio messages are
-  transcribed (Whisper-compatible, Groq or OpenAI, BYO key — same
-  pattern as the embeddings key) so both the AI and human agents can
-  read what was said. Optional and independent of the chat provider;
-  untranscribed audio still stores/plays exactly as before.
-- **AI-specific business hours.** A separate, optional schedule from
-  `delivery_business_hours` — an account may run the AI bot on a
-  WhatsApp number used for more than just orders, so "when do we take
-  orders" and "when does the bot auto-reply" are now independently
-  configurable under **Settings → AI**. Outside the window the bot
-  goes fully silent (no auto-message).
-- **Persistent order state.** `conversations.ai_order_info` (alongside
-  the existing `ai_cart`) tracks customer name, pickup/delivery,
-  address, neighbourhood, payment method, and the last fee quote
-  across turns, injected into the system prompt every turn as ground
-  truth. New `update_order_info` tool lets the model record a detail
-  the moment it's given instead of re-deriving it from scrolling back
-  through the conversation.
-- **Per-account tool-loop ceiling.** `ai_configs.max_tool_iterations`
-  (Settings → AI) replaces a hardcoded constant — a business taking
-  full orders via chat can need more tool round-trips per turn than
-  any one global default fit.
+- **Pedido via localização compartilhada do WhatsApp.** O cliente pode
+  mandar um pin de GPS em vez de digitar o endereço —
+  `calculate_delivery_fee` / `place_order` detectam isso
+  automaticamente (uma checagem determinística contra a última
+  mensagem do próprio cliente, sem depender do modelo perceber/
+  interpretar nada) e usam as coordenadas exatas, pulando a
+  geocodificação inteiramente. Quando o cliente só compartilha o pin e
+  nunca digita um endereço, o pedido salva um link clicável do Google
+  Maps em vez de deixar o endereço de entrega vazio.
+- **Transcrição de áudio.** Mensagens de voz recebidas pelo WhatsApp
+  são transcritas (compatível com Whisper, Groq ou OpenAI, chave
+  própria do cliente — mesmo padrão da chave de embeddings) pra que
+  tanto a IA quanto os atendentes humanos consigam ler o que foi dito.
+  Opcional e independente do provedor do chat; um áudio não transcrito
+  continua sendo salvo/tocando exatamente como antes.
+- **Horário de funcionamento próprio da IA.** Uma agenda separada e
+  opcional em relação à `delivery_business_hours` — uma conta pode
+  rodar o bot de IA num número de WhatsApp usado pra mais coisas além
+  de pedidos, então "quando aceitamos pedidos" e "quando o bot responde
+  automaticamente" agora são configuráveis de forma independente em
+  **Configurações → IA**. Fora do horário o bot fica completamente em
+  silêncio (nenhuma mensagem automática).
+- **Estado persistente do pedido.** `conversations.ai_order_info`
+  (junto do já existente `ai_cart`) acompanha nome do cliente, retirada/
+  entrega, endereço, bairro, forma de pagamento, e a última cotação de
+  taxa entre turnos, injetado no prompt do sistema a cada turno como
+  verdade absoluta. Nova ferramenta `update_order_info` deixa o modelo
+  registrar um dado assim que ele é informado, em vez de precisar
+  re-derivar isso rolando a conversa pra trás.
+- **Teto de iterações de ferramenta por conta.**
+  `ai_configs.max_tool_iterations` (Configurações → IA) substitui uma
+  constante fixa no código — um negócio que fecha pedidos inteiros via
+  chat pode precisar de mais idas-e-voltas de ferramenta por turno do
+  que qualquer padrão global fixo suportava.
 
-### Changed
+### Alterado
 
-- **Default distance/geocoding provider switched to LocationIQ**
-  (from OpenRouteService) — 5,000 requests/day on a free key, split
-  across geocode/reverse/directions rather than one small shared quota
-  (2,500/day), which was repeatedly exhausted by real traffic and cost
-  at least two real customer orders. ORS stays in the codebase as a
-  documented one-env-var rollback (`DISTANCE_PROVIDER=ors`).
-- **Geocode/directions results are now cached (15 min TTL) and
-  de-duplicated** for identical concurrent requests, and this
-  process's own outbound LocationIQ requests are capped to 2
-  concurrent — two customers testing with the same address at the
-  same time no longer trip the provider's own rate limit against each
-  other.
-- **A customer's free-text address is auto-enriched with the
-  account's registered city/state** before geocoding, when the
-  customer's text doesn't already name one — nobody locally prefixes
-  their own street with their city, and every account's customers
-  have this exact blind spot.
-- **Geocode failures now retry once with the house number stripped**
-  before giving up (thin exact-housenumber coverage on some streets
-  otherwise dead-ended a genuinely correct, complete address), and
-  are logged server-side with the provider's real error — previously
-  silent, only diagnosable by hand-replaying the address afterward.
-- **`distance_failed` split from `geocode_failed`** as its own failure
-  reason — an address that geocoded fine but then failed at the
-  routing/distance step needs different customer-facing advice ("wait
-  and retry") than one that couldn't be found at all ("try sharing
-  your location") — conflating the two had the bot tell a customer
-  whose address was already found correctly to share their location,
-  which goes through the identical distance call and wouldn't help.
-- **`place_order`'s mandatory final fee recalculation now reuses the
-  exact address/coordinates its own confirmed quote used**, instead of
-  re-deriving from free text — fixes a live case where a customer was
-  quoted R$9 (from an exact shared-location pin) and charged R$11.82
-  (the recheck re-geocoded the address text to a less precise point).
-- **Settings → AI's on/off and auto-reply toggles now save
-  immediately** on click, instead of only on the form's "Save" button
-  — the bot was confirmed live to keep responding for ~17 minutes
-  after an admin visually toggled it off.
+- **Provedor padrão de distância/geocodificação trocado para
+  LocationIQ** (antes OpenRouteService) — 5.000 requisições/dia numa
+  chave grátis, divididas entre geocode/reverse/directions em vez de
+  uma cota única compartilhada (2.500/dia), que foi repetidamente
+  esgotada por tráfego real e custou pelo menos dois pedidos reais de
+  clientes. O ORS continua no código como um rollback documentado de
+  uma única variável de ambiente (`DISTANCE_PROVIDER=ors`).
+- **Resultados de geocode/directions agora são cacheados (TTL de 15
+  min) e deduplicados** para requisições concorrentes idênticas, e as
+  requisições de saída deste processo pra LocationIQ agora têm um
+  limite de 2 simultâneas — dois clientes testando com o mesmo
+  endereço ao mesmo tempo não derrubam mais o rate limit do provedor
+  um contra o outro.
+- **O endereço em texto livre do cliente agora é enriquecido
+  automaticamente com a cidade/estado cadastrados da conta** antes de
+  geocodificar, quando o texto do cliente ainda não menciona nenhum —
+  ninguém localmente prefixa a própria rua com a cidade, e todo cliente
+  de toda conta tem esse mesmo ponto cego.
+- **Falhas de geocode agora tentam de novo uma vez com o número da
+  casa removido** antes de desistir (a cobertura exata de número da
+  casa é fina em algumas ruas, o que travava um endereço genuinamente
+  correto e completo), e são logadas no servidor com o erro real do
+  provedor — antes era silencioso, só diagnosticável reproduzindo o
+  endereço manualmente depois.
+- **`distance_failed` separado de `geocode_failed`** como motivo de
+  falha próprio — um endereço que geocodificou certinho mas depois
+  falhou na etapa de rota/distância precisa de uma orientação diferente
+  pro cliente ("aguarde e tente de novo") do que um que não foi
+  encontrado ("tente compartilhar sua localização") — misturar os dois
+  fazia o bot dizer pra um cliente cujo endereço já tinha sido
+  encontrado corretamente que compartilhasse a localização, o que passa
+  pela mesma chamada de distância e não ajudaria em nada.
+- **O recálculo final obrigatório de taxa do `place_order` agora reusa
+  o endereço/coordenadas exatos que sua própria cotação confirmada
+  usou**, em vez de re-derivar do texto livre — corrige um caso real em
+  que um cliente foi cotado R$9 (a partir de um pin de localização
+  exato) e cobrado R$11,82 (a reconferência regeocodificou o texto do
+  endereço pra um ponto menos preciso).
+- **Os toggles de ligado/desligado e resposta automática em
+  Configurações → IA agora salvam imediatamente** ao clicar, em vez de
+  só no botão "Salvar" do formulário — confirmado ao vivo que o bot
+  continuava respondendo por ~17 minutos depois de um admin desligar
+  visualmente.
 
-### Fixed
+### Corrigido
 
-- **`add_to_cart` no longer creates duplicate cart lines** for the
-  same item across separate tool calls in the same conversation — the
-  model has no memory of its own earlier calls, so a bare "add" call
-  followed by a customization note, or any exact repeat, now merges
-  into the existing line instead of doubling it (confirmed live: a
-  R$20 item shown as R$40).
-- **Rapid back-to-back customer messages no longer trigger duplicate
-  AI replies** that silently doubled the per-conversation reply-cap
-  burn rate — a 2-second debounce lets a burst settle into one reply.
-- **`conversations.ai_cart` no longer corrupts to a JSON string on
-  handoff**, which used to permanently crash `cart.reduce` for any
-  conversation resumed after a human take-over.
-- **The order summary's subtotal/total is now always copied
-  character-for-character from a tool response**, never computed by
-  the model itself — confirmed live: a single R$25 item was
-  hallucinated into a R$100 subtotal.
-- **A pickup order (`is_pickup: true`) no longer requires a delivery
-  address or triggers fee calculation** — previously any
-  distance-based fee method demanded an address the customer had
-  already said they didn't need.
-- Tool-loop exhaustion and an empty provider response mid-loop are now
-  logged and retried once instead of silently stranding an order
-  mid-flow.
+- **`add_to_cart` não cria mais linhas duplicadas no carrinho** para o
+  mesmo item em chamadas de ferramenta separadas na mesma conversa — o
+  modelo não tem memória das próprias chamadas anteriores, então uma
+  chamada de "adicionar" simples seguida de uma nota de personalização,
+  ou qualquer repetição exata, agora funde na linha já existente em vez
+  de duplicá-la (confirmado ao vivo: um item de R$20 aparecendo como
+  R$40).
+- **Mensagens rápidas e consecutivas do cliente não disparam mais
+  respostas duplicadas da IA** que silenciosamente dobravam o consumo
+  do limite de respostas por conversa — um debounce de 2 segundos deixa
+  uma rajada assentar em uma única resposta.
+- **`conversations.ai_cart` não corrompe mais para uma string JSON no
+  handoff**, o que antes travava permanentemente o `cart.reduce` para
+  qualquer conversa retomada depois de um atendente assumir.
+- **O subtotal/total do resumo do pedido agora é sempre copiado
+  caractere-por-caractere de uma resposta de ferramenta**, nunca
+  calculado pelo próprio modelo — confirmado ao vivo: um único item de
+  R$25 foi alucinado como um subtotal de R$100.
+- **Um pedido de retirada (`is_pickup: true`) não exige mais endereço
+  de entrega nem dispara o cálculo de taxa** — antes, qualquer método de
+  taxa baseado em distância exigia um endereço que o cliente já tinha
+  dito que não precisava.
+- Esgotamento do loop de ferramentas e uma resposta vazia do provedor
+  no meio do loop agora são logados e tentados de novo uma vez, em vez
+  de deixar um pedido silenciosamente travado no meio do fluxo.
 
 ## [0.8.1] — 2026-07-10
 
-Fixes inbound chats fragmenting into multiple threads for the same
-number.
+Corrige conversas recebidas se fragmentando em múltiplas threads para
+o mesmo número.
 
-> **Migration required:** apply `supabase/migrations/036_conversation_contact_dedup.sql`
-> (merges any existing duplicate conversations into the oldest thread —
-> no messages are lost — then adds a `UNIQUE (account_id, contact_id)`
-> index so one contact can only ever have one conversation).
+> **Migration required:** aplique `supabase/migrations/036_conversation_contact_dedup.sql`
+> (funde qualquer conversa duplicada existente na thread mais antiga —
+> nenhuma mensagem é perdida — depois adiciona um índice
+> `UNIQUE (account_id, contact_id)` pra que um contato só possa ter uma
+> conversa).
 
-### Fixed
+### Corrigido
 
-- **Duplicate chats for a single contact.** An inbound message could
-  create a second conversation for a contact under a race (Meta retries a
-  delivery, or a batch fans out to concurrent runs). Once two existed,
-  the `.single()` lookup errored on every later message and the webhook
-  created yet another conversation each time, snowballing into a wall of
-  duplicate chats. The find-or-create now resolves to the oldest existing
-  thread and a DB unique index makes the one-conversation-per-contact
-  rule authoritative. The same hardening was applied to the public-API
-  conversation resolver. (Issue #363)
+- **Chats duplicados para um mesmo contato.** Uma mensagem recebida
+  podia criar uma segunda conversa pra um contato numa condição de
+  corrida (Meta reenviando uma entrega, ou um lote gerando execuções
+  concorrentes). Uma vez que existiam duas, a busca com `.single()`
+  dava erro em toda mensagem seguinte e o webhook criava mais uma
+  conversa a cada vez, virando uma bola de neve de chats duplicados. O
+  find-or-create agora resolve pra thread já existente mais antiga e um
+  índice único no banco torna a regra de uma-conversa-por-contato
+  definitiva. O mesmo reforço foi aplicado ao resolvedor de conversa da
+  API pública. (Issue #363)
 
 ## [0.8.0] — 2026-07-08
 
-Polishes the AI auto-reply bot: it's now **visible and controllable from
-the inbox**, its **handoff actually hands off**, and its **token spend is
-logged**.
+Refinamentos no bot de resposta automática da IA: agora ele é
+**visível e controlável pela caixa de entrada**, o **handoff realmente
+entrega o atendimento**, e o **gasto de tokens é registrado**.
 
-> **Migration required:** apply `supabase/migrations/033_ai_reply_polish.sql`
-> (adds `messages.ai_generated`, `ai_configs.handoff_agent_id`,
-> `conversations.ai_handoff_summary`, and the `ai_usage_log` table).
+> **Migration required:** aplique `supabase/migrations/033_ai_reply_polish.sql`
+> (adiciona `messages.ai_generated`, `ai_configs.handoff_agent_id`,
+> `conversations.ai_handoff_summary`, e a tabela `ai_usage_log`).
 
-### Added
+### Adicionado
 
-- **"AI" badge in the inbox.** Replies the bot sent are tagged with a
-  small ✨ AI badge, so agents can tell an automated reply from their own
-  or a Flow's at a glance. (New `messages.ai_generated` flag; only the
-  auto-reply bot sets it.)
-- **Take over / Resume from the thread.** A banner on AI-handled
-  conversations lets an agent **Take over** (pauses the bot for that
-  thread and assigns it to them) or **Resume AI** (hands the thread back
-  and clears the pause). Backed by `POST /api/ai/autoreply/[id]`.
-- **Real handoff.** When the bot bails (can't help, or hits the reply
-  cap) it now (1) routes the conversation to a configurable **handoff
-  target** — a specific agent, or the unassigned queue — and (2) leaves a
-  short **internal note** summarizing the exchange for whoever picks it
-  up. Assigning fires the existing assignment notification. Pick the
-  target under **AI Agents → Setup → Hand off to**.
-- **Token-usage logging + dashboard.** Every draft and auto-reply records
-  its provider token counts to the new `ai_usage_log` table
-  (admin-readable). A new **AI Agents → Usage** tab (admin-only) charts
-  daily token spend on your BYO key with per-mode and per-model
-  breakdowns, backed by `GET /api/ai/usage`. Counts only — no message
-  content is stored or shown.
+- **Selo "IA" na caixa de entrada.** Respostas enviadas pelo bot ganham
+  um pequeno selo ✨ IA, pra que os atendentes distingam uma resposta
+  automática de uma própria ou de um Flow com um olhar. (Novo flag
+  `messages.ai_generated`; só o bot de resposta automática o define.)
+- **Assumir / Retomar direto na conversa.** Um banner nas conversas
+  tocadas pela IA deixa um atendente **Assumir** (pausa o bot naquela
+  thread e a atribui a ele) ou **Retomar IA** (devolve a thread e
+  limpa a pausa). Sustentado por `POST /api/ai/autoreply/[id]`.
+- **Handoff de verdade.** Quando o bot desiste (não consegue ajudar, ou
+  bate no limite de respostas) agora ele (1) roteia a conversa pra um
+  **destino de handoff** configurável — um atendente específico, ou a
+  fila sem atribuição — e (2) deixa uma **nota interna** curta
+  resumindo a troca pra quem for pegar o atendimento. Atribuir dispara
+  a notificação de atribuição já existente. Escolha o destino em
+  **Agentes de IA → Configuração → Repassar para**.
+- **Registro de uso de tokens + painel.** Todo rascunho e resposta
+  automática registra suas contagens de tokens do provedor na nova
+  tabela `ai_usage_log` (legível por admin). Uma nova aba **Agentes de
+  IA → Uso** (só admin) mostra em gráfico o gasto diário de tokens na
+  sua chave própria, com detalhamento por modo e por modelo, sustentado
+  por `GET /api/ai/usage`. Só contagens — nenhum conteúdo de mensagem é
+  guardado ou exibido.
 
-### Changed
+### Alterado
 
-- Auto-reply now has an **account-wide rate limit** (30/min) on top of
-  the existing per-conversation cap, so a burst of inbound can't run your
-  provider key past its limit. Over the limit, inbounds simply wait in
-  the inbox for a human instead of being auto-answered.
+- A resposta automática agora tem um **limite de taxa por conta**
+  (30/min) além do teto já existente por conversa, pra que uma rajada
+  de mensagens recebidas não passe do limite da sua chave de provedor.
+  Acima do limite, as mensagens simplesmente esperam na caixa de
+  entrada por um humano em vez de serem respondidas automaticamente.
 
 ## [0.7.0] — 2026-07-02
 
-Promotes the AI assistant to a first-class **AI Agents** section in the
-sidebar — it's no longer tucked inside Settings.
+Promove o assistente de IA a uma seção própria de primeira classe
+**Agentes de IA** na barra lateral — não fica mais escondido dentro de
+Configurações.
 
-### Added
+### Adicionado
 
-- **AI Agents (sidebar).** A dedicated `/agents` area with two tabs:
-  - **Playground** — a test chat to message your agent and see its
-    grounded, multi-turn replies (and where it would hand off to a human)
-    *before* it ever answers a real customer. Runs the exact same path as
-    the auto-reply bot (knowledge-base retrieval + your provider), and
-    works even before you flip the master switch on, so you can try, then
-    enable. Backed by `POST /api/ai/playground`.
-  - **Setup** — the provider/key, business context, knowledge base, and
-    auto-reply controls (moved here from Settings → AI Assistant).
+- **Agentes de IA (barra lateral).** Uma área dedicada `/agents` com
+  duas abas:
+  - **Playground** — um chat de teste pra conversar com seu agente e
+    ver as respostas embasadas e multi-turno dele (e onde ele
+    repassaria pra um humano) *antes* de responder um cliente de
+    verdade. Roda exatamente o mesmo caminho do bot de resposta
+    automática (busca na base de conhecimento + seu provedor), e
+    funciona mesmo antes de você ligar a chave mestra, pra você testar
+    e só depois ativar. Sustentado por `POST /api/ai/playground`.
+  - **Configuração** — o provedor/chave, contexto do negócio, base de
+    conhecimento, e os controles de resposta automática (movidos pra
+    cá de Configurações → Assistente de IA).
 
-### Changed
+### Alterado
 
-- The AI configuration moved out of **Settings → AI Assistant** into the
-  new **AI Agents** section. No data change — same account config, new
-  home. No migration required.
+- A configuração da IA saiu de **Configurações → Assistente de IA**
+  pra nova seção **Agentes de IA**. Sem mudança de dado — mesma
+  configuração da conta, novo endereço. Sem migration necessária.
 
 ## [0.6.0] — 2026-07-02
 
-Adds an **AI knowledge base** so the assistant (0.5.0) can answer from
-your own content instead of handing off. Paste FAQs, policies, or
-product details under **Settings → AI Assistant → Knowledge base**; the
-relevant excerpts are retrieved into every draft and auto-reply.
+Adiciona uma **base de conhecimento de IA** pra que o assistente
+(0.5.0) responda a partir do seu próprio conteúdo em vez de repassar
+pra um humano. Cole FAQs, políticas, ou detalhes de produto em
+**Configurações → Assistente de IA → Base de conhecimento**; os
+trechos relevantes são recuperados em todo rascunho e resposta
+automática.
 
-### Added
+### Adicionado
 
-- **Knowledge base with hybrid retrieval.** Lexical Postgres full-text
-  search works for every account with no extra credentials. Optional
-  **semantic search** (pgvector, OpenAI `text-embedding-3-small`) turns
-  on when you add an **embeddings key** — semantic-primary, topped up
-  with lexical to fill the result set. Anthropic-only accounts (Anthropic
-  has no embeddings API) keep the lexical path with zero extra setup.
-- **Knowledge base manager** in Settings — add/edit/delete documents and
-  a **Reindex** action to backfill embeddings after adding a key. Both
-  drafts and the auto-reply bot are grounded in the retrieved excerpts,
-  and the prompt still instructs the model to hand off (auto-reply) or
-  say it will follow up (draft) when the KB doesn't cover the question.
-  **Migration required:** apply `supabase/migrations/030_ai_knowledge.sql`
-  (enables `pgvector`; adds `ai_knowledge_documents` + `ai_knowledge_chunks`
-  and an `embeddings_api_key` column on `ai_configs`).
+- **Base de conhecimento com busca híbrida.** Busca lexical em
+  Postgres full-text funciona pra toda conta sem credencial extra.
+  **Busca semântica** opcional (pgvector, OpenAI
+  `text-embedding-3-small`) liga quando você adiciona uma **chave de
+  embeddings** — semântica como principal, complementada com lexical
+  pra completar o conjunto de resultados. Contas só-Anthropic
+  (Anthropic não tem API de embeddings) seguem no caminho lexical sem
+  configuração extra nenhuma.
+- **Gerenciador de base de conhecimento** em Configurações —
+  adicionar/editar/excluir documentos e uma ação **Reindexar** pra
+  preencher embeddings depois de adicionar uma chave. Tanto rascunhos
+  quanto o bot de resposta automática são embasados nos trechos
+  recuperados, e o prompt ainda instrui o modelo a repassar pra um
+  humano (resposta automática) ou dizer que vai retornar (rascunho)
+  quando a base de conhecimento não cobrir a pergunta.
+  **Migration required:** aplique `supabase/migrations/030_ai_knowledge.sql`
+  (habilita `pgvector`; adiciona `ai_knowledge_documents` +
+  `ai_knowledge_chunks` e uma coluna `embeddings_api_key` em
+  `ai_configs`).
 
 ## [0.5.0] — 2026-07-02
 
-Adds the **AI reply assistant** — bring-your-own-key. Each account
-pastes its own OpenAI or Anthropic key under **Settings → AI
-Assistant**; wacrm calls the provider directly with that key, so
-there's no per-seat AI fee and your conversation data never leaves
-your own infrastructure for a wacrm-run service. The key is stored
-AES-256-GCM-encrypted at rest (same as WhatsApp tokens) and never
-returned to the client after saving.
+Adiciona o **assistente de resposta por IA** — chave própria do
+cliente. Cada conta cola sua própria chave OpenAI ou Anthropic em
+**Configurações → Assistente de IA**; o wacrm chama o provedor
+diretamente com essa chave, então não há taxa de IA por assento e os
+dados da sua conversa nunca saem da sua própria infraestrutura pra um
+serviço rodado pelo wacrm. A chave é guardada criptografada em
+AES-256-GCM em repouso (igual aos tokens do WhatsApp) e nunca
+devolvida ao cliente depois de salva.
 
-### Added
+### Adicionado
 
-- **AI-drafted replies in the inbox.** A ✨ button in the composer
-  (agent+) reads the recent conversation and drops a suggested reply
-  into the box for the agent to edit and send. Read-only server-side —
-  `POST /api/ai/draft` never sends or stores anything. Respects your
-  business context / persona from the settings prompt.
-- **AI auto-reply bot.** When enabled, inbound messages that no
-  deterministic Flow consumed and that have no agent assigned get an
-  automatic LLM reply. Bounded by a per-conversation cap
-  (`auto_reply_max_per_conversation`, default 3) and a clean human
-  handoff: when the model can't confidently help — or the customer
-  asks for a person — it stays silent and leaves the message for a
-  human, and won't auto-reply on that thread again until re-enabled.
-  Flows always win over the bot.
-- **Settings → AI Assistant** (admin+ to edit): pick provider + model,
-  paste your key, add business context/tone, toggle the assistant and
-  auto-reply, set the per-conversation cap, and **Test key** against
-  the provider before saving.
-- Providers: OpenAI (Chat Completions) and Anthropic (Messages) behind
-  one interface; model is a free-text field with sensible defaults, so
-  you can point it at any current model your key can access.
-  **Migration required:** apply
-  `supabase/migrations/029_ai_reply.sql` (adds `ai_configs` +
-  per-conversation auto-reply columns on `conversations`).
+- **Respostas rascunhadas por IA na caixa de entrada.** Um botão ✨ no
+  compositor (agente+) lê a conversa recente e coloca uma resposta
+  sugerida na caixa pro atendente editar e enviar. Só leitura no
+  servidor — `POST /api/ai/draft` nunca envia nem guarda nada. Respeita
+  o contexto de negócio/persona do prompt de configurações.
+- **Bot de resposta automática por IA.** Quando ligado, mensagens
+  recebidas que nenhum Flow determinístico consumiu e que não têm
+  atendente atribuído recebem uma resposta automática por LLM.
+  Limitado por um teto por conversa
+  (`auto_reply_max_per_conversation`, padrão 3) e um handoff limpo pra
+  humano: quando o modelo não consegue ajudar com confiança — ou o
+  cliente pede uma pessoa — ele fica em silêncio e deixa a mensagem
+  pra um humano, e não responde automaticamente naquela thread de novo
+  até ser reativado. Flows sempre têm prioridade sobre o bot.
+- **Configurações → Assistente de IA** (admin+ pra editar): escolha
+  provedor + modelo, cole sua chave, adicione contexto/tom do negócio,
+  ligue o assistente e a resposta automática, defina o teto por
+  conversa, e **Testar chave** contra o provedor antes de salvar.
+- Provedores: OpenAI (Chat Completions) e Anthropic (Messages) atrás de
+  uma única interface; o modelo é um campo de texto livre com padrões
+  sensatos, pra você apontar pra qualquer modelo atual que sua chave
+  acesse.
+  **Migration required:** aplique
+  `supabase/migrations/029_ai_reply.sql` (adiciona `ai_configs` +
+  colunas de resposta automática por conversa em `conversations`).
 
 ## [0.4.0] — 2026-07-01
 
-Completes the public API (#245): **outbound event webhooks** so
-automations can *react* to activity instead of polling.
+Completa a API pública (#245): **webhooks de eventos de saída** pra que
+automações consigam *reagir* a atividade em vez de fazer polling.
 
-### Added
+### Adicionado
 
-- **Outbound event webhooks (`/api/v1/webhooks`).** Register an HTTPS
-  endpoint (scope `webhooks:manage`) to be POSTed to when an event
-  happens in your account — `message.received`, `message.status_updated`,
-  or `conversation.created`. Manage endpoints with
-  `GET/POST /api/v1/webhooks` and `GET/PATCH/DELETE /api/v1/webhooks/{id}`.
-  Each delivery is signed with an `X-Wacrm-Signature`
-  (HMAC-SHA256 over `timestamp.body`) so receivers can verify
-  authenticity and reject replays; the signing secret is returned once
-  at creation and stored encrypted. Delivery is best-effort — an
-  endpoint that fails repeatedly is auto-disabled after a threshold of
-  consecutive failures. See `docs/public-api.md`.
-  **Migration required:** apply
+- **Webhooks de eventos de saída (`/api/v1/webhooks`).** Registre um
+  endpoint HTTPS (escopo `webhooks:manage`) pra receber um POST quando
+  um evento acontece na sua conta — `message.received`,
+  `message.status_updated`, ou `conversation.created`. Gerencie
+  endpoints com `GET/POST /api/v1/webhooks` e
+  `GET/PATCH/DELETE /api/v1/webhooks/{id}`. Cada entrega é assinada com
+  um `X-Wacrm-Signature` (HMAC-SHA256 sobre `timestamp.body`) pra que
+  quem recebe consiga verificar autenticidade e rejeitar replays; o
+  segredo de assinatura é devolvido uma única vez na criação e guardado
+  criptografado. A entrega é best-effort — um endpoint que falha
+  repetidamente é desativado automaticamente depois de um limite de
+  falhas consecutivas. Veja `docs/public-api.md`.
+  **Migration required:** aplique
   `supabase/migrations/028_webhook_endpoints.sql`.
   ([#245](https://github.com/ArnasDon/wacrm/issues/245))
 
 ## [0.3.0] — 2026-07-01
 
-Multi-user accounts ship. Every wacrm install is multi-tenant on the
-database side: a single user's signup creates a fresh "account", and
-every row is scoped to that account rather than to the user directly.
-This release also opens the user-visible **Members** surface — invite
-teammates by link, manage their roles, transfer ownership — to all
-users. The `'account_sharing'` beta gate that hid it during
-development is removed (mirrors the Flows soft-GA in 0.2.0). Existing
-self-hosted instances keep working: every existing user is backfilled
-as the sole owner of their own account and sees identical data, and a
-solo owner who never invites anyone sees the same single-user app they
-always did.
+Contas multiusuário no ar. Toda instalação wacrm é multi-tenant no lado
+do banco: o cadastro de um único usuário cria uma "conta" nova, e toda
+linha é vinculada àquela conta em vez de diretamente ao usuário. Este
+lançamento também abre a superfície visível de **Membros** — convidar
+colegas por link, gerenciar seus papéis, transferir titularidade —
+pra todos os usuários. O gate de beta `'account_sharing'` que a
+escondia durante o desenvolvimento é removido (espelha o soft-GA dos
+Flows na 0.2.0). Instâncias self-hosted existentes continuam
+funcionando: todo usuário existente é migrado como único dono da
+própria conta e vê os mesmos dados de sempre, e um dono solo que nunca
+convidou ninguém vê o mesmo app de usuário único de sempre.
 
-### Added
+### Adicionado
 
-- **Public REST API (`/api/v1`) — groundwork.** A scoped, revocable
-  **API key** system so you can drive wacrm from your own scripts and
-  automations. Create keys under **Settings → API keys** (admin+),
-  grant only the scopes each integration needs, and authenticate with
-  `Authorization: Bearer <key>`. Keys are account-scoped and stored
-  hashed (plaintext shown once). This release ships the auth layer,
-  scopes, per-key rate limiting, the management UI, and a
-  `GET /api/v1/me` probe to verify a key. See
-  `docs/public-api.md`. **Migration required:** apply
+- **API REST pública (`/api/v1`) — base.** Um sistema de **chave de
+  API** com escopo e revogável pra você operar o wacrm a partir dos
+  seus próprios scripts e automações. Crie chaves em **Configurações →
+  Chaves de API** (admin+), conceda só os escopos que cada integração
+  precisa, e autentique com `Authorization: Bearer <key>`. Chaves são
+  vinculadas à conta e guardadas com hash (texto puro exibido uma
+  única vez). Este lançamento traz a camada de autenticação, escopos,
+  limite de taxa por chave, a UI de gerenciamento, e uma sonda
+  `GET /api/v1/me` pra verificar uma chave. Veja
+  `docs/public-api.md`. **Migration required:** aplique
   `supabase/migrations/026_api_keys.sql`. ([#245](https://github.com/ArnasDon/wacrm/issues/245))
-- **Public REST API — data endpoints.** Built on the key auth above,
-  so external automations can read and drive the CRM:
-  - `POST /api/v1/messages` — send a text / template / media message to
-    a phone number; finds-or-creates the contact + conversation
-    (`messages:send`).
+- **API REST pública — endpoints de dados.** Construída em cima da
+  autenticação por chave acima, pra automações externas lerem e
+  operarem o CRM:
+  - `POST /api/v1/messages` — envia mensagem de texto / template /
+    mídia pra um número de telefone; encontra-ou-cria o contato +
+    conversa (`messages:send`).
   - `GET/POST /api/v1/contacts`, `GET/PATCH /api/v1/contacts/{id}` —
-    list (search + tag filter), create (find-or-create by phone), read,
-    and update contacts, including tags (`contacts:read` /
-    `contacts:write`).
-  - `GET /api/v1/conversations`, `GET /api/v1/conversations/{id}`, and
-    `GET /api/v1/conversations/{id}/messages` — browse conversations and
-    their message history with delivery status (`conversations:read` /
-    `messages:read`).
-  - `POST /api/v1/broadcasts` + `GET /api/v1/broadcasts/{id}` — launch a
-    template broadcast to a recipient list and poll its progress
-    (`broadcasts:send`).
-  All list endpoints share one cursor-pagination contract
-  (`{ data, meta: { next_cursor } }`). No migration required — the
-  scopes already existed and the tables are unchanged. Outbound event
-  webhooks (react to inbound messages) are the remaining roadmap item.
-  See `docs/public-api.md`. ([#245](https://github.com/ArnasDon/wacrm/issues/245))
+    lista (busca + filtro por tag), cria (encontra-ou-cria por
+    telefone), lê, e atualiza contatos, incluindo tags
+    (`contacts:read` / `contacts:write`).
+  - `GET /api/v1/conversations`, `GET /api/v1/conversations/{id}`, e
+    `GET /api/v1/conversations/{id}/messages` — navega conversas e seu
+    histórico de mensagens com status de entrega
+    (`conversations:read` / `messages:read`).
+  - `POST /api/v1/broadcasts` + `GET /api/v1/broadcasts/{id}` —
+    dispara uma transmissão de template pra uma lista de destinatários
+    e acompanha o progresso (`broadcasts:send`).
+  Todos os endpoints de listagem compartilham um único contrato de
+  paginação por cursor (`{ data, meta: { next_cursor } }`). Sem
+  migration necessária — os escopos já existiam e as tabelas não
+  mudaram. Webhooks de eventos de saída (reagir a mensagens recebidas)
+  são o item restante do roadmap. Veja `docs/public-api.md`.
+  ([#245](https://github.com/ArnasDon/wacrm/issues/245))
 
-### Changed
+### Alterado
 
-- **Tenancy moves from per-user to per-account.** RLS on every
-  domain table (contacts, conversations, messages, broadcasts,
-  automations, flows, pipelines, templates, tags, …) now checks
-  account membership via a new SECURITY DEFINER helper
-  `is_account_member(account_id, min_role)` instead of
-  `auth.uid() = user_id`. The `user_id` columns stay on every row
-  for assignment / audit but no longer enforce isolation.
-- **WhatsApp config is one-per-account, not one-per-user.** The
-  `whatsapp_config.UNIQUE(user_id)` constraint is replaced by
-  `UNIQUE(account_id)`.
-- **`flow_runs` idempotency key swaps to `(account_id, contact_id)`**
-  so two accounts sharing a contact phone number can each run their
-  own flows independently.
-- **The signup trigger (`handle_new_user`) now also creates a
-  personal account** and links the new profile to it as `owner`.
+- **Tenancy migra de por-usuário pra por-conta.** RLS em toda tabela de
+  domínio (contatos, conversas, mensagens, transmissões, automações,
+  flows, pipelines, templates, tags, …) agora checa membresia de conta
+  via um novo helper SECURITY DEFINER `is_account_member(account_id,
+  min_role)` em vez de `auth.uid() = user_id`. As colunas `user_id`
+  continuam em toda linha pra atribuição/auditoria mas não impõem mais
+  isolamento.
+- **Configuração de WhatsApp passa a ser uma-por-conta, não
+  uma-por-usuário.** A constraint `whatsapp_config.UNIQUE(user_id)` é
+  substituída por `UNIQUE(account_id)`.
+- **A chave de idempotência de `flow_runs` passa pra
+  `(account_id, contact_id)`** pra que duas contas compartilhando um
+  número de telefone de contato rodem cada uma seus próprios flows de
+  forma independente.
+- **O trigger de cadastro (`handle_new_user`) agora também cria uma
+  conta pessoal** e vincula o novo perfil a ela como `owner`.
 
-### Changed
+### Alterado
 
-- **Flow-media storage is now account-scoped.** Migration 016
-  pathed uploaded files under `auth.uid()/...`, which orphaned
-  flow media when a teammate left a shared account. New uploads
-  go under `account-<account_id>/...` and any account member
-  with the right role can edit them. Legacy paths remain
-  writable by the original uploader for backward compatibility.
-- **Webhook contact lookup now pre-filters in SQL.** Previously
-  pulled every contact in an account just to JS-filter to one
-  row by phone — fine when account = one user, painful when
-  account = team. Pre-filter by phone suffix on the database
-  side; re-apply `phonesMatch` on the (typically 0-2 row)
-  candidate set.
+- **O armazenamento de mídia de Flow agora é vinculado à conta.** A
+  migration 016 caminhava arquivos enviados sob `auth.uid()/...`, o
+  que órfãos a mídia de flow quando um colega saía de uma conta
+  compartilhada. Novos envios vão pra `account-<account_id>/...` e
+  qualquer membro da conta com o papel certo consegue editá-los.
+  Caminhos antigos continuam graváveis pelo autor original, por
+  compatibilidade.
+- **A busca de contato no webhook agora pré-filtra em SQL.**
+  Antes puxava todo contato de uma conta só pra filtrar em JS até uma
+  linha por telefone — tranquilo quando conta = um usuário, doloroso
+  quando conta = time. Pré-filtra por sufixo de telefone no lado do
+  banco; reaplica `phonesMatch` no conjunto de candidatos (tipicamente
+  0-2 linhas).
 
 ### Migration required
 
-- `supabase/migrations/020_account_sharing_followups.sql` —
-  composite partial indexes on `automations(account_id,
-  trigger_type) WHERE is_active` and `flows(account_id) WHERE
-  status='active'` for the engine dispatch hot path; updated
-  `flow-media` storage RLS to allow account-member writes under
-  the new path convention. Idempotent.
+- `supabase/migrations/020_account_sharing_followups.sql` — índices
+  parciais compostos em `automations(account_id, trigger_type) WHERE
+  is_active` e `flows(account_id) WHERE status='active'` pro caminho
+  quente de despacho do engine; RLS de armazenamento `flow-media`
+  atualizada pra permitir gravação por membro da conta na nova
+  convenção de caminho. Idempotente.
 
-- **Role-aware UI gating across the app.** The inbox composer's
-  send button + textarea, the "New broadcast / automation / flow"
-  buttons, the "Add pipeline / deal" buttons, and the "Add /
-  Import contact" buttons are now disabled-with-tooltip for
-  viewers (and for agents on settings-class actions). Choice:
-  show-but-disable rather than hide, so the UI never feels
-  silently broken to a teammate looking at a feature they don't
-  yet have permission for.
-- **Sidebar surfaces the active account** above the user info
-  whenever the account name differs from your own — i.e. once
-  you've renamed the account or joined a shared one. A default
-  solo account is named after you, so the strip stays hidden to
-  avoid duplicating your name in the footer.
-- **Members is open to all users.** The `account_sharing` beta
-  flag that hid the Settings → Members tab and the sidebar
-  account strip during development is gone; the multi-user
-  surface is now part of the standard app. (Same soft-GA move as
-  Flows in 0.2.0.)
+- **UI com controle de acesso por papel em todo o app.** O botão de
+  enviar + textarea do compositor da caixa de entrada, os botões "Nova
+  transmissão / automação / flow", os botões "Adicionar
+  pipeline / negócio", e os botões "Adicionar / Importar contato"
+  agora ficam desabilitados-com-tooltip pra viewers (e pra agentes em
+  ações de classe configurações). Escolha: mostrar-mas-desabilitar em
+  vez de esconder, pra que a UI nunca pareça silenciosamente quebrada
+  pra um colega olhando um recurso que ainda não tem permissão.
+- **A barra lateral mostra a conta ativa** acima das informações do
+  usuário sempre que o nome da conta difere do seu próprio — ou seja,
+  uma vez que você renomeou a conta ou entrou numa compartilhada. Uma
+  conta solo padrão leva seu próprio nome, então a faixa fica
+  escondida pra evitar duplicar seu nome no rodapé.
+- **Membros está aberto pra todos os usuários.** O flag de beta
+  `account_sharing` que escondia a aba Configurações → Membros e a
+  faixa de conta na barra lateral durante o desenvolvimento acabou; a
+  superfície multiusuário agora é parte do app padrão. (Mesmo
+  movimento de soft-GA dos Flows na 0.2.0.)
 
-### Fixed
+### Corrigido
 
-- **Inbound WhatsApp messages now land in the shared inbox.** The
-  webhook + automations + flows engines used to route inbound
-  events by `user_id`, which after the 017 migration only matched
-  the WhatsApp config owner's automations / flows — teammates'
-  rules never fired. PR 8 of the multi-user series flips every
-  lookup to `account_id` so any member of the account sees the
-  inbound message and any teammate's automation or flow can react
-  to it. Also fixes incipient NOT NULL violations on
-  `automation_logs`, `automation_pending_executions`, `flow_runs`,
-  and `deals` — those tables gained `account_id NOT NULL` in 017
-  but the engines hadn't yet been updated to populate it.
+- **Mensagens de WhatsApp recebidas agora chegam na caixa de entrada
+  compartilhada.** Os engines de webhook + automações + flows
+  roteavam mensagens recebidas por `user_id`, o que depois da
+  migration 017 só batia com as automações/flows do dono da
+  configuração de WhatsApp — as regras dos colegas nunca disparavam.
+  O PR 8 da série multiusuário troca toda busca pra `account_id`, pra
+  que qualquer membro da conta veja a mensagem recebida e qualquer
+  automação ou flow de um colega consiga reagir a ela. Também corrige
+  violações incipientes de NOT NULL em `automation_logs`,
+  `automation_pending_executions`, `flow_runs`, e `deals` — essas
+  tabelas ganharam `account_id NOT NULL` na 017 mas os engines ainda
+  não tinham sido atualizados pra preenchê-la.
 
-### Added
+### Adicionado
 
-- **Duplicate phone numbers are now prevented across contacts.** A
-  phone number can no longer become more than one contact in the same
-  account. Adding a contact whose number already exists is blocked
-  with a link to the existing record (and a softer warning for
-  near-matches that share their last 8 digits); CSV import de-dupes
-  within the file and against existing contacts, reporting
-  "X imported, Y duplicates skipped". The rule is enforced by a
-  database unique index on the normalized number, so the WhatsApp
-  webhook, the form, import, and any future path all agree. Existing
-  duplicates are merged into the oldest contact on upgrade (their
-  conversations, deals, notes, and tags are re-pointed, nothing is
-  lost). Closes #212.
-- **Configurable default deal currency.** Each account can now pick
-  its default currency under **Settings → Deals** (admin+); the app
-  previously hardcoded USD throughout. New deals default to it, and
-  pipeline-stage totals, the dashboard "Open Deals Value" card, the
-  pipeline-value donut, and automation-created deals all use it.
-  Existing deals keep the currency they were saved with — totals are
-  shown in the account default with no exchange-rate conversion (one
-  currency per account). Full guide:
-  [Default currency](https://wacrm.tech/docs/settings#deals).
-- **Members tab in Settings.** The user-facing surface for the
-  multi-user APIs below, available to everyone (no beta flag). From
-  Settings → **Members** an admin or owner can: see who's on the
-  account with their role and join date, invite teammates by
-  generating a one-time share link (pick the role + optional
-  expiry), revoke pending invites, change a member's role, remove a
-  member, and — as owner — transfer ownership. Recipients accept via
-  a public `/join/[token]` page. Full guide:
-  [Members docs](https://wacrm.tech/docs/members).
-- **Account & member management API** — server-side endpoints
-  backing the Members tab. All routes are role-gated and
-  return Supabase-RLS-scoped data.
-  - `GET /api/account` — caller's account + role. Any member.
-  - `PATCH /api/account` — rename the account. Admin+.
-  - `GET /api/account/members` — list members. Email visible to
-    admin+ only; agents/viewers see name + avatar + role +
-    joined date.
-  - `PATCH /api/account/members/[userId]` — change a member's
-    role. Admin+. Owner promotion/demotion goes through the
-    transfer endpoint instead.
-  - `DELETE /api/account/members/[userId]` — remove a member.
-    Admin+. The removed user keeps their login and is moved to a
-    freshly-created personal account (mirror of the signup flow).
-  - `POST /api/account/transfer-ownership` — owner only. Atomic
-    swap with the named member.
-- **Invitation API + redeem flow** — the no-email, link-only
-  invite path that powers the Members tab's "Invite member" button
-  and the `/join/[token]` accept page.
-  - `GET /api/account/invitations` — list outstanding (admin+).
-  - `POST /api/account/invitations` — create an invite, returns
-    the plaintext token + share URL **exactly once** (we store
-    only the SHA-256 hash on the row). Body
+- **Números de telefone duplicados agora são prevenidos entre
+  contatos.** Um número de telefone não pode mais virar mais de um
+  contato na mesma conta. Adicionar um contato cujo número já existe é
+  bloqueado com um link pro registro existente (e um aviso mais leve
+  pra quase-coincidências que compartilham os últimos 8 dígitos);
+  importação CSV deduplica dentro do arquivo e contra contatos
+  existentes, reportando "X importados, Y duplicados ignorados". A
+  regra é aplicada por um índice único no banco sobre o número
+  normalizado, então o webhook do WhatsApp, o formulário, a
+  importação, e qualquer caminho futuro concordam. Duplicados
+  existentes são fundidos no contato mais antigo na atualização (suas
+  conversas, negócios, notas, e tags são re-apontados, nada é
+  perdido). Fecha #212.
+- **Moeda padrão de negócio configurável.** Cada conta agora pode
+  escolher sua moeda padrão em **Configurações → Negócios** (admin+);
+  o app antes fixava USD em tudo. Novos negócios usam ela por padrão,
+  e os totais por estágio do pipeline, o card "Valor de negócios
+  abertos" do dashboard, o donut de valor do pipeline, e os negócios
+  criados por automação todos a usam. Negócios existentes mantêm a
+  moeda com que foram salvos — totais são exibidos na moeda padrão da
+  conta sem conversão de câmbio (uma moeda por conta). Guia completo:
+  [Moeda padrão](https://wacrm.tech/docs/settings#deals).
+- **Aba Membros em Configurações.** A superfície visível pro usuário
+  das APIs multiusuário abaixo, disponível pra todos (sem flag de
+  beta). Em Configurações → **Membros** um admin ou dono pode: ver
+  quem está na conta com papel e data de entrada, convidar colegas
+  gerando um link de compartilhamento de uso único (escolhendo papel +
+  validade opcional), revogar convites pendentes, mudar o papel de um
+  membro, remover um membro, e — como dono — transferir a
+  titularidade. Quem recebe aceita por uma página pública
+  `/join/[token]`. Guia completo:
+  [Docs de Membros](https://wacrm.tech/docs/members).
+- **API de gerenciamento de conta e membros** — endpoints no servidor
+  que sustentam a aba Membros. Todas as rotas são controladas por
+  papel e devolvem dados com escopo RLS do Supabase.
+  - `GET /api/account` — conta + papel de quem chama. Qualquer membro.
+  - `PATCH /api/account` — renomeia a conta. Admin+.
+  - `GET /api/account/members` — lista membros. E-mail visível só pra
+    admin+; agentes/viewers veem nome + avatar + papel + data de
+    entrada.
+  - `PATCH /api/account/members/[userId]` — muda o papel de um
+    membro. Admin+. Promoção/rebaixamento de dono passa pelo endpoint
+    de transferência.
+  - `DELETE /api/account/members/[userId]` — remove um membro. Admin+.
+    O usuário removido mantém seu login e é movido pra uma conta
+    pessoal recém-criada (espelha o fluxo de cadastro).
+  - `POST /api/account/transfer-ownership` — só dono. Troca atômica
+    com o membro nomeado.
+- **API de convites + fluxo de resgate** — o caminho de convite sem
+  e-mail, só por link, que alimenta o botão "Convidar membro" da aba
+  Membros e a página de aceite `/join/[token]`.
+  - `GET /api/account/invitations` — lista pendentes (admin+).
+  - `POST /api/account/invitations` — cria um convite, devolve o token
+    em texto puro + URL de compartilhamento **exatamente uma vez**
+    (guardamos só o hash SHA-256 na linha). Corpo
     `{ role, expiresInDays?, label? }`. Admin+.
-  - `DELETE /api/account/invitations/[id]` — revoke (admin+).
-  - `GET /api/invitations/[token]/peek` — public, per-IP
-    rate-limited. Returns `{ ok, account_name, role, expires_at }`
-    or `{ ok: false, reason }` so the join page can render
-    "You're being invited to <Account> as <Role>".
-  - `POST /api/invitations/[token]/redeem` — authenticated.
-    Atomically moves the caller's profile to the inviter's
-    account and cleans up the orphan personal account. Refuses
-    with 409 if the caller's current account already contains
-    domain data (no silent data loss).
+  - `DELETE /api/account/invitations/[id]` — revoga (admin+).
+  - `GET /api/invitations/[token]/peek` — público, com limite de taxa
+    por IP. Devolve `{ ok, account_name, role, expires_at }` ou
+    `{ ok: false, reason }` pra que a página de entrada renderize
+    "Você está sendo convidado pra <Conta> como <Papel>".
+  - `POST /api/invitations/[token]/redeem` — autenticado. Move
+    atomicamente o perfil de quem chama pra conta de quem convidou e
+    limpa a conta pessoal órfã. Recusa com 409 se a conta atual de
+    quem chama já contém dado de domínio (sem perda silenciosa de
+    dado).
 
 ### Migration required
 
-Apply against your Supabase project before deploying this version:
+Aplique no seu projeto Supabase antes de fazer deploy desta versão:
 
-- `supabase/migrations/017_account_sharing.sql` — introduces the
-  `accounts` and `account_invitations` tables plus an
-  `account_role_enum` type; adds `account_id` to every
-  user-scoped table and backfills it; rewrites every RLS policy;
-  replaces the new-user trigger. Idempotent. **No data loss** —
-  every existing user is mapped to a freshly-created account
-  with role `owner` and every existing row of theirs is linked
-  to that account.
-- `supabase/migrations/018_account_member_rpcs.sql` — adds three
-  `SECURITY DEFINER` RPCs (`set_member_role`,
-  `remove_account_member`, `transfer_account_ownership`) that
-  back the member-management API. They self-check the caller's
-  role and raise SQLSTATE `42501` / `22023` on forbidden / bad
-  input so the API layer can map cleanly to 403 / 400.
-  Idempotent.
-- `supabase/migrations/019_invitation_rpcs.sql` — adds two
-  `SECURITY DEFINER` RPCs: `peek_invitation` (anonymous read by
-  token hash, returns a fixed-shape JSON envelope) and
-  `redeem_invitation` (authenticated atomic move + orphan
-  cleanup, with a domain-data safety check). Both bypass the
-  RLS that would otherwise block their reads/writes. Idempotent.
-- `supabase/migrations/021_account_default_currency.sql` — adds
-  `accounts.default_currency` (`TEXT NOT NULL DEFAULT 'USD'`, with a
-  3-letter-code `CHECK`) backing the configurable default currency.
-  Idempotent; existing accounts backfill to `USD`. **Apply before
-  deploying** — the app now reads this column when loading the
-  account, so an un-migrated database breaks account loading.
-- `supabase/migrations/022_contact_phone_dedup.sql` — adds the
-  generated `contacts.phone_normalized` column, **merges existing
-  duplicate contacts into the oldest** (re-pointing conversations,
-  deals, notes, tags, custom values, and broadcast recipients — no
-  data loss), then adds a `UNIQUE (account_id, phone_normalized)`
-  index. Idempotent. **Apply before deploying** — CSV import reads
-  `phone_normalized`, and the index is what enforces de-duplication
-  for every write path. The one-shot merge runs inside the migration.
+- `supabase/migrations/017_account_sharing.sql` — introduz as tabelas
+  `accounts` e `account_invitations` mais um tipo
+  `account_role_enum`; adiciona `account_id` em toda tabela vinculada
+  a usuário e a preenche retroativamente; reescreve toda policy de
+  RLS; substitui o trigger de novo usuário. Idempotente. **Sem perda
+  de dado** — todo usuário existente é mapeado pra uma conta
+  recém-criada com papel `owner` e toda linha existente dele é
+  vinculada àquela conta.
+- `supabase/migrations/018_account_member_rpcs.sql` — adiciona três
+  RPCs `SECURITY DEFINER` (`set_member_role`, `remove_account_member`,
+  `transfer_account_ownership`) que sustentam a API de gerenciamento
+  de membros. Elas mesmas checam o papel de quem chama e levantam
+  SQLSTATE `42501` / `22023` pra entrada proibida/inválida, pra que a
+  camada de API mapeie limpo pra 403 / 400. Idempotente.
+- `supabase/migrations/019_invitation_rpcs.sql` — adiciona duas RPCs
+  `SECURITY DEFINER`: `peek_invitation` (leitura anônima por hash de
+  token, devolve um envelope JSON de formato fixo) e
+  `redeem_invitation` (movimento atômico autenticado + limpeza de
+  órfão, com checagem de segurança de dado de domínio). Ambas
+  ignoram o RLS que de outra forma bloquearia suas leituras/escritas.
+  Idempotente.
+- `supabase/migrations/021_account_default_currency.sql` — adiciona
+  `accounts.default_currency` (`TEXT NOT NULL DEFAULT 'USD'`, com um
+  `CHECK` de código de 3 letras) sustentando a moeda padrão
+  configurável. Idempotente; contas existentes recebem `USD`
+  retroativamente. **Aplique antes de fazer deploy** — o app agora lê
+  essa coluna ao carregar a conta, então um banco sem a migration
+  quebra o carregamento de conta.
+- `supabase/migrations/022_contact_phone_dedup.sql` — adiciona a
+  coluna gerada `contacts.phone_normalized`, **funde contatos
+  duplicados existentes no mais antigo** (re-apontando conversas,
+  negócios, notas, tags, valores customizados, e destinatários de
+  transmissão — sem perda de dado), depois adiciona um índice
+  `UNIQUE (account_id, phone_normalized)`. Idempotente. **Aplique
+  antes de fazer deploy** — a importação CSV lê `phone_normalized`, e
+  o índice é o que garante a deduplicação em todo caminho de escrita.
+  A fusão de uma vez só roda dentro da migration.
 
 ## [0.2.2] — 2026-05-29
 
-Flow nodes can now send media. Closes the most-requested gap from user
-feedback after the v0.2.0 Flows launch — flows were text-only and
-couldn't deliver an invoice, receipt, product photo, or short demo
-video mid-conversation.
+Nós de Flow agora conseguem enviar mídia. Fecha a lacuna mais pedida
+no feedback de usuário depois do lançamento dos Flows na v0.2.0 —
+flows eram só texto e não conseguiam entregar uma fatura, recibo,
+foto de produto, ou vídeo curto de demonstração no meio da conversa.
 
-### Added
+### Adicionado
 
-- **`send_media` flow node.** Send an image (PNG / JPEG / WebP), video
-  (MP4 / 3GP), or document (PDF, Word, Excel, PowerPoint, TXT) to the
-  customer from any point in a flow. Pick a file in the builder, it
-  uploads to the new `flow-media` Supabase Storage bucket, and Meta
-  fetches the public URL at send time. Optional caption (1024 char cap,
-  supports `{{vars.X}}` interpolation); documents also take an optional
-  filename shown in the recipient's chat. Auto-advances after send —
-  same suspend semantics as `send_message`.
+- **Nó de flow `send_media`.** Envie uma imagem (PNG / JPEG / WebP),
+  vídeo (MP4 / 3GP), ou documento (PDF, Word, Excel, PowerPoint, TXT)
+  pro cliente a partir de qualquer ponto de um flow. Escolha um
+  arquivo no builder, ele sobe pro novo bucket `flow-media` do
+  Supabase Storage, e a Meta busca a URL pública na hora do envio.
+  Legenda opcional (limite de 1024 caracteres, suporta interpolação
+  `{{vars.X}}`); documentos também aceitam um nome de arquivo opcional
+  exibido no chat de quem recebe. Avança automaticamente depois do
+  envio — mesma semântica de suspensão do `send_message`.
   ([#156](https://github.com/ArnasDon/wacrm/pull/156))
 
 ### Migration required
 
-Apply against your Supabase project before deploying this version:
+Aplique no seu projeto Supabase antes de fazer deploy desta versão:
 
-- `supabase/migrations/016_flow_media.sql` — does two things:
-  1. Adds `'send_media'` to the `flow_nodes.node_type` CHECK
-     constraint. Without this the `send_media` node fails to save with
-     a constraint violation.
-  2. Creates the public `flow-media` Supabase Storage bucket (16 MB
-     file-size cap, image / video / document MIME allowlist) plus
-     per-user RLS policies (path prefix = `auth.uid()`). Without this
-     the builder's file picker fails on upload. Same shape as the
-     `avatars` bucket from migration 008 — the bucket is **public** so
-     Meta can fetch the URL without credentials.
+- `supabase/migrations/016_flow_media.sql` — faz duas coisas:
+  1. Adiciona `'send_media'` à constraint CHECK de
+     `flow_nodes.node_type`. Sem isso o nó `send_media` falha ao
+     salvar com uma violação de constraint.
+  2. Cria o bucket público `flow-media` do Supabase Storage (limite de
+     16 MB por arquivo, lista de MIME permitidos de imagem / vídeo /
+     documento) mais policies de RLS por usuário (prefixo de caminho =
+     `auth.uid()`). Sem isso o seletor de arquivo do builder falha ao
+     enviar. Mesmo formato do bucket `avatars` da migration 008 — o
+     bucket é **público** pra que a Meta busque a URL sem credenciais.
 
-The migration is idempotent and safe to re-run.
+A migration é idempotente e segura pra rodar de novo.
 
 ## [0.2.1] — 2026-05-26
 
-Bug-fix release. Plugs a silent inbound-message drop that triggered
-when two users on the same instance saved the same WhatsApp
-`phone_number_id`.
+Lançamento de correção de bug. Tampa uma perda silenciosa de mensagem
+recebida que disparava quando dois usuários na mesma instância
+salvavam o mesmo `phone_number_id` de WhatsApp.
 
-### Fixed
+### Corrigido
 
-- **Inbound WhatsApp messages no longer silently disappear** when two
-  users have claimed the same `phone_number_id`. Previously the
-  webhook used `.single()` to look up the owning config, which errors
-  `PGRST116` for both 0 rows *and* ≥2 rows — the second user's save
-  put the DB into the ≥2-row state and every inbound message was
-  dropped while the log misleadingly reported *"No config found for
-  phone_number_id"*. Three layers of fix: `POST /api/whatsapp/config`
-  now returns **409** when another user has already claimed the
-  number, the webhook lookup distinguishes 0 rows from ≥2 rows and
-  logs the conflicting `user_id`s, and a new DB constraint
-  (`UNIQUE(phone_number_id)`) prevents the bad state at the storage
-  layer. Reported in
-  [#136](https://github.com/ArnasDon/wacrm/issues/136), fixed in
+- **Mensagens de WhatsApp recebidas não somem mais silenciosamente**
+  quando dois usuários reivindicaram o mesmo `phone_number_id`. Antes
+  o webhook usava `.single()` pra buscar a configuração dona, o que dá
+  erro `PGRST116` tanto pra 0 linhas *quanto* ≥2 linhas — o salvamento
+  do segundo usuário colocava o banco no estado de ≥2 linhas e toda
+  mensagem recebida era descartada enquanto o log reportava, de forma
+  enganosa, *"No config found for phone_number_id"*. Três camadas de
+  correção: `POST /api/whatsapp/config` agora devolve **409** quando
+  outro usuário já reivindicou o número, a busca do webhook distingue
+  0 linhas de ≥2 linhas e loga os `user_id`s em conflito, e uma nova
+  constraint no banco (`UNIQUE(phone_number_id)`) previne o estado
+  ruim na camada de armazenamento. Reportado em
+  [#136](https://github.com/ArnasDon/wacrm/issues/136), corrigido em
   [#143](https://github.com/ArnasDon/wacrm/pull/143).
 
 ### Migration required
 
-Apply against your Supabase project before deploying this version:
+Aplique no seu projeto Supabase antes de fazer deploy desta versão:
 
 - `supabase/migrations/013_whatsapp_config_phone_number_id_unique.sql`
-  — adds `UNIQUE(phone_number_id)` to `whatsapp_config`. **Fails
-  loudly with a copy-pasteable resolution hint** if duplicate rows
-  already exist; auto-deduping would destroy encrypted tokens, so
-  the operator picks which row keeps the number. To check first:
+  — adiciona `UNIQUE(phone_number_id)` a `whatsapp_config`. **Falha
+  de forma explícita com uma dica de resolução copiável** se já
+  existirem linhas duplicadas; deduplicar automaticamente destruiria
+  tokens criptografados, então quem opera escolhe qual linha fica com
+  o número. Pra checar primeiro:
 
   ```sql
   SELECT phone_number_id, array_agg(user_id) AS owners, count(*) AS n
@@ -622,194 +671,208 @@ Apply against your Supabase project before deploying this version:
   HAVING count(*) > 1;
   ```
 
-  If that returns rows, `DELETE` the duplicate row(s) you want to
-  drop, then re-run the migration.
+  Se isso devolver linhas, dê `DELETE` na(s) linha(s) duplicada(s) que
+  quer descartar, depois rode a migration de novo.
 
-### Note on multi-user setups
+### Nota sobre configurações multiusuário
 
-wacrm is intentionally **single-tenant per WhatsApp number**. RLS on
-`conversations`/`messages` is `auth.uid() = user_id`, so a second
-user physically cannot read messages routed to a different owner —
-two users sharing one number was never supported. If you need
-multiple humans handling the same inbox, run them under one shared
-account.
+O wacrm é intencionalmente **single-tenant por número de WhatsApp**. O
+RLS em `conversations`/`messages` é `auth.uid() = user_id`, então um
+segundo usuário fisicamente não consegue ler mensagens roteadas pra um
+dono diferente — dois usuários compartilhando um número nunca foi
+suportado. Se você precisa de múltiplos humanos atendendo a mesma
+caixa de entrada, rode-os sob uma conta compartilhada.
 
 ## [0.2.0] — 2026-05-22
 
-The **Flows** release. Adds a no-code, branching, button-driven WhatsApp
-conversation engine that runs alongside Automations. Also ships a
-5-theme color picker in Settings and opens Flows to all users.
+O lançamento dos **Flows**. Adiciona um engine de conversa de WhatsApp
+sem código, ramificado, guiado por botão, que roda junto das
+Automações. Também traz um seletor de cores com 5 temas em
+Configurações e abre os Flows pra todos os usuários.
 
-### Added
+### Adicionado
 
-#### Flows — branching chatbot conversations
+#### Flows — conversas de chatbot ramificadas
 
-- **Module + schema.** New `flows`, `flow_nodes`, `flow_runs`,
-  `flow_run_events` tables with partial unique indexes that enforce
-  one active run per contact. Widened `messages.content_type` CHECK
-  to accept `'interactive'`; added `interactive_reply_id` column so
-  the inbox can render button/list taps.
+- **Módulo + schema.** Novas tabelas `flows`, `flow_nodes`,
+  `flow_runs`, `flow_run_events` com índices únicos parciais que
+  impõem uma execução ativa por contato. `messages.content_type`
+  ampliado pra aceitar `'interactive'`; coluna `interactive_reply_id`
+  adicionada pra que a caixa de entrada renderize toques em
+  botão/lista.
   ([#112](https://github.com/ArnasDon/wacrm/pull/112))
-- **Runner engine.** `dispatchInboundToFlows` parses every inbound
-  webhook, decides whether the message is a reply on an active run
-  or a fresh trigger, advances the state machine, and reports back
-  to the webhook so consumed messages don't also fire automations.
-  Idempotent on Meta's `message_id`.
+- **Engine de execução.** `dispatchInboundToFlows` interpreta toda
+  mensagem recebida via webhook, decide se a mensagem é uma resposta
+  numa execução ativa ou um gatilho novo, avança a máquina de estado, e
+  reporta de volta pro webhook pra que mensagens consumidas não
+  também disparem automações. Idempotente sobre o `message_id` da
+  Meta.
   ([#114](https://github.com/ArnasDon/wacrm/pull/114))
-- **No-code builder UI** at `/flows`. Linear-list editor with
-  per-node config forms, live validator, draft/active/archived
-  status, and a 5-route REST API (`GET/POST /api/flows`,
-  `GET/PUT/DELETE /api/flows/[id]`, `POST /api/flows/[id]/activate`,
-  `GET /api/flows/[id]/runs`, `GET /api/flows/templates`).
+- **UI de builder sem código** em `/flows`. Editor de lista linear com
+  formulários de configuração por nó, validador ao vivo, status de
+  rascunho/ativo/arquivado, e uma API REST de 5 rotas
+  (`GET/POST /api/flows`, `GET/PUT/DELETE /api/flows/[id]`,
+  `POST /api/flows/[id]/activate`, `GET /api/flows/[id]/runs`,
+  `GET /api/flows/templates`).
   ([#115](https://github.com/ArnasDon/wacrm/pull/115))
-- **Templates + v1.5 node types.** Three starter templates
-  (Welcome menu, FAQ bot, Lead capture) cloneable from the New-flow
-  dialog. Three new node types: `collect_input` (capture customer
-  text into a variable), `condition` (branch on var / tag / contact
-  field), `set_tag` (add or remove a tag). `{{vars.X}}` interpolation
-  in send_message + collect_input prompts. Per-flow run-history
-  viewer at `/flows/[id]/runs`.
+- **Templates + tipos de nó v1.5.** Três templates iniciais (Menu de
+  boas-vindas, Bot de FAQ, Captura de lead) clonáveis a partir do
+  diálogo de novo flow. Três tipos de nó novos: `collect_input`
+  (captura texto do cliente numa variável), `condition` (ramifica por
+  var / tag / campo de contato), `set_tag` (adiciona ou remove uma
+  tag). Interpolação `{{vars.X}}` em prompts de send_message +
+  collect_input. Visualizador de histórico de execução por flow em
+  `/flows/[id]/runs`.
   ([#117](https://github.com/ArnasDon/wacrm/pull/117))
-- **Stale-run sweep cron** at `GET /api/flows/cron` — marks runs
-  past their configured timeout (default 24h) as `timed_out` so
-  abandoned conversations free up the contact for new triggers.
-  Reuses `AUTOMATION_CRON_SECRET`.
+- **Cron de limpeza de execuções obsoletas** em `GET /api/flows/cron`
+  — marca execuções que passaram do timeout configurado (padrão 24h)
+  como `timed_out` pra que conversas abandonadas liberem o contato
+  pra novos gatilhos. Reusa `AUTOMATION_CRON_SECRET`.
   ([#114](https://github.com/ArnasDon/wacrm/pull/114))
 
-#### Color themes
+#### Temas de cor
 
-- **5 color themes** (Violet default, Emerald, Cobalt, Amber, Rose)
-  selectable from a new **Appearance** tab in Settings. CSS variables
-  scoped under `html[data-theme="..."]`, applied at runtime via
-  `dataset.theme`, persisted to `localStorage`. Inline boot script in
-  `layout.tsx` replays the choice before first paint so there's no
-  flash of the default.
+- **5 temas de cor** (Violeta padrão, Esmeralda, Cobalto, Âmbar, Rosa)
+  selecionáveis numa nova aba **Aparência** em Configurações.
+  Variáveis CSS com escopo sob `html[data-theme="..."]`, aplicadas em
+  tempo de execução via `dataset.theme`, persistidas em
+  `localStorage`. Um script inline de boot em `layout.tsx` reproduz a
+  escolha antes da primeira pintura pra não piscar o padrão.
   ([#132](https://github.com/ArnasDon/wacrm/pull/132))
-- **Theme tokenization sweep** — every previously hard-coded
-  `violet-*` Tailwind class replaced with `primary` tokens across
-  ~49 files. Picking a non-violet theme now themes the whole app,
-  not just the chrome.
+- **Varredura de tokenização de tema** — toda classe Tailwind
+  `violet-*` antes fixa no código foi substituída por tokens
+  `primary` em ~49 arquivos. Escolher um tema não-violeta agora tema
+  o app inteiro, não só o chrome.
   ([#133](https://github.com/ArnasDon/wacrm/pull/133))
 
-### Changed
+### Alterado
 
 #### Flows — soft-GA
 
-- **Flows is now available to every authenticated user.** The
-  per-account beta gate is gone; the sidebar entry + page header
-  carry a small "Beta" chip as the only remaining signal.
+- **Flows agora está disponível pra todo usuário autenticado.** O
+  gate de beta por conta acabou; a entrada na barra lateral + o
+  cabeçalho da página carregam um pequeno chip "Beta" como único sinal
+  restante.
   ([#134](https://github.com/ArnasDon/wacrm/pull/134))
-- **Editor UX**:
-  - Internal `node_key` + per-button/row `reply_id` identifiers
-    hidden behind a per-node "Show advanced" disclosure.
+- **UX do editor**:
+  - Identificadores internos `node_key` + `reply_id` por
+    botão/linha escondidos atrás de uma revelação "Mostrar avançado"
+    por nó.
     ([#118](https://github.com/ArnasDon/wacrm/pull/118))
-  - `send_list` nodes can have multiple sections.
+  - Nós `send_list` podem ter múltiplas seções.
     ([#119](https://github.com/ArnasDon/wacrm/pull/119))
-  - Collapsed node cards show a 1-line content preview per node
-    type (text excerpt, button titles, condition summary, etc.).
+  - Cards de nó recolhidos mostram uma prévia de conteúdo de 1 linha
+    por tipo de nó (trecho de texto, títulos de botão, resumo de
+    condição, etc.).
     ([#120](https://github.com/ArnasDon/wacrm/pull/120))
-  - Validation issues are clickable: jump to + flash the offending
-    node.
+  - Problemas de validação são clicáveis: pula pro nó com problema e o
+    destaca.
     ([#121](https://github.com/ArnasDon/wacrm/pull/121))
-  - Unsaved-changes "● Edited" indicator + `beforeunload` reload
-    guard.
+  - Indicador "● Editado" de mudanças não salvas + proteção de reload
+    via `beforeunload`.
     ([#122](https://github.com/ArnasDon/wacrm/pull/122))
-  - New-flow dialog actually widens to fit the 3 template cards
-    (was capped at 384px by a baked-in `sm:max-w-sm` from shadcn).
+  - Diálogo de novo flow agora de fato alarga pra caber os 3 cards de
+    template (estava limitado a 384px por um `sm:max-w-sm` fixo do
+    shadcn).
     ([#129](https://github.com/ArnasDon/wacrm/pull/129),
     [#131](https://github.com/ArnasDon/wacrm/pull/131))
-  - Validation panel pinned to the viewport bottom so
-    activate-readiness follows the user as they scroll through nodes.
+  - Painel de validação fixado no fundo da viewport pra que a
+    prontidão de ativação acompanhe o usuário rolando pelos nós.
     ([#130](https://github.com/ArnasDon/wacrm/pull/130))
 
-#### Engine reliability
+#### Confiabilidade do engine
 
-- **Atomic `execution_count` increment** via SECURITY DEFINER RPC —
-  prevents lost counts when two webhooks start runs concurrently.
-  Mirrors the automations engine pattern.
+- **Incremento atômico de `execution_count`** via RPC SECURITY
+  DEFINER — previne contagens perdidas quando dois webhooks iniciam
+  execuções concorrentemente. Espelha o padrão do engine de
+  automações.
   ([#124](https://github.com/ArnasDon/wacrm/pull/124))
-- **Preload all flow_nodes once per dispatch** — one SELECT per
-  inbound instead of one per advance-loop iteration. A 5-node
-  auto-advance chain now costs 1 round trip, not 5.
+- **Pré-carrega todos os flow_nodes uma vez por despacho** — um
+  SELECT por mensagem recebida em vez de um por iteração do loop de
+  avanço. Uma cadeia de auto-avanço de 5 nós agora custa 1 ida-e-volta,
+  não 5.
   ([#125](https://github.com/ArnasDon/wacrm/pull/125))
-- **Wasted re-read dropped** after reprompt reset; `loadActiveRun`
-  switched to defensive `.limit(1)` so a migration glitch producing
-  duplicates can't crash dispatch.
+- **Releitura desperdiçada eliminada** depois do reset de reprompt;
+  `loadActiveRun` mudou pra `.limit(1)` defensivo pra que uma falha de
+  migration gerando duplicatas não derrube o despacho.
   ([#126](https://github.com/ArnasDon/wacrm/pull/126))
 
-### Security
+### Segurança
 
-- **PII redacted from `reply_received` event payload** — customer
-  text is no longer persisted to `flow_run_events.payload`; only
-  the length is. A `collect_input` prompt asking "what's your card
-  number?" used to leave the PAN sitting in the events table.
+- **PII removida do payload do evento `reply_received`** — o texto do
+  cliente não é mais persistido em `flow_run_events.payload`; só o
+  tamanho é. Um prompt `collect_input` perguntando "qual o número do
+  seu cartão?" antes deixava o PAN sentado na tabela de eventos.
   ([#123](https://github.com/ArnasDon/wacrm/pull/123))
-- **Constant-time cron-secret compare** on `/api/flows/cron`
-  (`crypto.timingSafeEqual`) to close a theoretical
-  timing-side-channel on the `x-cron-secret` header check.
+- **Comparação de segredo de cron em tempo constante** em
+  `/api/flows/cron` (`crypto.timingSafeEqual`) pra fechar um canal
+  lateral teórico de temporização na checagem do header
+  `x-cron-secret`.
   ([#127](https://github.com/ArnasDon/wacrm/pull/127))
 
-### Fixed
+### Corrigido
 
-- **`/flows` no longer spuriously redirects to `/dashboard`** when
-  navigating in. Root cause: `useAuth` flipped `loading: false`
-  before the profile fetch resolved. `use-auth` now exposes a
-  separate `profileLoading` boolean.
+- **`/flows` não redireciona mais espuriamente pra `/dashboard`** ao
+  navegar pra lá. Causa raiz: `useAuth` virava `loading: false` antes
+  da busca de perfil resolver. `use-auth` agora expõe um booleano
+  separado `profileLoading`.
   ([#128](https://github.com/ArnasDon/wacrm/pull/128))
 
 ### Migration required
 
-Apply, in order, against your Supabase project:
+Aplique, em ordem, no seu projeto Supabase:
 
-1. `supabase/migrations/010_flows.sql` — Flows core tables, indexes,
-   RLS policies, and the `messages` schema widening.
-2. `supabase/migrations/011_profile_beta_features.sql` — adds the
-   `profiles.beta_features` column. Surviving for future betas;
-   Flows no longer reads it.
-3. `supabase/migrations/012_flows_increment_counter.sql` — atomic
-   counter RPC. Without this the engine still runs but
-   `flows.execution_count` is racy.
+1. `supabase/migrations/010_flows.sql` — tabelas centrais dos Flows,
+   índices, policies de RLS, e a ampliação do schema de `messages`.
+2. `supabase/migrations/011_profile_beta_features.sql` — adiciona a
+   coluna `profiles.beta_features`. Sobrevive pra futuros betas; Flows
+   não a lê mais.
+3. `supabase/migrations/012_flows_increment_counter.sql` — RPC de
+   contador atômico. Sem isso o engine ainda roda mas
+   `flows.execution_count` fica sujeito a corrida.
 
-Each migration is idempotent — safe to re-run if you're not sure
-whether you applied a previous one.
+Cada migration é idempotente — segura pra rodar de novo se você não
+tiver certeza se já aplicou uma anterior.
 
-### Removed
+### Removido
 
-- **`src/lib/flows/feature-flag.ts`** + its tests. Flows is open to
-  all users; the `profiles.beta_features` column itself survives
-  for future beta gates.
+- **`src/lib/flows/feature-flag.ts`** + seus testes. Flows está aberto
+  pra todos os usuários; a coluna `profiles.beta_features` em si
+  sobrevive pra futuros gates de beta.
   ([#134](https://github.com/ArnasDon/wacrm/pull/134))
 
 ---
 
 ## [0.1.1] — 2026-05-19
 
-### Added
+### Adicionado
 
-- Chat actions in the inbox: emoji reactions, reply-with-quote, and
-  copy-text on individual messages. Hover on desktop, long-press on
-  touch. Outbound reactions and replies forward to WhatsApp via the
-  Cloud API; inbound reactions and swipe-replies from customers
-  arrive through the webhook and appear in real time.
+- Ações de chat na caixa de entrada: reações de emoji, responder com
+  citação, e copiar texto em mensagens individuais. Hover no desktop,
+  toque longo no touch. Reações e respostas de saída são
+  encaminhadas pro WhatsApp via Cloud API; reações e respostas por
+  swipe recebidas de clientes chegam pelo webhook e aparecem em tempo
+  real.
 
 ### Migration required
 
-- Apply `supabase/migrations/009_message_actions.sql` to your
-  Supabase project. It adds `messages.reply_to_message_id` and the
-  new `message_reactions` table (with RLS and realtime). The
-  migration is idempotent — safe to re-run.
+- Aplique `supabase/migrations/009_message_actions.sql` no seu
+  projeto Supabase. Adiciona `messages.reply_to_message_id` e a nova
+  tabela `message_reactions` (com RLS e realtime). A migration é
+  idempotente — segura pra rodar de novo.
 
-### Changed
+### Alterado
 
-- The webhook no longer stores inbound customer reactions as fake
-  text messages. They are written to `message_reactions` instead,
-  so any custom queries that counted reactions as messages will
-  need updating.
+- O webhook não guarda mais reações recebidas de cliente como
+  mensagens de texto falsas. Elas são gravadas em `message_reactions`
+  em vez disso, então qualquer query customizada que contava reações
+  como mensagens vai precisar de atualização.
 
 ---
 
 ## [0.1.0]
 
-Initial template release. Core CRM: inbox, contacts, pipelines,
-broadcasts, automations (with a Wait-step cron drain), WhatsApp
-Cloud API integration, Supabase auth + RLS.
+Lançamento inicial do template. CRM central: caixa de entrada,
+contatos, pipelines, transmissões, automações (com um dreno de cron
+pra passo de Espera), integração com WhatsApp Cloud API, autenticação
++ RLS do Supabase.
