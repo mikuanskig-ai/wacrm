@@ -52,6 +52,14 @@ describe('LocationIqProvider', () => {
       expect(parsed.searchParams.get('key')).toBe('test-key')
       expect(parsed.searchParams.get('q')).toBe('Rua Paraná 6537, Coqueiral, Cascavel')
       expect(parsed.searchParams.get('countrycodes')).toBe('br')
+      expect(parsed.searchParams.get('addressdetails')).toBe('1')
+    })
+
+    it('always requests addressdetails — regression, 2026-08-08: without it LocationIQ omits the `address` object entirely (verified against the real API), so neighbourhood matching for "por bairro" accounts silently always failed', async () => {
+      fetchMock.mockResolvedValueOnce(okResponse([{ lat: '0', lon: '0' }]))
+      await new LocationIqProvider().geocode('Centro')
+      const [url] = fetchMock.mock.calls[0]
+      expect(new URL(String(url)).searchParams.get('addressdetails')).toBe('1')
     })
 
     it('falls back to neighbourhood, then city_district, when suburb is absent', async () => {
@@ -179,6 +187,7 @@ describe('LocationIqProvider', () => {
       expect(parsed.searchParams.get('state')).toBe('Parana')
       expect(parsed.searchParams.get('postalcode')).toBe('85957-000')
       expect(parsed.searchParams.get('country')).toBe('Brazil')
+      expect(parsed.searchParams.get('addressdetails')).toBe('1')
     })
 
     it('returns null without calling fetch when locality is blank', async () => {
@@ -212,6 +221,7 @@ describe('LocationIqProvider', () => {
       expect(parsed.origin + parsed.pathname).toBe('https://us1.locationiq.com/v1/reverse')
       expect(parsed.searchParams.get('lat')).toBe('-24.9527731')
       expect(parsed.searchParams.get('lon')).toBe('-53.4887912')
+      expect(parsed.searchParams.get('addressdetails')).toBe('1')
     })
 
     it('returns null when nothing is found nearby', async () => {

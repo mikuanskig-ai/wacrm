@@ -2,16 +2,6 @@
 
 > Este arquivo é sempre escrito em português.
 
-Mudanças visíveis para o usuário no `wacrm`. Quem hospeda a própria
-instância: ao atualizar, confira este arquivo por qualquer nota de
-**migration required** e aplique os arquivos SQL correspondentes de
-`supabase/migrations/` no seu projeto Supabase antes de reiniciar o
-app.
-
-Versões seguem o [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Antes da 1.0, bumps de `MINOR` cobrem novos módulos; bumps de `PATCH`
-cobrem correções de bugs e polimento.
-
 ## [0.9.0] — 2026-08-08
 
 Uma rodada de confiabilidade no **fluxo de pedidos por delivery via

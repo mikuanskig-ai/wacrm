@@ -134,6 +134,16 @@ interface LocationIqDirectionsResponse {
   routes?: { distance?: number }[]
 }
 
+// Confirmed live (2026-08-08, "por bairro" accounts): without
+// `addressdetails=1` on every request below, LocationIQ's response has
+// NO `address` object at all (verified by hand — same query, only
+// difference is this one param) — so `place.address` was always
+// `undefined` and `neighborhood` below always resolved to `null`,
+// regardless of what LocationIQ actually knew. Every account on the
+// `neighborhood` delivery-fee method had its geocode-derived
+// neighbourhood matching silently broken since the LocationIQ switch
+// (2026-08-07) — never noticed before because it only bites when the
+// model doesn't ALSO pass the `neighborhood` tool arg explicitly.
 function placeToResult(place: LocationIqPlace | undefined): GeocodeResult | null {
   if (!place) return null
   const neighborhood =
@@ -182,6 +192,7 @@ export class LocationIqProvider implements DistanceProvider {
     url.searchParams.set('countrycodes', 'br')
     url.searchParams.set('format', 'json')
     url.searchParams.set('limit', '1')
+    url.searchParams.set('addressdetails', '1')
     applyBoundingBox(url, options)
 
     const res = await fetchWithRetry(url.toString())
@@ -211,6 +222,7 @@ export class LocationIqProvider implements DistanceProvider {
     url.searchParams.set('country', 'Brazil')
     url.searchParams.set('format', 'json')
     url.searchParams.set('limit', '1')
+    url.searchParams.set('addressdetails', '1')
     applyBoundingBox(url, options)
 
     const res = await fetchWithRetry(url.toString())
@@ -228,6 +240,7 @@ export class LocationIqProvider implements DistanceProvider {
     url.searchParams.set('lat', String(point.lat))
     url.searchParams.set('lon', String(point.lng))
     url.searchParams.set('format', 'json')
+    url.searchParams.set('addressdetails', '1')
 
     const res = await fetchWithRetry(url.toString())
     if (res.status === 404) return null
