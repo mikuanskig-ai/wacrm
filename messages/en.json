@@ -2276,7 +2276,8 @@
       "rangeToPlaceholder": "To (km)",
       "rangePricePlaceholder": "Fee",
       "addRange": "Add range",
-      "basePriceLabel": "Base fee",
+      "basePriceLabel": "Minimum fee",
+      "basePriceHint": "Minimum charged on a very short delivery. Longer deliveries use only the per-km fee, not this value added on top.",
       "pricePerKmLabel": "Fee per kilometer",
       "simulator": {
         "title": "Route simulator",

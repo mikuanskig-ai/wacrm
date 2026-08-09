@@ -2276,7 +2276,8 @@
       "rangeToPlaceholder": "Até (km)",
       "rangePricePlaceholder": "Taxa",
       "addRange": "Adicionar faixa",
-      "basePriceLabel": "Taxa base",
+      "basePriceLabel": "Taxa mínima",
+      "basePriceHint": "Valor mínimo cobrado numa entrega bem curta. Entregas mais longas usam só a taxa por km, não soma com esse valor.",
       "pricePerKmLabel": "Taxa por quilômetro",
       "simulator": {
         "title": "Simulador de rota",

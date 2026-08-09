@@ -2275,7 +2275,8 @@
       "rangeToPlaceholder": "끝 (km)",
       "rangePricePlaceholder": "요금",
       "addRange": "구간 추가",
-      "basePriceLabel": "기본 요금",
+      "basePriceLabel": "최소 요금",
+      "basePriceHint": "아주 짧은 배송에 부과되는 최소 금액입니다. 더 긴 배송은 이 값을 더하지 않고 km당 요금만 적용됩니다.",
       "pricePerKmLabel": "킬로미터당 요금",
       "simulator": {
         "title": "경로 시뮬레이터",

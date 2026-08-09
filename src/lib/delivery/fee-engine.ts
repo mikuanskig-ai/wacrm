@@ -90,6 +90,11 @@ export interface DeliveryFeeSettings {
   fixed_price?: number
   neighborhoods?: NeighborhoodRule[]
   rules?: DistanceRangeRule[]
+  /** `per_km`'s floor, not an addend — confirmed with the account owner
+   *  (2026-08-08): a short trip (e.g. ≤1km) should charge just this
+   *  minimum, and a longer one should charge distanceKm * price_per_km
+   *  on its own, never base_price + distanceKm * price_per_km. See the
+   *  'per_km' case below (`Math.max`, not `+`). */
   base_price?: number
   price_per_km?: number
 }
@@ -473,9 +478,17 @@ export async function calculateDeliveryFee(
       if (distanceKm == null) return { ok: false, reason: 'address_required' }
       const base = config.settings.base_price ?? 0
       const perKm = config.settings.price_per_km ?? 0
+      // base_price is a floor, not an addend — confirmed with the
+      // account owner (2026-08-08): a short trip charges just the
+      // minimum, a longer one charges distanceKm * price_per_km on its
+      // own. Adding the two (the original formula) overcharged every
+      // single order regardless of distance — e.g. a 6.35km trip at
+      // R$6 base + R$2.20/km priced as R$19.96 instead of the correct
+      // R$13.97 (just 6.35 × 2.2 — well above the R$6 floor already).
+      const fee = Math.max(base, distanceKm * perKm)
       return {
         ok: true,
-        fee: roundCents(base + distanceKm * perKm),
+        fee: roundCents(fee),
         distanceKm,
         resolvedLabel,
         freeShipping: false,

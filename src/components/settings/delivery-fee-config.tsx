@@ -528,6 +528,7 @@ export function DeliveryFeeConfig() {
                     onChange={(e) => setBasePrice(e.target.value)}
                     disabled={disabled}
                   />
+                  <p className="text-xs text-muted-foreground">{t('basePriceHint')}</p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-foreground">{t('pricePerKmLabel')}</label>

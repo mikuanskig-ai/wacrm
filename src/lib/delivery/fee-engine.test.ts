@@ -226,14 +226,28 @@ describe('calculateDeliveryFee — per_km', () => {
     settings: { base_price: 4, price_per_km: 1.5 },
   }
 
-  it('computes base_price + distance * price_per_km, rounded to cents', async () => {
+  it('charges distance * price_per_km, rounded to cents, once that exceeds the minimum — regression, 2026-08-08', async () => {
+    // base_price is a floor, not an addend (confirmed with the account
+    // owner): the original `base + distance * price_per_km` formula
+    // overcharged every single order regardless of distance. 3.333km
+    // at R$1.5/km = R$5.00, already above the R$4 minimum — the
+    // minimum must NOT also be added on top of that.
     const provider = fakeProvider({ calculateDistance: vi.fn(async () => 3.333) })
     const result = await calculateDeliveryFee(config, { address: 'Rua X, 100', subtotal: 30 }, provider)
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.fee).toBeCloseTo(4 + 3.333 * 1.5, 2)
+      expect(result.fee).toBeCloseTo(3.333 * 1.5, 2)
       expect(result.distanceKm).toBe(3.333)
     }
+  })
+
+  it('charges the minimum floor instead when distance * price_per_km would come in under it', async () => {
+    // A short trip (e.g. ≤1km) — distance * price_per_km (0.5 * 1.5 =
+    // 0.75) is below the R$4 minimum, so the minimum wins.
+    const provider = fakeProvider({ calculateDistance: vi.fn(async () => 0.5) })
+    const result = await calculateDeliveryFee(config, { address: 'Rua X, 100', subtotal: 30 }, provider)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.fee).toBe(4)
   })
 })
 
@@ -286,7 +300,7 @@ describe('calculateDeliveryFee — location (WhatsApp share)', () => {
       provider,
     )
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.fee).toBeCloseTo(4 + 3 * 1.5, 2)
+    if (result.ok) expect(result.fee).toBeCloseTo(3 * 1.5, 2) // above the R$4 minimum
     expect(provider.geocode).not.toHaveBeenCalled()
     expect(provider.calculateDistance).toHaveBeenCalledWith(
       { lat: BASE_CONFIG.originLat, lng: BASE_CONFIG.originLng },
@@ -331,7 +345,7 @@ describe('calculateDeliveryFee — location (WhatsApp share)', () => {
       reverseGeocode: vi.fn(async () => {
         throw new DistanceProviderError('reverse geocode down')
       }),
-      calculateDistance: vi.fn(async () => 2),
+      calculateDistance: vi.fn(async () => 10), // well above the R$4 minimum
     })
     const result = await calculateDeliveryFee(
       config,
@@ -340,7 +354,7 @@ describe('calculateDeliveryFee — location (WhatsApp share)', () => {
     )
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.fee).toBeCloseTo(4 + 2 * 1.5, 2)
+      expect(result.fee).toBeCloseTo(10 * 1.5, 2)
       expect(result.resolvedLabel).toBeNull()
     }
   })
@@ -589,7 +603,7 @@ describe('calculateDeliveryFee — global rules (cont.)', () => {
       expect(result.distanceKm).toBeGreaterThan(140)
       expect(result.distanceKm).toBeLessThan(160)
       expect(result.distanceEstimated).toBe(true)
-      expect(result.fee).toBeCloseTo(4 + result.distanceKm! * 1.5, 2)
+      expect(result.fee).toBeCloseTo(result.distanceKm! * 1.5, 2) // well above the R$4 minimum
     }
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('calculateDistance failed, falling back to straight-line estimate'),
