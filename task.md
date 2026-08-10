@@ -53,6 +53,21 @@
 
 ## Feitas
 
+### 2026-08-10 — Transcrição de áudio via OpenRouter + fix de casamento de bairro
+
+- Transcrição de áudio agora aceita OpenRouter como provedor (além de
+  Groq/OpenAI) — lançado por eles em 22/07/2026, mesmo formato
+  multipart da OpenAI. Quando a conta já usa OpenRouter como provedor
+  principal do chat, a transcrição reaproveita a mesma chave
+  automaticamente, sem precisar cadastrar uma nova. Migration 072.
+  (Concórdia especificamente: o Eder vai trocar o provedor de
+  transcrição dela pra OpenRouter por conta própria — não mexi.)
+- Fix: casamento de bairro não reconhecia quando o cliente respondia
+  com o rótulo junto ("Bairro Santo Onofre" em vez de só "Santo
+  Onofre") — confirmado ao vivo num pedido real da Concórdia que
+  acabou cancelado por causa disso. `normalizeName` agora remove esse
+  prefixo antes de comparar.
+
 ### 2026-08-10 — Incidente: IA parada na Churrascaria Concórdia
 
 - Diagnóstico ao vivo (produção): `auto_reply_max_per_conversation`
