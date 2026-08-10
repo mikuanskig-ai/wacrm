@@ -2,6 +2,30 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.1] — 2026-08-10
+
+### Adicionado
+
+- **OpenRouter como provedor de transcrição de áudio**, além de
+  Groq/OpenAI — a OpenRouter lançou endpoint próprio de transcrição em
+  22/07/2026, no mesmo formato da OpenAI. Quando a conta já usa
+  OpenRouter como provedor principal do chat, a transcrição reaproveita
+  automaticamente a mesma chave — não precisa cadastrar uma chave
+  separada só pra isso.
+
+  > **Migration required:** aplique
+  > `supabase/migrations/072_transcription_openrouter.sql`.
+  > Idempotente — só amplia o `CHECK` de
+  > `ai_configs.transcription_provider` pra aceitar `'openrouter'`.
+
+### Corrigido
+
+- **Casamento de bairro falhava quando o cliente respondia com o
+  rótulo junto** ("Bairro Santo Onofre" em vez de só "Santo Onofre") —
+  confirmado ao vivo num pedido real que acabou cancelado por causa
+  disso, mesmo com o bairro certinho já cadastrado. A comparação só
+  tirava acento/maiúscula, nunca a palavra "Bairro" na frente.
+
 ## [0.10.0] — 2026-08-09
 
 Painel `/admin` deixa de ser só uma tabela de contas e vira um painel
