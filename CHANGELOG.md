@@ -2,6 +2,48 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.0] — 2026-08-09
+
+Painel `/admin` deixa de ser só uma tabela de contas e vira um painel
+de controle completo da plataforma, em 4 abas: **Dashboard**,
+**Empresas**, **Planos** e **Financeiro**.
+
+### Adicionado
+
+- **Aba Dashboard**: números da plataforma inteira de uma vez —
+  contas (total/ativas/suspensas, separando suspensão manual de
+  suspensão por atraso), usuários e quantos estão online agora,
+  conexões WhatsApp, conversas por status, contatos, mensagens
+  enviadas/recebidas, faturamento pago/em aberto e a versão do
+  sistema. Abaixo, um painel de saúde do servidor (CPU, memória,
+  disco, status da instância compartilhada do wuzapi) e um botão de
+  **reiniciar o backend** (com confirmação) pra não depender de SSH
+  pra um restart de rotina.
+- **Aba Financeiro**: toda fatura de todo cliente da plataforma, com
+  filtro por data/status/empresa/busca/valor, 8 cards de resumo
+  (faturamento total, recebido, em aberto, vencido, total de faturas,
+  pagas, pendentes, ticket médio) e ações de marcar como paga,
+  cancelar e copiar link de pagamento.
+- **Aba Planos**: o CRUD de planos de assinatura (preço, ciclo,
+  limite de usuários, módulos incluídos, público/privado,
+  ativo/inativo) — já existia como página separada de uma iteração
+  anterior, agora integrado como aba do mesmo painel.
+- **Aba Empresas**: filtro por status/plano/conexão WhatsApp, coluna
+  de receita vitalícia por conta, e duas ações direto na linha —
+  trocar o plano e suspender/reativar — sem precisar abrir cada
+  conta. A tela de detalhe de cada conta continua existindo pra
+  uso de IA, histórico de faturas e módulos.
+
+### Corrigido
+
+- **Clique nas abas do `/admin` não respondia — sempre voltava pra
+  Planos.** O valor da aba ativa era relido da URL a cada render e
+  passado como controlado pro componente de Tabs; o clique disparava
+  a navegação, mas o componente via o valor antigo de novo antes da
+  URL terminar de atualizar e voltava pra aba anterior. A aba agora é
+  estado local (a URL só serve de ponto de partida ao entrar na
+  página), então o clique responde na hora.
+
 ## [0.9.1] — 2026-08-09
 
 Continuação direta da rodada de confiabilidade do delivery via IA
