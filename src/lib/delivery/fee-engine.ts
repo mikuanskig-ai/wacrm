@@ -224,13 +224,24 @@ function roundCents(value: number): number {
   return Math.round(value * 100) / 100
 }
 
-/** Accent/case-insensitive match — "São Paulo" matches "sao paulo". */
+/** Accent/case-insensitive match — "São Paulo" matches "sao paulo".
+ *  Also strips a leading "bairro"/"b." label — confirmed live
+ *  (2026-08-10): a customer asked for their bairro separately
+ *  answered "Bairro Santo Onofre" (the label is a completely normal
+ *  way to answer "qual o bairro?" in Portuguese), which does not match
+ *  a registered "Santo Onofre" without this, even though the name
+ *  itself is right there. Registered names are never stored with the
+ *  label (confirmed against real account data), so this only ever
+ *  strips it off the customer-facing side — never risks two distinct
+ *  registered zones colliding. */
 function normalizeName(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .trim()
     .toLowerCase()
+    .replace(/^b(airro)?[.:]?\s+/, '')
+    .trim()
 }
 
 /**

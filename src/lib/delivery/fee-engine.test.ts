@@ -143,6 +143,21 @@ describe('calculateDeliveryFee — neighborhood', () => {
     }
   })
 
+  it('matches even when the customer answers with the "Bairro" label attached — confirmed live 2026-08-10', async () => {
+    const config2: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'neighborhood',
+      settings: { neighborhoods: [{ id: '3', name: 'Santo Onofre', price: 12 }] },
+    }
+    const result = await calculateDeliveryFee(
+      config2,
+      { neighborhoodName: 'Bairro Santo Onofre', subtotal: 30 },
+      fakeProvider(),
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.fee).toBe(12)
+  })
+
   it('fails with neighborhood_not_found when nothing matches', async () => {
     const result = await calculateDeliveryFee(
       config,
