@@ -7,24 +7,35 @@ import { providerHttpError, toNetworkError } from './providers/shared'
 // (migration 069) and config.ts's loadTranscriptionConfig. Groq's
 // whisper-large-v3-turbo is the recommended default (far cheaper and
 // faster than OpenAI, strong Portuguese support); OpenAI's whisper-1
-// works under the identical multipart request shape.
+// works under the identical multipart request shape. OpenRouter
+// (migration 072) joined 2026-07-22 with the same OpenAI-style
+// multipart shape — the one case where the transcription key can be
+// the account's own main chat key instead of a separate signup, see
+// loadTranscriptionConfig's fallback.
 // ============================================================
 
-export type TranscriptionProvider = 'groq' | 'openai'
+export type TranscriptionProvider = 'groq' | 'openai' | 'openrouter'
 
 const ENDPOINTS: Record<TranscriptionProvider, string> = {
   groq: 'https://api.groq.com/openai/v1/audio/transcriptions',
   openai: 'https://api.openai.com/v1/audio/transcriptions',
+  openrouter: 'https://openrouter.ai/api/v1/audio/transcriptions',
 }
 
 const MODELS: Record<TranscriptionProvider, string> = {
   groq: 'whisper-large-v3-turbo',
   openai: 'whisper-1',
+  // OpenRouter routes by a provider-qualified model id, not a bare
+  // model name — 'openai/whisper-1' is the one confirmed available at
+  // launch. Revisit if OpenRouter adds a cheaper/faster option (their
+  // own Groq-hosted whisper-large-v3-turbo would be the natural pick).
+  openrouter: 'openai/whisper-1',
 }
 
 const PROVIDER_LABELS: Record<TranscriptionProvider, string> = {
   groq: 'Groq',
   openai: 'OpenAI',
+  openrouter: 'OpenRouter',
 }
 
 interface TranscriptionResponse {

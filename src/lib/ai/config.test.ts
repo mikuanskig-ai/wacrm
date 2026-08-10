@@ -69,4 +69,42 @@ describe('loadTranscriptionConfig', () => {
     expect(config).toEqual({ provider: 'groq', apiKey: 'plain:enc-groq-key' })
   })
 
+  it('falls back to the main chat key when transcription is OpenRouter with no dedicated key, and the chat provider is also OpenRouter', async () => {
+    const config = await loadTranscriptionConfig(
+      dbReturning({
+        transcription_provider: 'openrouter',
+        transcription_api_key: null,
+        provider: 'openrouter',
+        api_key: 'enc-main-key',
+      }),
+      'acct',
+    )
+    expect(config).toEqual({ provider: 'openrouter', apiKey: 'plain:enc-main-key' })
+  })
+
+  it('prefers a dedicated OpenRouter transcription key over the main chat key when both are set', async () => {
+    const config = await loadTranscriptionConfig(
+      dbReturning({
+        transcription_provider: 'openrouter',
+        transcription_api_key: 'enc-dedicated-key',
+        provider: 'openrouter',
+        api_key: 'enc-main-key',
+      }),
+      'acct',
+    )
+    expect(config).toEqual({ provider: 'openrouter', apiKey: 'plain:enc-dedicated-key' })
+  })
+
+  it('does NOT fall back to the main key when the chat provider is not OpenRouter, even if transcription_provider is openrouter', async () => {
+    const config = await loadTranscriptionConfig(
+      dbReturning({
+        transcription_provider: 'openrouter',
+        transcription_api_key: null,
+        provider: 'anthropic',
+        api_key: 'enc-main-key',
+      }),
+      'acct',
+    )
+    expect(config).toBeNull()
+  })
 })

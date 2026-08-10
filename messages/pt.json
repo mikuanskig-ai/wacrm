@@ -2476,7 +2476,7 @@
       "sameKeyText": " — pode ser a mesma chave de cima",
       "transcriptionKey": "Chave de transcrição de áudio",
       "optionalTranscription": "(opcional — transcreve áudios recebidos no WhatsApp)",
-      "transcriptionHint": "Transcreve automaticamente os áudios que os clientes mandam, pra que a IA (e a equipe, na tela de conversas) consigam ler o que foi dito. Recomendamos a Groq — é gratuita e muito rápida. Deixe em branco pra manter os áudios sem transcrição, como hoje.",
+      "transcriptionHint": "Transcreve automaticamente os áudios que os clientes mandam, pra que a IA (e a equipe, na tela de conversas) consigam ler o que foi dito. Recomendamos a Groq — é gratuita e muito rápida. Se escolher OpenRouter{sameKeyText}, não precisa de conta nova. Deixe em branco pra manter os áudios sem transcrição, como hoje.",
       "hoursTitle": "Horário de funcionamento da IA",
       "hoursDesc": "Define quando o assistente pode responder automaticamente. Fora desse horário, a IA fica em silêncio — nenhuma mensagem automática é enviada, a conversa só fica esperando um atendente.",
       "hoursEnforce": "Restringir por horário",

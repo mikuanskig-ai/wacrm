@@ -96,21 +96,36 @@ export async function loadAiConfig(
  * account's bad key can never block message ingestion for anyone).
  * Used by the WhatsApp webhook right after an inbound audio message is
  * downloaded — see wuzapi/route.ts.
+ *
+ * OpenRouter (migration 072) is the one transcription provider that
+ * can share the account's main chat key instead of needing its own —
+ * same OpenRouter account either way. So when `transcription_provider
+ * = 'openrouter'` and no dedicated `transcription_api_key` was ever
+ * saved, this falls back to the row's own `api_key`, but ONLY when the
+ * main chat `provider` is *also* 'openrouter' — an account on
+ * Anthropic/Gemini/etc still needs its own dedicated transcription
+ * key, same as Groq/OpenAI always have.
  */
 export async function loadTranscriptionConfig(
   db: SupabaseClient,
   accountId: string,
-): Promise<{ provider: 'groq' | 'openai'; apiKey: string } | null> {
+): Promise<{ provider: 'groq' | 'openai' | 'openrouter'; apiKey: string } | null> {
   const { data, error } = await db
     .from('ai_configs')
-    .select('transcription_provider, transcription_api_key')
+    .select('transcription_provider, transcription_api_key, provider, api_key')
     .eq('account_id', accountId)
     .maybeSingle()
-  if (error || !data?.transcription_provider || !data?.transcription_api_key) return null
+  if (error || !data?.transcription_provider) return null
+
+  const encryptedKey =
+    data.transcription_api_key ??
+    (data.transcription_provider === 'openrouter' && data.provider === 'openrouter' ? data.api_key : null)
+  if (!encryptedKey) return null
+
   try {
     return {
-      provider: data.transcription_provider as 'groq' | 'openai',
-      apiKey: decrypt(data.transcription_api_key),
+      provider: data.transcription_provider as 'groq' | 'openai' | 'openrouter',
+      apiKey: decrypt(encryptedKey),
     }
   } catch {
     console.error(

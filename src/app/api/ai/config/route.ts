@@ -49,11 +49,18 @@ export async function GET() {
     // The keys are selected only to derive the has_* flags; none of
     // them is returned to the client.
     const { api_key, embeddings_api_key, transcription_api_key, onboarding_tested_at, ...safe } = data
+    // OpenRouter transcription can run off the main chat key (see
+    // loadTranscriptionConfig) — reflect that here too, so the
+    // Settings form shows "configured" instead of nudging for a key
+    // that isn't actually needed in that one case.
+    const hasTranscriptionKey =
+      !!transcription_api_key ||
+      (data.transcription_provider === 'openrouter' && data.provider === 'openrouter' && !!api_key)
     return NextResponse.json({
       configured: true,
       has_key: !!api_key,
       has_embeddings_key: !!embeddings_api_key,
-      has_transcription_key: !!transcription_api_key,
+      has_transcription_key: hasTranscriptionKey,
       // Onboarding checklist's "tested in Playground" step — exposing
       // just the boolean, not the raw timestamp, keeps this route's
       // contract simple for the one caller that reads it.
@@ -166,8 +173,8 @@ export async function POST(request: Request) {
     const clearTranscriptionKey = body.transcription_api_key === null
     const transcriptionProvider =
       typeof body.transcription_provider === 'string' ? body.transcription_provider.trim() : ''
-    if (transcriptionProvider && !['groq', 'openai'].includes(transcriptionProvider)) {
-      return bad('transcription_provider must be one of: groq, openai')
+    if (transcriptionProvider && !['groq', 'openai', 'openrouter'].includes(transcriptionProvider)) {
+      return bad('transcription_provider must be one of: groq, openai, openrouter')
     }
 
     // Reuse the stored key when the form didn't send a fresh one.

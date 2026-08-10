@@ -56,10 +56,13 @@ const HOURS_TIMEZONES = [
   'UTC',
 ];
 
-// Whisper-compatible transcription is only offered under these two —
-// Anthropic/Gemini/OpenRouter have no audio-transcription endpoint
-// (same reason embeddings_api_key exists as its own OpenAI-only slot).
-const TRANSCRIPTION_PROVIDERS = ['groq', 'openai'] as const;
+// Whisper-compatible transcription is only offered under these three —
+// Anthropic/Gemini have no audio-transcription endpoint at all (same
+// reason embeddings_api_key exists as its own OpenAI-only slot).
+// OpenRouter joined 2026-07-22; when it's ALSO the chat provider below,
+// the transcription key field can be left blank — the backend reuses
+// the main OpenRouter key (see transcriptionHint's sameKeyText).
+const TRANSCRIPTION_PROVIDERS = ['groq', 'openai', 'openrouter'] as const;
 type TranscriptionProvider = (typeof TRANSCRIPTION_PROVIDERS)[number];
 
 // Radix Select can't use an empty-string item value, so the "leave
@@ -155,7 +158,9 @@ export function AiConfig() {
         setEmbeddingsKey(data.has_embeddings_key ? MASKED_KEY : '');
         setEmbeddingsKeyEdited(false);
         setTranscriptionProvider(
-          data.transcription_provider === 'openai' ? 'openai' : 'groq',
+          TRANSCRIPTION_PROVIDERS.includes(data.transcription_provider)
+            ? data.transcription_provider
+            : 'groq',
         );
         setHasStoredTranscriptionKey(Boolean(data.has_transcription_key));
         setTranscriptionKey(data.has_transcription_key ? MASKED_KEY : '');
@@ -581,7 +586,11 @@ export function AiConfig() {
                   className="flex-1"
                 />
               </div>
-              <p className="text-xs text-muted-foreground">{t('transcriptionHint')}</p>
+              <p className="text-xs text-muted-foreground">
+                {t('transcriptionHint', {
+                  sameKeyText: transcriptionProvider === 'openrouter' && provider === 'openrouter' ? t('sameKeyText') : '',
+                })}
+              </p>
             </div>
           </CardContent>
         </Card>

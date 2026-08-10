@@ -2476,7 +2476,7 @@
       "sameKeyText": " — can be the same key as above",
       "transcriptionKey": "Audio transcription key",
       "optionalTranscription": "(optional — transcribes voice notes received on WhatsApp)",
-      "transcriptionHint": "Automatically transcribes voice notes customers send, so the AI (and staff, in the inbox) can read what was said. We recommend Groq — free and very fast. Leave blank to keep voice notes untranscribed, as today.",
+      "transcriptionHint": "Automatically transcribes voice notes customers send, so the AI (and staff, in the inbox) can read what was said. We recommend Groq — free and very fast. If you pick OpenRouter{sameKeyText}, no new signup needed. Leave blank to keep voice notes untranscribed, as today.",
       "hoursTitle": "AI business hours",
       "hoursDesc": "Controls when the assistant can reply automatically. Outside these hours the AI stays silent — no automatic message is sent, the conversation just waits for a human.",
       "hoursEnforce": "Restrict by hours",

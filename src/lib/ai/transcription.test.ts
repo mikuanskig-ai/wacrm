@@ -32,6 +32,19 @@ describe('transcribeAudio', () => {
     expect(url).toBe('https://api.openai.com/v1/audio/transcriptions')
   })
 
+  it('posts to the OpenRouter endpoint with the openai/whisper-1 model', async () => {
+    const fetchMock = vi.fn(async (_url: string, opts: { body: FormData; headers: Record<string, string> }) => {
+      expect(opts.body.get('model')).toBe('openai/whisper-1')
+      expect(opts.headers.Authorization).toBe('Bearer sk-or-x')
+      return { ok: true, status: 200, json: async () => ({ text: 'oi' }) } as unknown as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await transcribeAudio('openrouter', 'sk-or-x', Buffer.from('fake-audio'), 'audio/ogg')
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://openrouter.ai/api/v1/audio/transcriptions')
+  })
+
   it('returns null for empty/near-silent audio rather than throwing', async () => {
     vi.stubGlobal(
       'fetch',
