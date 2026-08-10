@@ -6,6 +6,24 @@
 
 ## Pendentes
 
+- [ ] **Sem sinal visual no inbox quando a IA para de responder uma
+  conversa** (handoff ou limite de respostas atingido). Descoberto
+  investigando o incidente de 10/08 na Churrascaria Concórdia: 84
+  conversas ficaram sem IA e sem humano, sem nenhum badge/filtro
+  avisando — só descobre entrando em cada uma. Vale um indicador na
+  lista do inbox (algo tipo "IA pausada") e/ou um filtro pra achar
+  essas conversas rápido.
+- [ ] **`auto_reply_max_per_conversation` da Concórdia foi pra 15** (era
+  3) como mitigação de emergência em 10/08 — revisar com o dono da
+  conta se esse é o valor certo pro negócio, ou se deveria ser
+  configurável por padrão pra conta nova ficar num valor mais
+  realista desde o início (3 é baixo demais pra um pedido típico).
+- [ ] **Conversa com contato que só manda "Presente Diário" (imagem +
+  áudio automático, sem texto real)** nunca recebeu nenhuma resposta
+  da IA apesar de várias mensagens — pode ser um contato que não é
+  cliente de verdade (só usa o número pra reenviar devocional). Não
+  mexido — baixo impacto, mas vale confirmar com o dono se é
+  legítimo.
 - [ ] **Confirmação de pagamento Pix feito "por fora"** — a IA não
   sabe lidar com um cliente que diz ter pago via Pix fora do fluxo
   automático (sem gateway pra confirmar). Discussão começou e foi
@@ -34,6 +52,23 @@
   plano).
 
 ## Feitas
+
+### 2026-08-10 — Incidente: IA parada na Churrascaria Concórdia
+
+- Diagnóstico ao vivo (produção): `auto_reply_max_per_conversation`
+  configurado em 3 é baixo demais pra um pedido real — toda conversa
+  que passa de 3 respostas da IA para silenciosamente, sem nenhum
+  aviso visível. 84 de 250 conversas pendentes da conta estavam
+  travadas assim (60 já formalmente "handoff", 24 no limite sem nem
+  isso), nenhuma atribuída a humano, acumulado desde 06/08.
+- Mitigação aplicada (confirmada com o dono da conta antes): limite
+  subido de 3 → 15; as 84 conversas travadas foram destravadas em
+  massa (mesmo efeito do botão "Retomar IA" do inbox, uma por uma,
+  só que via SQL direto). Confirmado ao vivo: IA voltou a responder
+  minutos depois.
+- Gaps reais descobertos nessa investigação → ver seção Pendentes
+  (sinal visual de "IA pausada" no inbox, valor padrão do limite,
+  contato "Presente Diário" nunca respondido).
 
 ### 2026-08-09 — Painel `/admin` completo (v0.10.0)
 
