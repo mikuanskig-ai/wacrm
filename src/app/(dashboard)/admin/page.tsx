@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Loader2, ShieldCheck, LayoutDashboard, Building2, Wallet, CreditCard } from "lucide-react";
@@ -14,10 +14,17 @@ import { AdminPlansTab } from "./plans-tab";
 type Tab = "dashboard" | "accounts" | "finance" | "plans";
 const TABS: Tab[] = ["dashboard", "accounts", "finance", "plans"];
 
-// Same `?tab=`-is-the-source-of-truth pattern as /settings: deep-linkable
-// (the old standalone /admin/plans route now redirects to ?tab=plans) and
-// keeps the URL shareable between platform admins. useSearchParams needs
-// a Suspense boundary or the build bails to client-only rendering.
+// `?tab=` seeds which tab opens (the old standalone /admin/plans route
+// redirects to ?tab=plans, and Empresas' "Gerenciar planos" button links
+// there too) but is NOT re-derived from the URL on every render — the
+// Base UI Tabs component fought a value that changed only after
+// `router.replace` resolved, so a click looked like it did nothing (it
+// flashed to the new tab, then snapped back once the parent re-rendered
+// with the still-stale searchParams). Local state is the single source
+// of truth after mount; the URL is kept in sync as a side effect, for
+// deep-linking and the browser back button only, never fed back in.
+// useSearchParams still needs a Suspense boundary or the build bails to
+// client-only rendering.
 export default function AdminPage() {
   return (
     <Suspense fallback={null}>
@@ -32,8 +39,10 @@ function AdminPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const rawTab = searchParams.get("tab");
-  const tab: Tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "dashboard";
+  const [tab, setTab] = useState<Tab>(() => {
+    const raw = searchParams.get("tab");
+    return TABS.includes(raw as Tab) ? (raw as Tab) : "dashboard";
+  });
 
   useEffect(() => {
     if (profileLoading) return;
@@ -41,6 +50,7 @@ function AdminPageInner() {
   }, [isPlatformAdmin, profileLoading, router]);
 
   const go = (next: Tab) => {
+    setTab(next);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", next);
     router.replace(`/admin?${params.toString()}`, { scroll: false });
