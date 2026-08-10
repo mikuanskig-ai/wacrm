@@ -116,6 +116,40 @@ export async function provisionUser(
 }
 
 // ============================================================
+// Admin — server-wide session list
+// ============================================================
+
+export interface WuzapiAdminSession {
+  id: string
+  name: string
+  connected: boolean
+  loggedIn: boolean
+}
+
+/**
+ * Lists every session provisioned on this WuzAPI server (admin token,
+ * not a per-connection one) — confirmed live (2026-08-09) against the
+ * production instance: `GET /admin/users` returns the full session
+ * array with `connected`/`loggedIn` per entry (same field names/casing
+ * as `getSessionStatus`). Used only for the platform admin dashboard's
+ * "wuzapi status" card (total sessions + how many are actually
+ * connected) — never for anything account-scoped, that's what
+ * `getSessionStatus` (per-connection Token) is for.
+ */
+export async function listSessions(args: {
+  baseUrl: string
+  adminToken: string
+}): Promise<WuzapiAdminSession[]> {
+  const { baseUrl, adminToken } = args
+  return wuzapiRequest<WuzapiAdminSession[]>({
+    baseUrl,
+    path: '/admin/users',
+    authHeader: 'Authorization',
+    authValue: adminToken,
+  })
+}
+
+// ============================================================
 // Session lifecycle
 // ============================================================
 
