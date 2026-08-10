@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Loader2, ShieldCheck, LayoutDashboard, Building2 } from "lucide-react";
+import { Loader2, ShieldCheck, LayoutDashboard, Building2, Wallet } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AdminDashboardTab } from "./dashboard-tab";
 import { AdminAccountsTab } from "./accounts-tab";
+import { AdminFinanceTab } from "./finance-tab";
 
-type Tab = "dashboard" | "accounts";
+type Tab = "dashboard" | "accounts" | "finance";
 
 export default function AdminPage() {
   const t = useTranslations("Admin.list");
@@ -48,6 +49,9 @@ export default function AdminPage() {
           <TabsTrigger value="accounts">
             <Building2 className="mr-1.5 h-4 w-4" /> {t("tabAccounts")}
           </TabsTrigger>
+          <TabsTrigger value="finance">
+            <Wallet className="mr-1.5 h-4 w-4" /> {t("tabFinance")}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard" className="mt-4">
@@ -56,6 +60,10 @@ export default function AdminPage() {
 
         <TabsContent value="accounts" className="mt-4">
           <AdminAccountsTab />
+        </TabsContent>
+
+        <TabsContent value="finance" className="mt-4">
+          <AdminFinanceTab />
         </TabsContent>
       </Tabs>
     </div>

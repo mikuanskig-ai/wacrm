@@ -15,6 +15,12 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
  * reactivates the account when this was its last outstanding invoice
  * and it was suspended for non-payment specifically, same rule as the
  * automated path.
+ *
+ * Body: { status: 'cancelled' } — the Financeiro tab's "cancelar"
+ * action, for an invoice that shouldn't be collected (created by
+ * mistake, the account is closing, a manual arrangement was made
+ * outside the normal cycle). Never reactivates an account — a
+ * cancelled invoice isn't a payment, it's the opposite of one.
  */
 export async function PATCH(
   request: Request,
@@ -28,14 +34,18 @@ export async function PATCH(
     if (!limit.success) return rateLimitResponse(limit)
 
     const body = await request.json().catch(() => null)
-    if (!body || body.status !== 'paid') {
-      return NextResponse.json({ error: "status must be 'paid'" }, { status: 400 })
+    if (!body || (body.status !== 'paid' && body.status !== 'cancelled')) {
+      return NextResponse.json({ error: "status must be 'paid' or 'cancelled'" }, { status: 400 })
     }
 
     const admin = supabaseAdmin()
+    const update =
+      body.status === 'paid'
+        ? { status: 'paid', paid_at: new Date().toISOString() }
+        : { status: 'cancelled' }
     const { data: updated, error } = await admin
       .from('invoices')
-      .update({ status: 'paid', paid_at: new Date().toISOString() })
+      .update(update)
       .eq('id', invoiceId)
       .in('status', ['pending', 'overdue'])
       .select('id, account_id')
@@ -49,18 +59,20 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invoice not found or already settled' }, { status: 404 })
     }
 
-    const { count: remaining } = await admin
-      .from('invoices')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', updated.account_id)
-      .in('status', ['pending', 'overdue'])
-    if (!remaining) {
-      await admin
-        .from('accounts')
-        .update({ status: 'active', suspended_reason: null })
-        .eq('id', updated.account_id)
-        .eq('status', 'suspended')
-        .eq('suspended_reason', 'overdue')
+    if (body.status === 'paid') {
+      const { count: remaining } = await admin
+        .from('invoices')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', updated.account_id)
+        .in('status', ['pending', 'overdue'])
+      if (!remaining) {
+        await admin
+          .from('accounts')
+          .update({ status: 'active', suspended_reason: null })
+          .eq('id', updated.account_id)
+          .eq('status', 'suspended')
+          .eq('suspended_reason', 'overdue')
+      }
     }
 
     return NextResponse.json({ success: true })
