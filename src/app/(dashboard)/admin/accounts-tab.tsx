@@ -74,7 +74,7 @@ export function AdminAccountsTab() {
           <h2 className="text-lg font-semibold text-foreground">{t("title")}</h2>
           <p className="text-sm text-muted-foreground">{t("description")}</p>
         </div>
-        <Button variant="outline" onClick={() => router.push("/admin/plans")}>
+        <Button variant="outline" onClick={() => router.push("/admin?tab=plans")}>
           {t("managePlans")}
         </Button>
       </div>

@@ -72,7 +72,8 @@
       "managePlans": "Manage plans",
       "tabDashboard": "Dashboard",
       "tabAccounts": "Companies",
-      "tabFinance": "Finance"
+      "tabFinance": "Finance",
+      "tabPlans": "Plans"
     },
     "finance": {
       "filterFrom": "Start date",

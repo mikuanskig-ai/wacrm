@@ -72,7 +72,8 @@
       "managePlans": "플랜 관리",
       "tabDashboard": "대시보드",
       "tabAccounts": "회사",
-      "tabFinance": "재무"
+      "tabFinance": "재무",
+      "tabPlans": "요금제"
     },
     "finance": {
       "filterFrom": "시작일",

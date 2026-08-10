@@ -72,7 +72,8 @@
       "managePlans": "Gerenciar planos",
       "tabDashboard": "Dashboard",
       "tabAccounts": "Empresas",
-      "tabFinance": "Financeiro"
+      "tabFinance": "Financeiro",
+      "tabPlans": "Planos"
     },
     "finance": {
       "filterFrom": "Data inicial",

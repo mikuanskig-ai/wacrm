@@ -1,27 +1,50 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Loader2, ShieldCheck, LayoutDashboard, Building2, Wallet } from "lucide-react";
+import { Loader2, ShieldCheck, LayoutDashboard, Building2, Wallet, CreditCard } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AdminDashboardTab } from "./dashboard-tab";
 import { AdminAccountsTab } from "./accounts-tab";
 import { AdminFinanceTab } from "./finance-tab";
+import { AdminPlansTab } from "./plans-tab";
 
-type Tab = "dashboard" | "accounts" | "finance";
+type Tab = "dashboard" | "accounts" | "finance" | "plans";
+const TABS: Tab[] = ["dashboard", "accounts", "finance", "plans"];
 
+// Same `?tab=`-is-the-source-of-truth pattern as /settings: deep-linkable
+// (the old standalone /admin/plans route now redirects to ?tab=plans) and
+// keeps the URL shareable between platform admins. useSearchParams needs
+// a Suspense boundary or the build bails to client-only rendering.
 export default function AdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminPageInner />
+    </Suspense>
+  );
+}
+
+function AdminPageInner() {
   const t = useTranslations("Admin.list");
   const { isPlatformAdmin, profileLoading } = useAuth();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const searchParams = useSearchParams();
+
+  const rawTab = searchParams.get("tab");
+  const tab: Tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "dashboard";
 
   useEffect(() => {
     if (profileLoading) return;
     if (!isPlatformAdmin) router.replace("/dashboard");
   }, [isPlatformAdmin, profileLoading, router]);
+
+  const go = (next: Tab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", next);
+    router.replace(`/admin?${params.toString()}`, { scroll: false });
+  };
 
   if (profileLoading || !isPlatformAdmin) {
     return (
@@ -41,13 +64,16 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+      <Tabs value={tab} onValueChange={(v) => go(v as Tab)}>
         <TabsList>
           <TabsTrigger value="dashboard">
             <LayoutDashboard className="mr-1.5 h-4 w-4" /> {t("tabDashboard")}
           </TabsTrigger>
           <TabsTrigger value="accounts">
             <Building2 className="mr-1.5 h-4 w-4" /> {t("tabAccounts")}
+          </TabsTrigger>
+          <TabsTrigger value="plans">
+            <CreditCard className="mr-1.5 h-4 w-4" /> {t("tabPlans")}
           </TabsTrigger>
           <TabsTrigger value="finance">
             <Wallet className="mr-1.5 h-4 w-4" /> {t("tabFinance")}
@@ -60,6 +86,10 @@ export default function AdminPage() {
 
         <TabsContent value="accounts" className="mt-4">
           <AdminAccountsTab />
+        </TabsContent>
+
+        <TabsContent value="plans" className="mt-4">
+          <AdminPlansTab />
         </TabsContent>
 
         <TabsContent value="finance" className="mt-4">
