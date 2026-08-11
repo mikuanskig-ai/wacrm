@@ -2,6 +2,22 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.2] — 2026-08-11
+
+### Corrigido
+
+- **IA perguntava a quantidade de novo mesmo quando o cliente já tinha
+  dito** (ex.: "faz uma p pra mim" → "uma" já é a quantidade, mas a IA
+  pedia confirmação do mesmo jeito). Prompt reforçado: números por
+  extenso ou artigo indicando quantidade (um, uma, dois, duas...)
+  agora contam como resposta dada.
+- **Casamento de bairro ainda falhava com erro de ortografia de
+  verdade** (o fix de ontem só cobria acento/maiúscula/o rótulo
+  "Bairro" na frente). Agora cai pra distância de edição quando não
+  há match exato, com limite proporcional ao tamanho do nome — e
+  recusa a adivinhar quando dois bairros cadastrados ficam igualmente
+  parecidos com o que foi digitado.
+
 ## [0.10.1] — 2026-08-10
 
 ### Adicionado

@@ -53,6 +53,20 @@
 
 ## Feitas
 
+### 2026-08-11 — Quantidade implícita no pedido + bairro com erro de ortografia
+
+- Prompt reforçado: números por extenso/artigo indicando quantidade
+  ("uma", "um", "dois", "duas"...) agora contam como quantidade dada —
+  a IA não deve mais perguntar de novo só porque não veio um dígito.
+  Confirmado ao vivo: cliente disse "faz uma p pra mim" e a IA
+  perguntou a quantidade da marmita P mesmo assim.
+- `matchNeighborhood` agora tolera erro de ortografia de verdade (não
+  só acento/maiúscula/rótulo "Bairro", que já tinha sido corrigido
+  ontem) — cai pra distância de edição (Levenshtein) quando não há
+  match exato, com limite proporcional ao tamanho do nome e recusa
+  quando dois nomes cadastrados ficam igualmente próximos (não
+  adivinha, prefere pedir de novo a cobrar a zona errada).
+
 ### 2026-08-10 — Transcrição de áudio via OpenRouter + fix de casamento de bairro
 
 - Transcrição de áudio agora aceita OpenRouter como provedor (além de
