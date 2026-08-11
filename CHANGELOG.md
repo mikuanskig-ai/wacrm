@@ -2,6 +2,19 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.3] — 2026-08-11
+
+### Adicionado
+
+- **A IA agora sabe que dia é hoje.** Toda resposta passa a receber
+  "Today is `<dia da semana>`, `<data>`" no prompt, no fuso horário da
+  própria conta. Antes, uma pergunta respondida direto da base de
+  conhecimento (não via consulta ao cardápio) — por exemplo "quanto é
+  o rodízio hoje?", com a base listando um preço por dia da semana —
+  não tinha como a IA saber que dia era, e tinha que adivinhar.
+  Consultas ao cardápio (que já calculam o preço do dia certo no
+  servidor) nunca tiveram esse problema.
+
 ## [0.10.2] — 2026-08-11
 
 ### Corrigido

@@ -53,6 +53,28 @@
 
 ## Feitas
 
+### 2026-08-11 — Data/dia da semana no prompt (fix de plataforma) + avaliação do prompt da Concórdia
+
+- Revisão pedida pelo dono da conta: prompt customizado + base de
+  conhecimento da Concórdia. Achado real de plataforma (não só dessa
+  conta): perguntas respondidas direto da base de conhecimento (não
+  via ferramenta) não tinham como a IA saber que dia é hoje — corrigido
+  injetando "Today is <dia>, <data>" no fuso da própria conta em todo
+  prompt (`buildSystemPrompt`).
+- Conferido: preço de marmita/rodízio por dia da semana no catálogo de
+  produtos bate 100% com a base de conhecimento (`day_price_overrides`
+  já é usado corretamente em todo lugar que cobra) — falso alarme
+  inicial meu, sem bug aqui.
+- Achado sem mexer (é conteúdo do cliente, não código): a seção "APÓS
+  CONFIRMAR" do prompt nunca tem efeito — a mensagem de confirmação
+  real é sempre a determinística do sistema, nunca o texto livre da
+  IA. Reportado ao dono, não alterei o prompt.
+- Achado cosmético sem mexer: dois produtos no catálogo com nome
+  digitado diferente da base de conhecimento ("saborisada" vs
+  "saborizada", "Refriigerante" com i duplo) — preço bate certo,
+  impacto baixo (IA normalmente vê o cardápio inteiro, não busca por
+  nome exato).
+
 ### 2026-08-11 — Quantidade implícita no pedido + bairro com erro de ortografia
 
 - Prompt reforçado: números por extenso/artigo indicando quantidade
