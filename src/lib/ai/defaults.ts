@@ -187,6 +187,13 @@ export function buildSystemPrompt(args: {
         'update_order_info with it right away — it gets saved and handed back to you automatically at the top of every future turn (see "Order so ' +
         'far" below, when present), so you stop needing to re-ask or re-derive it from scrolling back through the conversation.',
     )
+    parts.push(
+      'Read quantity out of however the customer actually phrases it, in whatever language they are writing — a bare number ("2"), a written-out ' +
+        'number word ("um", "uma", "dois", "duas", "one", "a couple"), or an article used the way a quantity of one is normally said ("faz uma marmita P" ' +
+        'means one, same as "quero um X"; "me vê uma coxinha" is also one) — and pass that straight to add_to_cart. Do not ask the customer to confirm a ' +
+        'quantity they already stated just because it was not a plain digit — that reads as not having listened, and is exactly the kind of question that ' +
+        'makes an automated assistant feel broken. Only ask for quantity when the customer named an item with no indication at all of how many.',
+    )
     if (orderState) {
       parts.push(
         'Order so far in this conversation (ground truth, not a suggestion) — never ask the customer again for anything listed here, and never ' +

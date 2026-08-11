@@ -158,6 +158,37 @@ describe('calculateDeliveryFee — neighborhood', () => {
     if (result.ok) expect(result.fee).toBe(12)
   })
 
+  it('matches a small spelling typo — one missing letter', async () => {
+    const result = await calculateDeliveryFee(config, { neighborhoodName: 'Cetro', subtotal: 30 }, fakeProvider())
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.fee).toBe(5) // Centro
+  })
+
+  it('matches a typo together with the wrong case and a missing accent', async () => {
+    const result = await calculateDeliveryFee(config, { neighborhoodName: 'sao paolo', subtotal: 30 }, fakeProvider())
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.fee).toBe(12) // São Paulo
+  })
+
+  it('does not guess when a misspelling is equally close to two different registered names', async () => {
+    const ambiguousConfig: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'neighborhood',
+      settings: { neighborhoods: [{ id: '4', name: 'Alta', price: 10 }, { id: '5', name: 'Alto', price: 20 }] },
+    }
+    const result = await calculateDeliveryFee(
+      ambiguousConfig,
+      { neighborhoodName: 'Alty', subtotal: 30 },
+      fakeProvider(),
+    )
+    expect(result).toEqual({ ok: false, reason: 'neighborhood_not_found' })
+  })
+
+  it('does not match a genuinely different name just because typo tolerance exists', async () => {
+    const result = await calculateDeliveryFee(config, { neighborhoodName: 'Copacabana', subtotal: 30 }, fakeProvider())
+    expect(result).toEqual({ ok: false, reason: 'neighborhood_not_found' })
+  })
+
   it('fails with neighborhood_not_found when nothing matches', async () => {
     const result = await calculateDeliveryFee(
       config,

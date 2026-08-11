@@ -298,9 +298,51 @@ function estimateStraightLineDistanceKm(a: { lat: number; lng: number }, b: { la
   return straightLineKm * STRAIGHT_LINE_ROAD_PADDING
 }
 
+/** Iterative Levenshtein distance (single-row DP) — how many
+ *  character edits (insert/delete/substitute) turn `a` into `b`.
+ *  Case/accent-insensitive by construction: both call sites here
+ *  always pass already-`normalizeName`d strings. */
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0
+  if (a.length === 0) return b.length
+  if (b.length === 0) return a.length
+  let prevRow = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i++) {
+    const currRow = [i]
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      currRow.push(Math.min(prevRow[j]! + 1, currRow[j - 1]! + 1, prevRow[j - 1]! + cost))
+    }
+    prevRow = currRow
+  }
+  return prevRow[b.length]!
+}
+
+/** Exact (accent/case/"bairro"-label-insensitive) match first; a small
+ *  typo falls back to the single closest registered name by edit
+ *  distance — confirmed live (2026-08-10): the request was specifically
+ *  to tolerate a misspelled bairro, not just a different case. The
+ *  allowed distance scales down for short names (so a 4-letter
+ *  neighbourhood like "Neva" doesn't casually swallow something 2
+ *  edits away) and the match is rejected outright when two different
+ *  registered names are equally close — guessing wrong here charges
+ *  the customer the wrong fee, so an ambiguous typo falls through to
+ *  neighborhood_not_found (the model then asks the customer to
+ *  confirm) instead of silently picking one. */
 function matchNeighborhood(rules: NeighborhoodRule[], name: string): NeighborhoodRule | null {
   const target = normalizeName(name)
-  return rules.find((r) => normalizeName(r.name) === target) ?? null
+  const exact = rules.find((r) => normalizeName(r.name) === target)
+  if (exact) return exact
+  if (!target || rules.length === 0) return null
+
+  const scored = rules
+    .map((rule) => ({ rule, distance: levenshteinDistance(target, normalizeName(rule.name)) }))
+    .sort((a, b) => a.distance - b.distance)
+  const closest = scored[0]!
+  const maxAllowed = Math.max(1, Math.min(3, Math.floor(target.length * 0.25)))
+  if (closest.distance > maxAllowed) return null
+  if (scored[1] && scored[1].distance === closest.distance) return null // ambiguous — two equally-close names
+  return closest.rule
 }
 
 function matchDistanceRange(rules: DistanceRangeRule[], distanceKm: number): DistanceRangeRule | null {
