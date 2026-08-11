@@ -141,9 +141,35 @@ export function buildSystemPrompt(args: {
    *  null/omit when there's nothing yet, or outside the delivery tool
    *  flow (Playground has no real conversation row to summarize). */
   orderState?: string | null
+  /** IANA timezone "today" below is computed in — pass the account's
+   *  own `ai_configs.hours_timezone` when it's known (auto-reply
+   *  always has it), so "today"/"this weekday" agrees with whatever
+   *  day-of-week pricing or hours the account's own tools already
+   *  resolve server-side (day-price.ts, business-hours.ts). Defaults
+   *  to the same America/Sao_Paulo used everywhere else in this
+   *  codebase — Playground/draft don't have a per-account value handy,
+   *  and matter far less here since a human reviews the output before
+   *  it ever reaches a customer. */
+  timezone?: string
+  /** Injection point for tests only — real callers never pass this. */
+  now?: Date
 }): string {
-  const { userPrompt, mode, knowledge, toolsActive, orderState } = args
+  const { userPrompt, mode, knowledge, toolsActive, orderState, timezone = 'America/Sao_Paulo', now = new Date() } = args
+  // Confirmed live (2026-08-11): an account's knowledge base commonly
+  // has day-dependent info (e.g. a Sunday-only price) written out for
+  // every day at once — nothing anywhere told the model what day it
+  // actually is today, so "what does X cost today?" had no way to be
+  // answered correctly except by guessing. Tool calls that resolve a
+  // price server-side (day-price.ts) never had this problem — this is
+  // specifically for everything answered from plain conversation/
+  // knowledge-base text instead.
+  const todayLine =
+    `Today is ${new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'long' }).format(now)}, ` +
+    `${new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now)} (the business's local date). Use this — never guess or assume a ` +
+    'different one — for anything day-dependent: a customer asking about "today"/"tomorrow", or day-of-week pricing/hours mentioned in the ' +
+    'business context below.'
   const parts: string[] = [
+    todayLine,
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
       'Write the next reply the business should send to the customer.',

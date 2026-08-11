@@ -249,6 +249,7 @@ export async function dispatchInboundToAiReply(
         knowledge,
         toolsActive: true,
         orderState,
+        timezone: aiHours?.timezone,
       })
       try {
         const result = await generateReplyWithTools({
@@ -303,6 +304,7 @@ export async function dispatchInboundToAiReply(
         userPrompt: config.systemPrompt,
         mode: 'auto_reply',
         knowledge,
+        timezone: aiHours?.timezone,
       })
       try {
         const result = await generateReply({ config, systemPrompt, messages })
