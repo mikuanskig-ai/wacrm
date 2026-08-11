@@ -209,6 +209,42 @@ describe('searchMenuTool', () => {
     const res = await searchMenuTool.execute({ query: 'sushi' }, ctxFor(db))
     expect(res.content).toMatch(/no active menu items/i)
   })
+
+  it('matches a product whose stored name lacks an accent the query has — confirmed live 2026-08-11', async () => {
+    const { db } = makeDb({
+      products: [{ id: 'p1', name: 'Rodizio de Carne', description: null, price: 59.9 }],
+    })
+    const res = await searchMenuTool.execute({ query: 'rodízio' }, ctxFor(db))
+    expect(res.content).toContain('Rodizio de Carne')
+  })
+
+  it('matches on any significant word instead of requiring the whole query as one substring', async () => {
+    const { db } = makeDb({
+      products: [
+        { id: 'p1', name: 'Rodizio de Carne', description: null, price: 59.9 },
+        { id: 'p2', name: 'Almoço por Quilo', description: null, price: 94.9 },
+        { id: 'p3', name: 'Refrigerante Lata', description: null, price: 8 },
+      ],
+    })
+    // No single product name contains this whole phrase — a plain ILIKE
+    // on the full string would return zero results, same as it did live.
+    const res = await searchMenuTool.execute({ query: 'rodízio quilo almoço' }, ctxFor(db))
+    expect(res.content).toContain('Rodizio de Carne')
+    expect(res.content).toContain('Almoço por Quilo')
+    expect(res.content).not.toContain('Refrigerante Lata')
+  })
+
+  it('ignores short filler words (< 3 letters) so they do not match everything', async () => {
+    const { db } = makeDb({
+      products: [
+        { id: 'p1', name: 'Água com gás', description: null, price: 6 },
+        { id: 'p2', name: 'Refrigerante Lata', description: null, price: 8 },
+      ],
+    })
+    const res = await searchMenuTool.execute({ query: 'a água' }, ctxFor(db))
+    expect(res.content).toContain('Água com gás')
+    expect(res.content).not.toContain('Refrigerante Lata')
+  })
 })
 
 describe('getProductDetailsTool', () => {

@@ -137,6 +137,39 @@ async function mostRecentSharedLocation(
   return parseSharedLocation(row.content_text)
 }
 
+/** Accent/case-insensitive, split on words — matches fee-engine.ts's
+ *  neighbourhood-matching reasoning for the exact same reason.
+ *  Confirmed live (2026-08-11): a customer asked about "rodízio" and
+ *  the model correctly called search_menu with query "rodízio" —
+ *  which came back "No active menu items matched that search" against
+ *  a real, active product named "Rodizio de Carne" (no accent in the
+ *  stored name), a plain ILIKE being accent-sensitive. The model tried
+ *  again with a broader "rodízio quilo almoço" and got the same empty
+ *  result, because a literal ILIKE also requires the WHOLE query as
+ *  one contiguous substring — no product name contains all three
+ *  words together, even though two of them (rodízio, quilo) are real
+ *  items. Both attempts failing back to back is what triggered a
+ *  handoff over a completely answerable question. */
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+/** Words under 3 letters ("de", "o", "a"...) are skipped so they don't
+ *  match every product; a match on ANY remaining word counts — broader
+ *  than requiring the whole phrase as one substring, on purpose. */
+function matchesSearch(name: string, search: string): boolean {
+  const normalizedName = normalizeSearchText(name)
+  const words = normalizeSearchText(search)
+    .split(/\s+/)
+    .filter((w) => w.length >= 3)
+  if (words.length === 0) return normalizedName.includes(normalizeSearchText(search))
+  return words.some((w) => normalizedName.includes(w))
+}
+
 export const searchMenuTool: ToolDefinition = {
   name: 'search_menu',
   description:
@@ -152,16 +185,21 @@ export const searchMenuTool: ToolDefinition = {
     additionalProperties: false,
   },
   async execute(args, ctx) {
-    let query = ctx.db
+    const search = typeof args.query === 'string' ? args.query.trim() : ''
+    // Filtering happens in JS below (matchesSearch), not in the query —
+    // an ILIKE at the DB level can't be made accent-insensitive without
+    // an extension this schema doesn't have, and per-word matching
+    // needs the full name string anyway. Wider cap when there's a
+    // search term since it's no longer the DB doing the narrowing;
+    // still capped when listing everything so a huge catalog doesn't
+    // blow up the model's context for a query with no filter at all.
+    const { data } = await ctx.db
       .from('delivery_products')
       .select('id, name, description, price, day_price_overrides')
       .eq('account_id', ctx.accountId)
       .eq('is_active', true)
       .order('position')
-      .limit(20)
-    const search = typeof args.query === 'string' ? args.query.trim() : ''
-    if (search) query = query.ilike('name', `%${search}%`)
-    const { data } = await query
+      .limit(search ? 200 : 20)
     const rows = (data ?? []) as {
       id: string
       name: string
@@ -169,10 +207,11 @@ export const searchMenuTool: ToolDefinition = {
       price: number
       day_price_overrides: DayPriceOverrides | null
     }[]
-    if (rows.length === 0) {
+    const matched = search ? rows.filter((p) => matchesSearch(p.name, search)) : rows
+    if (matched.length === 0) {
       return { content: 'No active menu items matched that search.' }
     }
-    const lines = rows.map(
+    const lines = matched.map(
       (p) =>
         `- ${p.name} (product_id: ${p.id}) — ${formatCurrency(effectivePrice(p.price, p.day_price_overrides), ctx.currency)}${p.description ? ` — ${p.description}` : ''}`,
     )
