@@ -2,6 +2,23 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.6] — 2026-08-12
+
+### Corrigido
+
+- **Forma de pagamento não aparecia na notinha impressa de verdade**
+  (impressora térmica, via `zontalk-print-agent.exe`) — o fix de ontem
+  só cobriu a página de reimpressão do navegador
+  (`/delivery/pedidos/[id]/imprimir`); o endpoint que alimenta o
+  agente de impressão local (`GET /api/v1/print-jobs`) nunca incluía
+  `payment_method`/`payment_notes` no JSON do recibo. Corrigido aqui.
+
+  > **Pendente, fora deste repositório**: fonte maior e endereço em
+  > negrito na notinha física dependem do template impresso pelo
+  > próprio `zontalk-print-agent.exe` (executável Windows separado,
+  > cujo código-fonte não está em `c:\claude`) — essas duas mudanças
+  > visuais continuam sem efeito até editar aquele projeto.
+
 ## [0.10.5] — 2026-08-11
 
 ### Adicionado

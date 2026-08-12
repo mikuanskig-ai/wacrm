@@ -50,8 +50,31 @@
   texto livre já existe; poderia ganhar export CSV. Aba Planos não
   tem exclusão definitiva (intencional — fatura/conta referenciam o
   plano).
+- [ ] **Fonte maior + endereço em negrito na notinha física** —
+  `payment_method` já chega no JSON de `/api/v1/print-jobs` (fix de
+  12/08), mas o *template* impresso de verdade (tamanho de fonte,
+  negrito) é renderizado pelo `zontalk-print-agent.exe`, um executável
+  Windows separado cujo código-fonte não está em `c:\claude` — precisa
+  localizar esse projeto (provavelmente outra pasta/repo do usuário,
+  fora da convenção `clients/<cliente>/<projeto>/`) antes de dar
+  seguimento nessas duas mudanças visuais.
 
 ## Feitas
+
+### 2026-08-12 — Forma de pagamento faltando na notinha impressa de verdade
+
+- A notinha física da Concórdia (impressora térmica) não é a página
+  `/delivery/pedidos/[id]/imprimir` que editei ontem — é gerada por um
+  executável Windows separado (`zontalk-print-agent.exe`), que puxa o
+  recibo de `GET /api/v1/print-jobs` e imprime com o próprio template
+  dele. Esse endpoint nunca incluía `payment_method`/`payment_notes`
+  no JSON — corrigido.
+- **Pendente, fora deste repositório**: fonte maior e endereço em
+  negrito na notinha física dependem do template do próprio agente —
+  código-fonte não está em `c:\claude` (procurei em todo o diretório,
+  não achei nem o `.exe` nem uma pasta `print-agent/`). Precisa
+  localizar/abrir esse projeto separadamente pra aplicar essas duas
+  mudanças visuais.
 
 ### 2026-08-11 — Notinha de impressão + Cardápio do dia + Cardápio na barra lateral
 

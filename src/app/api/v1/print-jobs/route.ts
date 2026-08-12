@@ -38,6 +38,8 @@ interface OrderRow {
   customer_name: string | null;
   delivery_address: string | null;
   notes: string | null;
+  payment_method: string | null;
+  payment_notes: string | null;
   subtotal: number;
   delivery_fee: number | null;
   total: number;
@@ -101,7 +103,7 @@ export async function GET(request: Request) {
         ctx.supabase
           .from('delivery_orders')
           .select(
-            'id, status, source, customer_name, delivery_address, notes, subtotal, delivery_fee, total, currency, created_at, contact:contacts(name, phone)',
+            'id, status, source, customer_name, delivery_address, notes, payment_method, payment_notes, subtotal, delivery_fee, total, currency, created_at, contact:contacts(name, phone)',
           )
           .in('id', orderIds),
         ctx.supabase
@@ -148,6 +150,8 @@ export async function GET(request: Request) {
                 customer_phone: order.contact?.phone ?? null,
                 delivery_address: order.delivery_address,
                 notes: order.notes,
+                payment_method: order.payment_method,
+                payment_notes: order.payment_notes,
                 subtotal: order.subtotal,
                 delivery_fee: order.delivery_fee,
                 total: order.total,

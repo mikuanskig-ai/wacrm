@@ -148,6 +148,31 @@ describe('GET /api/v1/print-jobs', () => {
     expect(mocks.touchPrintAgentPoll).toHaveBeenCalledWith('acct-1');
   });
 
+  it('includes payment_method/payment_notes in the receipt when the order has them', async () => {
+    const db = makeDb({
+      accounts: [{ id: 'acct-1', name: 'Pizzaria' }],
+      print_jobs: [
+        { id: 'job-1', order_id: 'order-1', account_id: 'acct-1', status: 'pending', attempts: 0, created_at: '2026-01-01T00:00:00Z', next_attempt_at: null },
+      ],
+      delivery_orders: [
+        {
+          id: 'order-1', status: 'confirmed', source: 'ai_chat', customer_name: 'Maria',
+          delivery_address: 'Rua X, 123', notes: null,
+          payment_method: 'Pix', payment_notes: 'troco para R$100',
+          subtotal: 10, delivery_fee: null, total: 10,
+          currency: 'BRL', created_at: '2026-01-01T00:00:00Z', contact: null,
+        },
+      ],
+      delivery_order_items: [],
+    });
+    mocks.requireApiKey.mockResolvedValue({ supabase: db, accountId: 'acct-1' });
+
+    const res = await GET(request());
+    const body = await res.json();
+    expect(body.data.jobs[0].receipt.payment_method).toBe('Pix');
+    expect(body.data.jobs[0].receipt.payment_notes).toBe('troco para R$100');
+  });
+
   it('prefers the linked contact name over customer_name', async () => {
     const db = makeDb({
       accounts: [{ id: 'acct-1', name: 'Pizzaria' }],
