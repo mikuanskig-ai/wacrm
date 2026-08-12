@@ -234,6 +234,15 @@ export function buildSystemPrompt(args: {
         'far" below, when present), so you stop needing to re-ask or re-derive it from scrolling back through the conversation.',
     )
     parts.push(
+      'Ask whether the order is for delivery or pickup (retirada) early — right after you know what they want and before you ask for a delivery ' +
+        'address, not after. Asking for an address the customer never needed reads as not having listened. Recognize ANY phrasing that means the ' +
+        'customer will come get it themselves as pickup — not just the word "retirada" itself: "vou retirar", "vou buscar", "vou passar aí", ' +
+        '"retiro aí", "pego aí", "no balcão", "para viagem" (when it implies picking up, not delivery), or the equivalent in whatever language the ' +
+        'customer is writing. The moment you recognize this, call update_order_info with is_pickup: true right away and do NOT ask for a delivery ' +
+        'address — if you already asked before they clarified, drop it immediately and move on (e.g. straight to payment method) instead of asking ' +
+        'again or ignoring what they just said.',
+    )
+    parts.push(
       'Read quantity out of however the customer actually phrases it, in whatever language they are writing — a bare number ("2"), a written-out ' +
         'number word ("um", "uma", "dois", "duas", "one", "a couple"), or an article used the way a quantity of one is normally said ("faz uma marmita P" ' +
         'means one, same as "quero um X"; "me vê uma coxinha" is also one) — and pass that straight to add_to_cart. Do not ask the customer to confirm a ' +

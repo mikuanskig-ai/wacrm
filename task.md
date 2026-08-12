@@ -61,6 +61,19 @@
 
 ## Feitas
 
+### 2026-08-12 — IA não perguntava entrega/retirada antes do endereço
+
+- Reportado ao vivo: cliente disse "Vou retirar" e a IA já tinha
+  pedido o endereço de entrega antes disso — só corrigiu porque o
+  cliente avisou por conta própria. Prompt não tinha nenhuma instrução
+  pra perguntar entrega/retirada cedo, nem uma lista de como reconhecer
+  as várias formas de dizer que vai buscar.
+- Corrigido em `buildSystemPrompt` (`src/lib/ai/defaults.ts`): agora
+  pergunta entrega/retirada antes do endereço, e reconhece "vou
+  retirar", "vou buscar", "vou passar aí", "retiro aí", "pego aí", "no
+  balcão" (não só a palavra "retirada" isolada) — para de pedir
+  endereço assim que identificar.
+
 ### 2026-08-12 — zontalk-print-agent reconstruído do zero + notinha física
 
 - Descoberta durante o fix de forma de pagamento: o código-fonte do

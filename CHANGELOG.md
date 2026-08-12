@@ -2,6 +2,22 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.7] — 2026-08-12
+
+### Corrigido
+
+- **IA pedia o endereço de entrega antes de perguntar se era retirada**
+  — descoberto ao vivo na Churrascaria Concórdia: depois de saber o
+  nome do cliente, a IA já emendava direto pra pedir o endereço, sem
+  perguntar "entrega ou retirada?" antes. Só corrigia se o cliente
+  avisasse por conta própria ("vou retirar"), o que passava a
+  impressão de que a IA "não entendeu". Prompt reforçado: agora
+  pergunta entrega/retirada cedo, antes do endereço, e reconhece
+  qualquer forma de dizer que vai buscar ("vou retirar", "vou buscar",
+  "vou passar aí", "retiro aí", "pego aí", "no balcão"...) — não só a
+  palavra "retirada" — parando de pedir endereço na hora que isso for
+  identificado.
+
 ## [0.10.6] — 2026-08-12
 
 ### Corrigido
