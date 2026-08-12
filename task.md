@@ -96,6 +96,15 @@
   movida pra logo depois dos itens, em vez de ficar no final da
   notinha depois do TOTAL — mais perto do que a cozinha precisa ler
   antes de preparar. `.exe` republicado de novo no mesmo dia.
+- Bug real reportado ao vivo: "abro o .exe e ele fecha sozinho" — sem
+  `config.json`, o agente só imprimia uma mensagem e saía na hora, e o
+  Windows fecha a janela de console de um duplo-clique assim que o
+  processo termina, então a mensagem nunca dava tempo de ser lida.
+  Corrigido: sem config, entra direto no assistente de configuração em
+  vez de só instruir a rodar com `--setup` (que quem clica duas vezes
+  no `.exe` não tem como fazer); e qualquer saída com erro agora espera
+  Enter antes de fechar (só quando é um terminal de verdade — não trava
+  execução automatizada/scriptada). `.exe` republicado de novo.
 
 ### 2026-08-12 — Forma de pagamento faltando na notinha impressa de verdade
 
