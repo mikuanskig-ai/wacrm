@@ -92,6 +92,10 @@
   tanto com `node` puro quanto com o `.exe` empacotado — não era coisa
   do `pkg`). Resolvido trocando pro padrão de iterador assíncrono
   (`Symbol.asyncIterator`) do `readline`.
+- Ajuste pedido depois: seção OBSERVACOES (nota do pedido inteiro)
+  movida pra logo depois dos itens, em vez de ficar no final da
+  notinha depois do TOTAL — mais perto do que a cozinha precisa ler
+  antes de preparar. `.exe` republicado de novo no mesmo dia.
 
 ### 2026-08-12 — Forma de pagamento faltando na notinha impressa de verdade
 
