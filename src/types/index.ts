@@ -459,6 +459,8 @@ export interface DeliveryOrder {
   customer_name?: string | null;
   delivery_address?: string | null;
   notes?: string | null;
+  payment_method?: string | null;
+  payment_notes?: string | null;
   subtotal: number;
   delivery_fee: number | null;
   total: number;

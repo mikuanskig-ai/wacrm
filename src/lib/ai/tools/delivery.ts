@@ -710,6 +710,8 @@ export const placeOrderTool: ToolDefinition = {
       deliveryFee,
       customerName,
       notes: typeof args.notes === 'string' ? args.notes : null,
+      paymentMethod: orderInfo.paymentMethod,
+      paymentNotes: orderInfo.paymentNotes,
     })
     await writeCart(ctx.db, ctx.conversationId, [])
     // The quote is tied to the cart just cleared above — carrying it

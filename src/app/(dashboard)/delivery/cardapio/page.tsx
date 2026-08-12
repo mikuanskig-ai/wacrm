@@ -5,11 +5,13 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { hasModule } from "@/lib/accounts/modules";
+import { canEditSettings } from "@/lib/auth/roles";
 import type { DeliveryCategory, DeliveryProduct } from "@/types";
 import { CategoryList } from "@/components/delivery/category-list";
 import { CategoryFormDialog } from "@/components/delivery/category-form-dialog";
 import { ProductGrid } from "@/components/delivery/product-grid";
 import { ProductForm } from "@/components/delivery/product-form";
+import { DailyMenuCard } from "@/components/delivery/daily-menu-card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, UtensilsCrossed, LayoutGrid } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -17,7 +19,8 @@ import { useTranslations } from "next-intl";
 export default function DeliveryMenuPage() {
   const t = useTranslations("Delivery.page");
   const supabase = createClient();
-  const { account, profileLoading } = useAuth();
+  const { account, accountId, accountRole, profileLoading } = useAuth();
+  const canEdit = accountRole ? canEditSettings(accountRole) : false;
 
   const [categories, setCategories] = useState<DeliveryCategory[]>([]);
   const [products, setProducts] = useState<DeliveryProduct[]>([]);
@@ -101,6 +104,8 @@ export default function DeliveryMenuPage() {
           </Button>
         </div>
       </div>
+
+      <DailyMenuCard accountId={accountId} canEdit={canEdit} />
 
       {loading ? (
         <div className="flex gap-4">

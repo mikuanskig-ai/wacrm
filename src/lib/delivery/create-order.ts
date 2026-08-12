@@ -87,6 +87,8 @@ export interface FinalizeDeliveryOrderArgs {
   deliveryAddress?: string | null;
   notes?: string | null;
   currency: string;
+  paymentMethod?: string | null;
+  paymentNotes?: string | null;
 }
 
 /**
@@ -119,6 +121,8 @@ export async function finalizeDeliveryOrder(
       customer_name: args.customerName ?? null,
       delivery_address: args.deliveryAddress ?? null,
       notes: args.notes ?? null,
+      payment_method: args.paymentMethod ?? null,
+      payment_notes: args.paymentNotes ?? null,
       subtotal,
       delivery_fee: deliveryFee,
       total,

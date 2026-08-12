@@ -16,7 +16,7 @@ import type { ToolContext } from './tools/types'
 import { formatCurrency } from '@/lib/currency'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { sleep } from './debounce'
-import { getAiBusinessHours, isWithinBusinessHours } from '@/lib/delivery/business-hours'
+import { getAiBusinessHours, getDailyMenu, isWithinBusinessHours, resolveDayKey } from '@/lib/delivery/business-hours'
 import { getPixKey } from '@/lib/payments/config'
 import type { AiUsage } from './types'
 
@@ -128,6 +128,15 @@ export async function dispatchInboundToAiReply(
     // (no auto-message) — see the doc comment above for why.
     const aiHours = await getAiBusinessHours(db, accountId)
     if (aiHours?.enabled && !isWithinBusinessHours(aiHours.hours, aiHours.timezone)) return
+
+    // Same timezone the hours gate above already resolves "today" in —
+    // deliberately kept in sync (see resolveDayKey's doc) so the menu
+    // line and any day-of-week hours/pricing never disagree about what
+    // day it is. Cheap even when the account has nothing configured
+    // (empty jsonb row, or no ai_configs row at all).
+    const dailyMenuTimezone = aiHours?.timezone ?? 'America/Sao_Paulo'
+    const dailyMenu = await getDailyMenu(db, accountId)
+    const todaysMenu = dailyMenu?.[resolveDayKey(dailyMenuTimezone)] ?? null
 
     // Deterministic, user-configured responders win over the LLM — the
     // caller already excludes messages a Flow consumed. Message-level
@@ -250,6 +259,7 @@ export async function dispatchInboundToAiReply(
         toolsActive: true,
         orderState,
         timezone: aiHours?.timezone,
+        dailyMenu: todaysMenu,
       })
       try {
         const result = await generateReplyWithTools({
@@ -305,6 +315,7 @@ export async function dispatchInboundToAiReply(
         mode: 'auto_reply',
         knowledge,
         timezone: aiHours?.timezone,
+        dailyMenu: todaysMenu,
       })
       try {
         const result = await generateReply({ config, systemPrompt, messages })

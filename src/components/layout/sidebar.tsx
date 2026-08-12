@@ -9,6 +9,7 @@ import { useTotalUnread } from "@/hooks/use-total-unread";
 import { hasModule } from "@/lib/accounts/modules";
 import {
   Bot,
+  BookOpen,
   Crown,
   GitBranch,
   LayoutDashboard,
@@ -122,6 +123,18 @@ const DELIVERY_NAV_ITEM: NavItem = {
   beta: true,
 };
 
+// Promoted out of a sub-page reachable only via a back-arrow inside
+// Pedidos (UX request 2026-08-11) — a direct entry point for the
+// menu/catalog CRUD, right below Delivery. No beta chip: it's not a
+// new feature, just a new place to reach an existing one. Gated by
+// the same Delivery module flag since the data (products/categories)
+// lives there — see navGroups below.
+const CARDAPIO_NAV_ITEM: NavItem = {
+  href: "/delivery/cardapio",
+  labelKey: "cardapio",
+  icon: BookOpen,
+};
+
 const BASE_BOTTOM_NAV_ITEMS: NavItem[] = [
   { href: "/settings", labelKey: "settings", icon: Settings },
 ];
@@ -154,9 +167,20 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const navGroups = useMemo(
     () =>
       hasModule(account, "delivery")
-        ? [...BASE_NAV_GROUPS, { labelKey: null, items: [DELIVERY_NAV_ITEM] }]
+        ? [
+            ...BASE_NAV_GROUPS,
+            { labelKey: null, items: [DELIVERY_NAV_ITEM, CARDAPIO_NAV_ITEM] },
+          ]
         : BASE_NAV_GROUPS,
     [account],
+  );
+  // Cardápio's href ("/delivery/cardapio") is a sub-path of Delivery's
+  // ("/delivery") — without this, the plain startsWith check below
+  // would light up both rows at once while on the Cardápio page. Only
+  // the most specific (longest) matching href should render active.
+  const allNavHrefs = useMemo(
+    () => navGroups.flatMap((g) => g.items.map((i) => i.href)),
+    [navGroups],
   );
   const bottomNavItems = useMemo(
     () =>
@@ -267,7 +291,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               {group.items.map((item) => {
                 const isActive =
                   pathname === item.href ||
-                  (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                  (item.href !== "/dashboard" &&
+                    pathname.startsWith(item.href) &&
+                    !allNavHrefs.some(
+                      (href) =>
+                        href !== item.href &&
+                        href.length > item.href.length &&
+                        pathname.startsWith(href),
+                    ));
 
                 const showUnreadDot =
                   item.href === "/inbox" && totalUnread > 0 && !isActive;

@@ -29,6 +29,11 @@ const pageTitles: Record<string, string> = {
   "/automations": "automations",
   "/flows": "flows",
   "/agents": "aiAgents",
+  // Cardápio must come before the plain "/delivery" entry — both match
+  // "/delivery/cardapio" by prefix, and getPageTitleKey below returns
+  // the first hit, so order here is what makes the more specific path
+  // win (same startsWith collision as sidebar.tsx's isActive).
+  "/delivery/cardapio": "cardapio",
   "/delivery": "delivery",
   "/admin": "admin",
   "/settings": "settings",

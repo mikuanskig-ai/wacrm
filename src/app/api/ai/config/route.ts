@@ -32,7 +32,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, tools_enabled, max_tool_iterations, api_key, embeddings_api_key, transcription_provider, transcription_api_key, hours_enabled, hours_timezone, hours, onboarding_tested_at',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, tools_enabled, max_tool_iterations, api_key, embeddings_api_key, transcription_provider, transcription_api_key, hours_enabled, hours_timezone, hours, daily_menu, onboarding_tested_at',
       )
       .eq('account_id', accountId)
       .maybeSingle()

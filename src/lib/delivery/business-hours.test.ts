@@ -3,6 +3,8 @@ import {
   isWithinBusinessHours,
   closedMessage,
   parseBusinessHoursWeek,
+  parseDailyMenu,
+  resolveDayKey,
   type BusinessHoursWeek,
 } from "./business-hours";
 
@@ -109,5 +111,62 @@ describe("parseBusinessHoursWeek", () => {
   it("rejects close <= open (no overnight-crossing spans)", () => {
     expect(parseBusinessHoursWeek({ mon: { open: "18:00", close: "18:00" } })).toBeNull();
     expect(parseBusinessHoursWeek({ mon: { open: "18:00", close: "09:00" } })).toBeNull();
+  });
+});
+
+describe("resolveDayKey", () => {
+  it("resolves the correct weekday for the given timezone", () => {
+    // 2026-07-28 is a Tuesday.
+    expect(resolveDayKey("UTC", TUESDAY_NOON_UTC)).toBe("tue");
+  });
+
+  it("evaluates in the given timezone, not the server's/UTC's", () => {
+    // 2026-07-28T01:00:00Z is still Monday 22:00 in America/Sao_Paulo (UTC-3).
+    const earlyUtcTuesday = new Date("2026-07-28T01:00:00Z");
+    expect(resolveDayKey("UTC", earlyUtcTuesday)).toBe("tue");
+    expect(resolveDayKey("America/Sao_Paulo", earlyUtcTuesday)).toBe("mon");
+  });
+
+  it("agrees with the day currentDayAndMinutes-based isWithinBusinessHours resolves internally", () => {
+    // Regression guard for the extraction — resolveDayKey must stay the
+    // single source of truth both business-hours gating and the daily
+    // menu resolve "today" from, so they never disagree.
+    const hours: BusinessHoursWeek = { tue: { open: "00:00", close: "23:59" } };
+    expect(resolveDayKey("UTC", TUESDAY_NOON_UTC)).toBe("tue");
+    expect(isWithinBusinessHours(hours, "UTC", TUESDAY_NOON_UTC)).toBe(true);
+  });
+});
+
+describe("parseDailyMenu", () => {
+  it("accepts a valid week with a mix of filled/empty days", () => {
+    const input = {
+      mon: "Feijoada, arroz e couve",
+      tue: null,
+    };
+    expect(parseDailyMenu(input)).toEqual(input);
+  });
+
+  it("accepts an empty object (nothing configured for any day)", () => {
+    expect(parseDailyMenu({})).toEqual({});
+  });
+
+  it("rejects a non-object input", () => {
+    expect(parseDailyMenu(null)).toBeNull();
+    expect(parseDailyMenu("mon")).toBeNull();
+    expect(parseDailyMenu(42)).toBeNull();
+  });
+
+  it("rejects an unknown day key", () => {
+    expect(parseDailyMenu({ someday: "text" })).toBeNull();
+  });
+
+  it("rejects a non-string, non-null value", () => {
+    expect(parseDailyMenu({ mon: 42 })).toBeNull();
+    expect(parseDailyMenu({ mon: { open: "09:00" } })).toBeNull();
+  });
+
+  it("rejects a value longer than 800 characters", () => {
+    expect(parseDailyMenu({ mon: "a".repeat(801) })).toBeNull();
+    expect(parseDailyMenu({ mon: "a".repeat(800) })).toEqual({ mon: "a".repeat(800) });
   });
 });

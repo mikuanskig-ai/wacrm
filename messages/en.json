@@ -31,6 +31,7 @@
     "flows": "Flows",
     "aiAgents": "AI Agents",
     "delivery": "Delivery",
+    "cardapio": "Menu",
     "settings": "Settings",
     "admin": "Admin",
     "beta": "Beta",
@@ -304,6 +305,7 @@
     "flows": "Flows",
     "aiAgents": "AI Agents",
     "delivery": "Delivery",
+    "cardapio": "Menu",
     "admin": "Admin",
     "settings": "Settings",
     "unreadNotifications": "{count} unread {count, plural, =1 {notification} other {notifications}}",
@@ -1064,6 +1066,7 @@
       "customer": "Customer",
       "unknownCustomer": "Unknown customer",
       "address": "Address",
+      "paymentMethod": "Payment method",
       "notes": "Notes",
       "subtotal": "Subtotal",
       "deliveryFee": "Delivery fee",
@@ -1077,6 +1080,17 @@
       "fri": "Friday",
       "sat": "Saturday",
       "sun": "Sunday"
+    },
+    "dailyMenu": {
+      "title": "Today's menu",
+      "description": "What's on the buffet today, so the AI can answer when the customer asks. Informational only — doesn't affect price or ordering.",
+      "loading": "Loading...",
+      "loadFailed": "Failed to load today's menu",
+      "saveFailed": "Failed to save today's menu",
+      "saveSuccess": "Today's menu saved",
+      "placeholder": "e.g. Feijoada, rice, farofa, collard greens and salad",
+      "save": "Save",
+      "needsAiSetup": "Set up AI in <link>AI Agents</link> before using the daily menu."
     },
     "orderList": {
       "allStatuses": "All",

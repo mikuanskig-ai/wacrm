@@ -95,13 +95,15 @@ function makeOrdersDb(args: {
   updatePayload?: Record<string, unknown>;
 }) {
   const updateCalls: Record<string, unknown>[] = [];
+  const insertCalls: Record<string, unknown>[] = [];
   const db = {
     from(table: string) {
       if (table === "delivery_orders") {
         let mode: "insert" | "update" = "insert";
         const builder: Record<string, unknown> = {
-          insert: () => {
+          insert: (payload: Record<string, unknown>) => {
             mode = "insert";
+            insertCalls.push(payload);
             return builder;
           },
           update: (payload: Record<string, unknown>) => {
@@ -126,7 +128,7 @@ function makeOrdersDb(args: {
       throw new Error(`unexpected table in test fake db: ${table}`);
     },
   };
-  return { db: db as unknown as SupabaseClient, updateCalls };
+  return { db: db as unknown as SupabaseClient, updateCalls, insertCalls };
 }
 
 const BASE_ORDER = {
@@ -270,5 +272,51 @@ describe("finalizeDeliveryOrder — Mercado Pago checkout (Fase 4)", () => {
 
     expect(order.payment_status).toBe("pending_payment");
     expect(sendMessageToConversation).not.toHaveBeenCalled();
+  });
+});
+
+describe("finalizeDeliveryOrder — payment method", () => {
+  beforeEach(() => {
+    vi.mocked(getPaymentConfigSecrets).mockReset();
+    vi.mocked(getPaymentConfigSecrets).mockResolvedValue(null);
+  });
+
+  it("passes paymentMethod/paymentNotes through to the insert", async () => {
+    const { db, insertCalls } = makeOrdersDb({ baseOrder: BASE_ORDER });
+
+    await finalizeDeliveryOrder(db, {
+      accountId: "acct-1",
+      contactId: "contact-1",
+      conversationId: null,
+      source: "ai_chat",
+      cart: CART,
+      currency: "BRL",
+      paymentMethod: "pix",
+      paymentNotes: "troco para R$100",
+    });
+
+    expect(insertCalls[0]).toEqual(
+      expect.objectContaining({
+        payment_method: "pix",
+        payment_notes: "troco para R$100",
+      }),
+    );
+  });
+
+  it("defaults payment_method/payment_notes to null when not given", async () => {
+    const { db, insertCalls } = makeOrdersDb({ baseOrder: BASE_ORDER });
+
+    await finalizeDeliveryOrder(db, {
+      accountId: "acct-1",
+      contactId: "contact-1",
+      conversationId: null,
+      source: "manual",
+      cart: CART,
+      currency: "BRL",
+    });
+
+    expect(insertCalls[0]).toEqual(
+      expect.objectContaining({ payment_method: null, payment_notes: null }),
+    );
   });
 });

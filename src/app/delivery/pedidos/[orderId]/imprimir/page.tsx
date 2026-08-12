@@ -83,9 +83,9 @@ export default function PrintReceiptPage({
         </button>
       </div>
 
-      <div className="space-y-3 text-sm">
+      <div className="space-y-3 text-base">
         <div className="text-center">
-          <h1 className="text-base font-semibold">{order.account?.name}</h1>
+          <h1 className="text-lg font-semibold">{order.account?.name}</h1>
           <p className="text-muted-foreground">{t("orderNumber", { id: order.id.slice(0, 8) })}</p>
           <p className="text-muted-foreground">{tStatus(order.status)}</p>
         </div>
@@ -96,9 +96,16 @@ export default function PrintReceiptPage({
             {order.contact?.name || order.customer_name || t("unknownCustomer")}
           </p>
           {order.delivery_address && (
-            <p>
-              <span className="text-muted-foreground">{t("address")}: </span>
+            <p className="font-semibold">
+              <span className="font-normal text-muted-foreground">{t("address")}: </span>
               {order.delivery_address}
+            </p>
+          )}
+          {order.payment_method && (
+            <p>
+              <span className="text-muted-foreground">{t("paymentMethod")}: </span>
+              {order.payment_method}
+              {order.payment_notes ? ` (${order.payment_notes})` : ""}
             </p>
           )}
           {order.notes && (
@@ -119,11 +126,11 @@ export default function PrintReceiptPage({
                 <span>{formatCurrency(item.line_total, order.currency)}</span>
               </div>
               {item.addons_snapshot.length > 0 && (
-                <p className="pl-4 text-xs text-muted-foreground">
+                <p className="pl-4 text-sm text-muted-foreground">
                   {item.addons_snapshot.map((a) => a.option_name).join(", ")}
                 </p>
               )}
-              {item.notes && <p className="pl-4 text-xs text-muted-foreground">{item.notes}</p>}
+              {item.notes && <p className="pl-4 text-sm text-muted-foreground">{item.notes}</p>}
             </div>
           ))}
         </div>

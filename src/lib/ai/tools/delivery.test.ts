@@ -573,6 +573,19 @@ describe('placeOrderTool', () => {
     expect(res.data).toMatchObject({ paymentMethod: null })
   })
 
+  it('passes the captured payment method/notes through to finalizeDeliveryOrder so it lands on the order itself', async () => {
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-11', total: 30, currency: 'BRL' })
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Pizza', unit_price: 30, quantity: 1, addons: [] }],
+      orderInfo: { paymentMethod: 'Pix', paymentNotes: 'troco para R$100' },
+    })
+    await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ paymentMethod: 'Pix', paymentNotes: 'troco para R$100' }),
+    )
+  })
+
   const cart: CartLineItem[] = [
     { product_id: 'p1', product_name: 'Pizza', unit_price: 30, quantity: 1, addons: [] },
   ]

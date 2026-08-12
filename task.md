@@ -53,6 +53,55 @@
 
 ## Feitas
 
+### 2026-08-11 — Notinha de impressão + Cardápio do dia + Cardápio na barra lateral
+
+- **Notinha de impressão** (`/delivery/pedidos/[id]/imprimir`): fonte
+  maior (corpo `text-sm`→`text-base`, adicionais/obs `text-xs`→
+  `text-sm`, nome da conta `text-base`→`text-lg`), endereço em
+  negrito, e nova linha com a forma de pagamento que o cliente
+  escolheu. Essa última exigiu destravar um gap real: `payment_method`
+  não existia como coluna em `delivery_orders` — a IA já capturava a
+  informação (`ai_order_info.paymentMethod`) mas nunca salvava no
+  pedido. Agora `place_order` repassa pro `finalizeDeliveryOrder`.
+- **Cardápio do dia**: novo recurso puramente informativo — o que tem
+  no buffet hoje, pra IA recitar quando o cliente pergunta (não afeta
+  preço/pedido, isso já é resolvido corretamente por
+  `day_price_overrides`). Mesmo padrão do horário de funcionamento da
+  IA (texto por dia da semana, `ai_configs.daily_menu`); a IA resolve
+  o dia de hoje no fuso da conta e injeta só a linha daquele dia no
+  prompt (reaproveita o mecanismo de "hoje é sexta-feira" de ontem).
+- **Cardápio promovido a item próprio na barra lateral** — antes só
+  existia "Delivery" (leva pra Pedidos); pra chegar em Cardápio era
+  preciso entrar em Pedidos e clicar em voltar. Agora tem entrada
+  direta logo abaixo de Delivery.
+- Consequência da promoção acima: a config do Cardápio do dia passou a
+  viver na própria tela de Cardápio (não em Configuração de IA, onde
+  não fazia mais sentido morar) — novo endpoint dedicado
+  `POST /api/ai/config/daily-menu` (não reaproveitei o
+  `POST /api/ai/config` existente: aquele exige provider/model/api_key
+  em todo save e reseta os outros toggles quando omitidos — arriscado
+  demais pra uma tela que só edita uma coluna).
+
+  > **Migrations required:** aplique
+  > `supabase/migrations/073_delivery_payment_method.sql` e
+  > `supabase/migrations/074_ai_daily_menu.sql`. Ambas idempotentes.
+
+### 2026-08-11 — `search_menu` não achava produto por acento/frase inteira
+
+- Causa raiz real do "a IA não consegue consultar a base de
+  conhecimento" reportado pelo dono da conta: não era a base de
+  conhecimento, era a busca de produto. `search_menu` usava
+  `.ilike('name', '%termo%')` — sensível a acento (sem extensão
+  unaccent no Postgres) e exige a frase inteira como substring
+  contígua. "Rodizio de Carne" (sem acento) no catálogo nunca batia
+  com "rodízio" (com acento) na pergunta do cliente/modelo, e uma
+  busca de 3 palavras ("rodízio quilo almoço") também falhava porque
+  nenhum produto tem as três juntas no nome.
+- Corrigido: normalização (remove acento + minúsculas) e casamento por
+  palavra (≥3 caracteres) em vez de substring inteira, filtrando em
+  JS depois de um fetch mais largo em vez de `ILIKE` no banco.
+  Commit `4fb00aa`.
+
 ### 2026-08-11 — Data/dia da semana no prompt (fix de plataforma) + avaliação do prompt da Concórdia
 
 - Revisão pedida pelo dono da conta: prompt customizado + base de

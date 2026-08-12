@@ -2,6 +2,45 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.5] — 2026-08-11
+
+### Adicionado
+
+- **Cardápio do dia** — novo campo por dia da semana (texto livre,
+  "o que tem no buffet hoje") pra IA responder com precisão quando o
+  cliente pergunta o que tem disponível. Puramente informativo: não
+  afeta preço nem pedido — isso continua sendo resolvido pelas
+  sobrescritas de preço por dia da semana, já existentes e corretas.
+  Configurável na própria tela de Cardápio.
+- **Forma de pagamento na notinha de impressão** — a IA já capturava a
+  forma de pagamento escolhida pelo cliente, mas ela nunca era salva
+  no pedido em si; agora aparece impressa na notinha da cozinha.
+- **Cardápio como item próprio na barra lateral**, logo abaixo de
+  Delivery — antes só dava pra chegar lá entrando em Pedidos primeiro.
+
+### Corrigido
+
+- **Notinha de impressão com letra pequena demais pra ler na cozinha**
+  — fonte aumentada em todo o corpo, e o endereço de entrega agora
+  aparece em negrito pra se destacar.
+
+  > **Migrations required:** aplique
+  > `supabase/migrations/073_delivery_payment_method.sql` e
+  > `supabase/migrations/074_ai_daily_menu.sql`. Ambas idempotentes.
+
+## [0.10.4] — 2026-08-11
+
+### Corrigido
+
+- **Busca de produto (`search_menu`) não achava itens com acento
+  diferente do catálogo, ou frases de várias palavras** — causa real
+  por trás do relato "a IA não consegue consultar a base de
+  conhecimento". A busca comparava a frase inteira, sensível a acento
+  (sem extensão `unaccent` no Postgres); "rodízio" nunca batia com
+  "Rodizio de Carne" no catálogo, e buscas de várias palavras juntas
+  quase nunca encontravam nada. Agora normaliza acento/maiúscula e
+  casa por palavra individual.
+
 ## [0.10.3] — 2026-08-11
 
 ### Adicionado

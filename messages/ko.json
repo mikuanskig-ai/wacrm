@@ -31,6 +31,7 @@
     "flows": "플로우",
     "aiAgents": "AI 에이전트",
     "delivery": "배달",
+    "cardapio": "메뉴",
     "settings": "설정",
     "admin": "관리자",
     "beta": "베타",
@@ -304,6 +305,7 @@
     "flows": "플로우",
     "aiAgents": "AI 에이전트",
     "delivery": "배달",
+    "cardapio": "메뉴",
     "admin": "관리자",
     "settings": "설정",
     "unreadNotifications": "읽지 않은 알림 {count}건",
@@ -1063,6 +1065,7 @@
       "customer": "고객",
       "unknownCustomer": "알 수 없는 고객",
       "address": "주소",
+      "paymentMethod": "결제 방법",
       "notes": "메모",
       "subtotal": "소계",
       "deliveryFee": "배달료",
@@ -1076,6 +1079,17 @@
       "fri": "금요일",
       "sat": "토요일",
       "sun": "일요일"
+    },
+    "dailyMenu": {
+      "title": "오늘의 메뉴",
+      "description": "오늘 뷔페에 무엇이 있는지 — 고객이 물어보면 AI가 답할 수 있도록. 정보 제공용일 뿐, 가격이나 주문에는 영향을 주지 않습니다.",
+      "loading": "불러오는 중...",
+      "loadFailed": "오늘의 메뉴를 불러오지 못했습니다",
+      "saveFailed": "오늘의 메뉴를 저장하지 못했습니다",
+      "saveSuccess": "오늘의 메뉴가 저장되었습니다",
+      "placeholder": "예: 페이조아다, 밥, 파로파, 콜라드 그린, 샐러드",
+      "save": "저장",
+      "needsAiSetup": "오늘의 메뉴를 사용하려면 먼저 <link>AI 에이전트</link>에서 AI를 설정하세요."
     },
     "orderList": {
       "allStatuses": "전체",

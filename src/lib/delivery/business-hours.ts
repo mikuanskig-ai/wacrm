@@ -101,24 +101,93 @@ export async function getAiBusinessHours(
   }
 }
 
-function currentDayAndMinutes(timezone: string, now: Date): { day: DayKey; minutes: number } {
+/**
+ * Pure — resolves which weekday `now` falls on, evaluated in
+ * `timezone`. Extracted out of currentDayAndMinutes (below) so the
+ * daily-menu feature can resolve "what day is it for this account"
+ * through the exact same logic that already gates business hours —
+ * two independent computations of "today" for the same account could
+ * otherwise silently disagree right around midnight in edge-case
+ * timezones/ICU builds.
+ */
+export function resolveDayKey(timezone: string, now: Date = new Date()): DayKey {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     weekday: 'short',
+  }).formatToParts(now)
+  return parts
+    .find((p) => p.type === 'weekday')!
+    .value.toLowerCase()
+    .slice(0, 3) as DayKey
+}
+
+const DAILY_MENU_MAX_LENGTH = 800
+
+/** Missing key or null value = nothing special that day — same
+ *  convention as BusinessHoursWeek. Purely informational text (what's
+ *  on the buffet today), never affects pricing/ordering — see
+ *  day_price_overrides (day-price.ts) for the per-weekday mechanism
+ *  that does. */
+export type DailyMenu = Partial<Record<DayKey, string | null>>
+
+/**
+ * Validates a caller-supplied `daily_menu` shape — every present day
+ * is either null (nothing special) or a plain string, capped at
+ * DAILY_MENU_MAX_LENGTH since this goes straight into the AI's system
+ * prompt on every turn (see buildSystemPrompt) and can't be an
+ * unbounded paste. Same shape/rejection style as
+ * parseBusinessHoursWeek on purpose.
+ */
+export function parseDailyMenu(input: unknown): DailyMenu | null {
+  if (typeof input !== 'object' || input === null) return null
+  const out: DailyMenu = {}
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!DAY_KEYS.includes(key as DayKey)) return null
+    if (value === null) {
+      out[key as DayKey] = null
+      continue
+    }
+    if (typeof value !== 'string') return null
+    if (value.length > DAILY_MENU_MAX_LENGTH) return null
+    out[key as DayKey] = value
+  }
+  return out
+}
+
+/**
+ * Loads the account's daily-menu config (migration 074). Returns null
+ * when no ai_configs row exists at all — callers treat that the same
+ * as "nothing configured for any day", matching getAiBusinessHours'
+ * "no row = disabled" convention.
+ */
+export async function getDailyMenu(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<DailyMenu | null> {
+  const { data } = await db
+    .from('ai_configs')
+    .select('daily_menu')
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  if (!data) return null
+  return (data.daily_menu ?? {}) as DailyMenu
+}
+
+function currentDayAndMinutes(timezone: string, now: Date): { day: DayKey; minutes: number } {
+  const day = resolveDayKey(timezone, now)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   }).formatToParts(now)
 
-  const weekday = parts
-    .find((p) => p.type === 'weekday')!
-    .value.toLowerCase()
-    .slice(0, 3) as DayKey
   // hour12: false can render midnight as "24" in some ICU builds —
   // normalize so 24:xx doesn't overflow a day's worth of minutes.
   const hour = Number(parts.find((p) => p.type === 'hour')!.value) % 24
   const minute = Number(parts.find((p) => p.type === 'minute')!.value)
-  return { day: weekday, minutes: hour * 60 + minute }
+  return { day, minutes: hour * 60 + minute }
 }
 
 function toMinutes(hhmm: string): number {

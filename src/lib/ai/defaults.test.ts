@@ -38,3 +38,24 @@ describe('buildSystemPrompt — today line', () => {
     expect(prompt).toContain('Today is Sunday, 2026-08-16')
   })
 })
+
+describe('buildSystemPrompt — daily menu', () => {
+  it("includes today's menu text when given", () => {
+    const prompt = buildSystemPrompt({
+      userPrompt: null,
+      mode: 'draft',
+      dailyMenu: 'Feijoada, arroz, farofa e couve',
+    })
+    expect(prompt).toContain('Feijoada, arroz, farofa e couve')
+  })
+
+  it('omits the menu section entirely when not given', () => {
+    const prompt = buildSystemPrompt({ userPrompt: null, mode: 'draft' })
+    expect(prompt).not.toContain("today's menu")
+  })
+
+  it('omits the menu section for an empty/whitespace-only string', () => {
+    const prompt = buildSystemPrompt({ userPrompt: null, mode: 'draft', dailyMenu: '   ' })
+    expect(prompt).not.toContain("today's menu")
+  })
+})
