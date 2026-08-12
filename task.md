@@ -50,16 +50,48 @@
   texto livre já existe; poderia ganhar export CSV. Aba Planos não
   tem exclusão definitiva (intencional — fatura/conta referenciam o
   plano).
-- [ ] **Fonte maior + endereço em negrito na notinha física** —
-  `payment_method` já chega no JSON de `/api/v1/print-jobs` (fix de
-  12/08), mas o *template* impresso de verdade (tamanho de fonte,
-  negrito) é renderizado pelo `zontalk-print-agent.exe`, um executável
-  Windows separado cujo código-fonte não está em `c:\claude` — precisa
-  localizar esse projeto (provavelmente outra pasta/repo do usuário,
-  fora da convenção `clients/<cliente>/<projeto>/`) antes de dar
-  seguimento nessas duas mudanças visuais.
+- [ ] **Notinha física nunca foi impressa numa impressora térmica real
+  pra validar** — o `zontalk-print-agent.exe` reconstruído (12/08) foi
+  testado ponta a ponta contra um servidor falso (fluxo completo +
+  falha), mas nenhum byte ESC/POS gerado por ele passou por hardware
+  de verdade ainda. O corte de papel (`GS V`) é o comando com maior
+  chance de precisar de ajuste pro modelo exato de impressora da
+  Concórdia — ver `clients/wacrm/print-agent/README.md`. Confirmar no
+  primeiro pedido real após o pareamento do novo `.exe`.
 
 ## Feitas
+
+### 2026-08-12 — zontalk-print-agent reconstruído do zero + notinha física
+
+- Descoberta durante o fix de forma de pagamento: o código-fonte do
+  `zontalk-print-agent.exe` nunca existiu versionado em lugar nenhum —
+  foi subido direto pro VPS como binário compilado
+  (`.gitignore`'d por ser asset estático grande, mesmo raciocínio de
+  qualquer download). Confirmado com o dono: ele mesmo não tem a fonte.
+- Reconstruído do zero em `clients/wacrm/print-agent/` (projeto novo,
+  com git próprio) — comportamento reverso-engenheirado direto do
+  `.exe` compilado (bundle `pkg` preserva o texto do JS quase
+  verbatim: nomes de propriedade, strings, texto exato de cada prompt
+  do wizard sobreviveram à minificação) e cruzado com uma notinha real
+  fotografada. Mesmo formato de `config.json`, mesmo fluxo de
+  `--setup`, mesmo contrato de API, as duas formas de impressão (rede
+  via IP e USB compartilhado no Windows) — lojas já pareadas devem
+  continuar funcionando só trocando o `.exe`, sem refazer o setup.
+- Em cima da reconstrução, aplicado o que motivou tudo isso: fonte
+  maior (double-height no corpo inteiro), endereço em negrito, e a
+  linha de forma de pagamento.
+- 24 testes automatizados (renderização ESC/POS, validação de
+  config). Testado ponta a ponta contra um servidor HTTP+TCP falso
+  (simulando a API do wacrm e uma impressora de rede) — fluxo de
+  sucesso e de falha (compartilhamento Windows inexistente) confirmados.
+- `.exe` antigo salvo como backup no VPS
+  (`zontalk-print-agent.exe.bak-20260812`) antes de publicar o novo.
+- Bug real encontrado e corrigido durante o teste: `rl.question()`
+  chamado várias vezes na mesma interface do `readline` travava depois
+  da primeira pergunta com stdin não-interativo no Windows (reproduziu
+  tanto com `node` puro quanto com o `.exe` empacotado — não era coisa
+  do `pkg`). Resolvido trocando pro padrão de iterador assíncrono
+  (`Symbol.asyncIterator`) do `readline`.
 
 ### 2026-08-12 — Forma de pagamento faltando na notinha impressa de verdade
 
