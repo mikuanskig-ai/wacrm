@@ -13,11 +13,19 @@
   agente de impressão local (`GET /api/v1/print-jobs`) nunca incluía
   `payment_method`/`payment_notes` no JSON do recibo. Corrigido aqui.
 
-  > **Pendente, fora deste repositório**: fonte maior e endereço em
-  > negrito na notinha física dependem do template impresso pelo
-  > próprio `zontalk-print-agent.exe` (executável Windows separado,
-  > cujo código-fonte não está em `c:\claude`) — essas duas mudanças
-  > visuais continuam sem efeito até editar aquele projeto.
+  > **Resolvido no mesmo dia**: fonte maior e endereço em negrito na
+  > notinha física dependiam do template impresso pelo próprio
+  > `zontalk-print-agent.exe` — executável Windows separado cujo
+  > código-fonte nunca tinha sido versionado em lugar nenhum (nem o
+  > dono da conta tinha). Reconstruído do zero em
+  > `clients/wacrm/print-agent/` (projeto próprio, fora deste repo) a
+  > partir de engenharia reversa do binário compilado + uma notinha
+  > real fotografada — mesmo `config.json`, mesmo fluxo de pareamento,
+  > lojas já configuradas não precisam refazer o setup. As duas
+  > mudanças pendentes foram aplicadas lá (fonte maior via
+  > double-height ESC/POS, endereço em negrito) e o `.exe` publicado já
+  > está atualizado em `/downloads/zontalk-print-agent.exe`. Ver
+  > `clients/wacrm/print-agent/README.md` e seu próprio git log.
 
 ## [0.10.5] — 2026-08-11
 
