@@ -61,6 +61,20 @@
 
 ## Feitas
 
+### 2026-08-12 — Notinha não avisava quando o pedido era retirada
+
+- Perguntado pelo dono da conta ao testar o fix de entrega/retirada
+  no prompt: a notinha em si nunca deixava claro que um pedido era
+  retirada. Não existe (nunca existiu) coluna `is_pickup` em
+  `delivery_orders` — sempre foi inferido por `delivery_address` vir
+  `null`, e as duas notinhas (navegador e física) só omitiam a linha
+  de endereço nesse caso, sem avisar nada. A física ainda cabeçalhava
+  "*** DELIVERY ***" mesmo em retirada.
+- Corrigido nas duas: `clients/wacrm/print-agent` (cabeçalho vira
+  "*** RETIRADA ***", linha "RETIRADA NO LOCAL" no lugar do endereço)
+  e `/delivery/pedidos/[id]/imprimir` (mesma linha explícita). `.exe`
+  republicado.
+
 ### 2026-08-12 — IA não perguntava entrega/retirada antes do endereço
 
 - Reportado ao vivo: cliente disse "Vou retirar" e a IA já tinha

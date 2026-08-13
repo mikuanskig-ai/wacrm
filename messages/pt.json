@@ -1066,6 +1066,7 @@
       "customer": "Cliente",
       "unknownCustomer": "Cliente desconhecido",
       "address": "Endereço",
+      "pickup": "RETIRADA NO LOCAL — sem entrega",
       "paymentMethod": "Forma de pagamento",
       "notes": "Observações",
       "subtotal": "Subtotal",

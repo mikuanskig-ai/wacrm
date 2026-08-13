@@ -1065,6 +1065,7 @@
       "customer": "고객",
       "unknownCustomer": "알 수 없는 고객",
       "address": "주소",
+      "pickup": "매장 픽업 — 배달 없음",
       "paymentMethod": "결제 방법",
       "notes": "메모",
       "subtotal": "소계",

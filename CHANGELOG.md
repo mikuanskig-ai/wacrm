@@ -2,6 +2,22 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.8] — 2026-08-12
+
+### Corrigido
+
+- **Notinha (física e do navegador) nunca avisava que um pedido era
+  retirada** — perguntado pelo dono da conta depois do fix de
+  entrega/retirada no prompt. Não existe coluna `is_pickup` em
+  `delivery_orders` (nunca existiu); retirada sempre foi inferida por
+  `delivery_address` vir vazio, e as duas notinhas simplesmente
+  omitiam a linha de endereço nesse caso — sem avisar nada, parecia
+  que o endereço tinha sido esquecido. Pior ainda na notinha física:
+  o cabeçalho sempre dizia "*** DELIVERY ***", mesmo em retirada.
+  Corrigido nos dois: cabeçalho muda pra "*** RETIRADA ***" na notinha
+  física, e as duas mostram uma linha explícita "RETIRADA NO LOCAL —
+  sem entrega" no lugar do endereço.
+
 ## [0.10.7] — 2026-08-12
 
 ### Corrigido

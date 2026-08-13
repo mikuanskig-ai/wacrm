@@ -1066,6 +1066,7 @@
       "customer": "Customer",
       "unknownCustomer": "Unknown customer",
       "address": "Address",
+      "pickup": "PICKUP — no delivery",
       "paymentMethod": "Payment method",
       "notes": "Notes",
       "subtotal": "Subtotal",

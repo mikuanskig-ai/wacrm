@@ -95,11 +95,13 @@ export default function PrintReceiptPage({
             <span className="text-muted-foreground">{t("customer")}: </span>
             {order.contact?.name || order.customer_name || t("unknownCustomer")}
           </p>
-          {order.delivery_address && (
+          {order.delivery_address ? (
             <p className="font-semibold">
               <span className="font-normal text-muted-foreground">{t("address")}: </span>
               {order.delivery_address}
             </p>
+          ) : (
+            <p className="font-semibold">{t("pickup")}</p>
           )}
           {order.payment_method && (
             <p>
