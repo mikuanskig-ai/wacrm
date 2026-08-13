@@ -112,12 +112,39 @@ export function aiContextMessageLimit(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_CONTEXT_MESSAGE_LIMIT
 }
 
+export interface SystemPromptResult {
+  /** Full prompt — pass this to providers that don't support explicit
+   *  prompt caching (or when the caller doesn't care about it). */
+  text: string
+  /** Strict prefix of `text` — everything up to, but not including,
+   *  the per-turn-dynamic tail (order state, knowledge-base excerpts).
+   *  Same content on every call for a given account/mode/tools
+   *  combination, which is exactly what a cache breakpoint needs: a
+   *  provider with explicit prompt caching (Anthropic's
+   *  `cache_control`) can mark this prefix once and get a steep
+   *  discount on it every subsequent call within the cache window,
+   *  instead of paying full price for the same ~7k tokens on every
+   *  single turn. See providers/anthropic.ts. Providers with
+   *  *automatic* prefix caching (OpenAI, and OpenRouter when it
+   *  routes to OpenAI) benefit too just from `text` itself keeping
+   *  this stable-content-first, dynamic-content-last order — no code
+   *  changes needed on their side, which is why the reordering below
+   *  is the change, not an addition. */
+  cacheableText: string
+}
+
 /**
  * Build the system prompt shared by draft + auto-reply. The account's
  * own `system_prompt` (business context / persona / tone) is appended
  * to a fixed scaffold so behaviour stays predictable regardless of what
  * the user typed. Auto-reply mode additionally teaches the handoff
  * protocol.
+ *
+ * Deliberately assembled stable-content-first, dynamic-content-last
+ * (order state, then knowledge-base excerpts, are the only two things
+ * that ever change between two calls for the same account/mode/tools
+ * combination) — see `SystemPromptResult.cacheableText`'s doc for why
+ * that ordering is load-bearing, not cosmetic.
  */
 export function buildSystemPrompt(args: {
   userPrompt: string | null
@@ -161,7 +188,7 @@ export function buildSystemPrompt(args: {
   dailyMenu?: string | null
   /** Injection point for tests only — real callers never pass this. */
   now?: Date
-}): string {
+}): SystemPromptResult {
   const {
     userPrompt,
     mode,
@@ -249,15 +276,6 @@ export function buildSystemPrompt(args: {
         'quantity they already stated just because it was not a plain digit — that reads as not having listened, and is exactly the kind of question that ' +
         'makes an automated assistant feel broken. Only ask for quantity when the customer named an item with no indication at all of how many.',
     )
-    if (orderState) {
-      parts.push(
-        'Order so far in this conversation (ground truth, not a suggestion) — never ask the customer again for anything listed here, and never ' +
-          'recompute or restate a number differently from what\'s shown here:\n' +
-          orderState +
-          '\nIf something above is marked STALE, or the customer states a change (a different address, a different item), treat only that ' +
-          'specific thing as needing a fresh tool call — everything else listed still holds.',
-      )
-    }
   }
 
   if (userPrompt && userPrompt.trim()) {
@@ -285,6 +303,25 @@ export function buildSystemPrompt(args: {
     }
   }
 
+  // Everything above this point is the same for every call this
+  // account makes in this mode with this tools/knowledge shape — the
+  // cacheable prefix. Everything below (order state, knowledge-base
+  // excerpts) is per-turn/per-question and deliberately kept out of
+  // it, moved here from where each used to be interleaved with static
+  // content above (order state used to sit inside the toolsActive
+  // block, knowledge was already last) — see SystemPromptResult's doc.
+  const cacheableText = parts.join('\n\n')
+
+  if (toolsActive && orderState) {
+    parts.push(
+      'Order so far in this conversation (ground truth, not a suggestion) — never ask the customer again for anything listed here, and never ' +
+        'recompute or restate a number differently from what\'s shown here:\n' +
+        orderState +
+        '\nIf something above is marked STALE, or the customer states a change (a different address, a different item), treat only that ' +
+        'specific thing as needing a fresh tool call — everything else listed still holds.',
+    )
+  }
+
   if (knowledge && knowledge.length > 0) {
     const fallback =
       mode === 'auto_reply'
@@ -299,5 +336,5 @@ export function buildSystemPrompt(args: {
     )
   }
 
-  return parts.join('\n\n')
+  return { text: parts.join('\n\n'), cacheableText }
 }

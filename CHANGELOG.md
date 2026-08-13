@@ -2,6 +2,36 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.9] — 2026-08-12
+
+### Adicionado
+
+- **Cache de prompt** — investigando o custo de IA da Concórdia
+  (US$1,95 num dia, pedido pelo dono da conta), descoberto que 98%+
+  dos tokens gastos eram de entrada (contexto reenviado), não de
+  saída (resposta gerada): 1,52M tokens de entrada contra 16 mil de
+  saída em 24h, média de 7.390 tokens de entrada por chamada em 206
+  chamadas. Isso é o prompt do sistema inteiro + as 7 ferramentas de
+  delivery sendo reenviados do zero em toda chamada.
+  - `buildSystemPrompt` reordenado: todo conteúdo fixo por conta
+    (instruções, prompt customizado do negócio) agora vem antes do
+    conteúdo que muda a cada turno (estado do pedido, trechos da base
+    de conhecimento) — antes o estado do pedido ficava no meio,
+    quebrando o prefixo estável sem necessidade. Beneficia qualquer
+    provedor com cache automático de prefixo (OpenAI e, por tabela,
+    contas na OpenRouter usando modelo da OpenAI) sem precisar de
+    nenhuma configuração — é só reordenação de conteúdo.
+  - Pro provedor Anthropic (Claude), que exige marcação explícita:
+    `cache_control` adicionado no prompt do sistema (na fronteira
+    entre o trecho fixo e o dinâmico) e nas definições de ferramentas
+    — cacheia tanto o prompt quanto o esquema das 7 ferramentas, que
+    hoje são reenviadas inteiras em cada uma das várias chamadas de um
+    único pedido (busca → detalhes → carrinho → frete → confirmar).
+  - Cache de histórico de mensagens dentro de um mesmo loop de
+    ferramentas (múltiplas chamadas pro mesmo pedido) fica de fora
+    desta rodada — ganho menor, mais complexidade de implementar; pode
+    ser revisitado depois.
+
 ## [0.10.8] — 2026-08-12
 
 ### Corrigido

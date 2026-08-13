@@ -61,6 +61,25 @@
 
 ## Feitas
 
+### 2026-08-12 — Cache de prompt (custo de IA)
+
+- Pedido pelo dono da conta: "tem como otimizar tokens? hoje a IA
+  consumiu US$1,95". Investigado com dado real (`ai_usage_log`): 206
+  chamadas em 24h, 1.522.379 tokens de entrada contra 15.971 de
+  saída — 98%+ do custo é contexto reenviado (prompt do sistema + 7
+  ferramentas), não resposta gerada. Também achado: a conta usa GPT-5.4
+  completo (não o mini) via OpenRouter — repassado ao dono pra decidir
+  com o administrador da Concórdia se querem trocar de modelo.
+- `buildSystemPrompt` reordenado (conteúdo fixo primeiro, dinâmico
+  por último — estado do pedido não fica mais no meio do prompt) +
+  `cacheableText` novo no retorno, marcando o prefixo estável.
+  Beneficia OpenAI/OpenRouter automaticamente (cache de prefixo
+  automático, sem configuração); Anthropic ganhou `cache_control`
+  explícito no prompt e nas 7 ferramentas de delivery.
+- Fora de escopo por ora: cache do histórico de mensagens dentro de um
+  mesmo loop de ferramentas (várias chamadas do mesmo pedido) — ganho
+  menor, mais complexo, revisitar se fizer sentido depois.
+
 ### 2026-08-12 — Notinha não avisava quando o pedido era retirada
 
 - Perguntado pelo dono da conta ao testar o fix de entrega/retirada

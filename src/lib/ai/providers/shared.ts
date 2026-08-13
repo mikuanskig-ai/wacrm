@@ -9,6 +9,11 @@ export interface ProviderArgs {
   apiKey: string
   model: string
   systemPrompt: string
+  /** Strict prefix of `systemPrompt` safe to mark as a prompt-cache
+   *  breakpoint (see defaults.ts's SystemPromptResult) — only read by
+   *  providers with explicit prompt caching (Anthropic today); every
+   *  other provider ignores this field entirely. */
+  cacheableSystemPrompt?: string
   messages: ChatMessage[]
   timeoutMs: number
 }

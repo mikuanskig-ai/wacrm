@@ -44,7 +44,7 @@ describe('seedAnthropicMessages / appendAnthropicToolResults', () => {
 })
 
 describe('callAnthropicTurn', () => {
-  it('includes tools in the request body when provided', async () => {
+  it('includes tools in the request body when provided, with a cache_control breakpoint on the last one', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'hi' }] }))
@@ -61,8 +61,101 @@ describe('callAnthropicTurn', () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.tools).toEqual([
-      { name: 'get_weather', description: 'test', input_schema: { type: 'object', properties: {} } },
+      {
+        name: 'get_weather',
+        description: 'test',
+        input_schema: { type: 'object', properties: {} },
+        cache_control: { type: 'ephemeral' },
+      },
     ])
+  })
+
+  it('marks only the LAST tool definition with cache_control, not every one', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'hi' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const twoTools: ProviderToolDef[] = [
+      ...tools,
+      { name: 'add_to_cart', description: 'test2', parameters: { type: 'object', properties: {} } },
+    ]
+
+    await callAnthropicTurn({
+      apiKey: 'sk-ant-test',
+      model: 'claude-test',
+      systemPrompt: 'sys',
+      nativeMessages: [],
+      tools: twoTools,
+      timeoutMs: 1000,
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.tools[0].cache_control).toBeUndefined()
+    expect(body.tools[1].cache_control).toEqual({ type: 'ephemeral' })
+  })
+
+  it('sends system as a cache_control-marked block when cacheableSystemPrompt is a genuine, long-enough prefix', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'hi' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const stable = 'x'.repeat(5000)
+    const dynamic = 'Order so far: Nome Ederson'
+
+    await callAnthropicTurn({
+      apiKey: 'sk-ant-test',
+      model: 'claude-test',
+      systemPrompt: `${stable}\n\n${dynamic}`,
+      cacheableSystemPrompt: stable,
+      nativeMessages: [],
+      tools: [],
+      timeoutMs: 1000,
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.system).toEqual([
+      { type: 'text', text: stable, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: `\n\n${dynamic}` },
+    ])
+  })
+
+  it('falls back to a single uncached system block when cacheableSystemPrompt is too short to be worth caching', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'hi' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await callAnthropicTurn({
+      apiKey: 'sk-ant-test',
+      model: 'claude-test',
+      systemPrompt: 'short system prompt',
+      cacheableSystemPrompt: 'short',
+      nativeMessages: [],
+      tools: [],
+      timeoutMs: 1000,
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.system).toEqual([{ type: 'text', text: 'short system prompt' }])
+  })
+
+  it('falls back to a single uncached system block when no cacheableSystemPrompt is given at all', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'hi' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await callAnthropicTurn({
+      apiKey: 'sk-ant-test',
+      model: 'claude-test',
+      systemPrompt: 'x'.repeat(5000),
+      nativeMessages: [],
+      tools: [],
+      timeoutMs: 1000,
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.system).toEqual([{ type: 'text', text: 'x'.repeat(5000) }])
   })
 
   it('parses a tool_use response into the discriminated tool_calls result', async () => {

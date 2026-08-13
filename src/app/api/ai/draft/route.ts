@@ -121,7 +121,7 @@ export async function POST(request: Request) {
     const orderState =
       tools.length > 0 ? await buildOrderStateSummary(supabase, conversationId, currency!) : null
 
-    const systemPrompt = buildSystemPrompt({
+    const { text: systemPrompt, cacheableText: cacheableSystemPrompt } = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'draft',
       knowledge,
@@ -143,6 +143,7 @@ export async function POST(request: Request) {
       const result = await generateReplyWithTools({
         config,
         systemPrompt,
+        cacheableSystemPrompt,
         messages,
         tools,
         toolContext,
@@ -154,7 +155,7 @@ export async function POST(request: Request) {
       text = result.text
       usage = result.usage
     } else {
-      const result = await generateReply({ config, systemPrompt, messages })
+      const result = await generateReply({ config, systemPrompt, cacheableSystemPrompt, messages })
       text = result.text
       usage = result.usage
     }
