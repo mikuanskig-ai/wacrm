@@ -50,16 +50,45 @@
   texto livre já existe; poderia ganhar export CSV. Aba Planos não
   tem exclusão definitiva (intencional — fatura/conta referenciam o
   plano).
-- [ ] **Notinha física nunca foi impressa numa impressora térmica real
-  pra validar** — o `zontalk-print-agent.exe` reconstruído (12/08) foi
-  testado ponta a ponta contra um servidor falso (fluxo completo +
-  falha), mas nenhum byte ESC/POS gerado por ele passou por hardware
-  de verdade ainda. O corte de papel (`GS V`) é o comando com maior
-  chance de precisar de ajuste pro modelo exato de impressora da
-  Concórdia — ver `clients/wacrm/print-agent/README.md`. Confirmar no
-  primeiro pedido real após o pareamento do novo `.exe`.
+- [ ] **16 pedidos `ai_chat` da Concórdia com `conversation_id` nulo**
+  (achado em 14/08 investigando a reclamação de impressão/cálculo,
+  span 06/08 a 13/08) — provavelmente conversa apagada depois
+  (`ON DELETE SET NULL` na FK), pedido em si continua íntegro. Não
+  investigado a fundo, baixo risco aparente, mas vale confirmar que
+  não é sintoma de algo pior.
 
 ## Feitas
+
+### 2026-08-14 — Pente fino: reclamação de impressão + cálculo da Concórdia
+
+- Pedido pelo dono da conta: pessoal do restaurante reclamou que "não
+  estava imprimindo" e "a IA estava errando nos cálculos finais".
+  Investigado com dado real em vez de suposição.
+- **Impressão**: `print_jobs` das últimas 48h mostrou 16 pedidos,
+  todos `printed` em segundos, zero erro — pipeline funcionando desde
+  o fix de 12/08. Item "nunca testado em impressora real" das
+  Pendentes fica resolvido por essa evidência (o pente fino cobriu
+  isso).
+- **Cálculo**: não era erro de aritmética (todo pedido no banco bate
+  `subtotal + taxa = total`, isso é calculado em código, nunca pela
+  IA) — era **duplicação de pedido**. Achado no histórico de mensagens:
+  cliente pediu 4 marmitas P (R$95, impresso), corrigiu pra 2 marmitas
+  48 segundos depois, e a IA — sem saber que já existia um pedido
+  nesta conversa e sem ferramenta pra cancelá-lo — criou um SEGUNDO
+  pedido (R$55) em vez de corrigir o primeiro. Cozinha recebeu duas
+  notinhas pra um pedido só. Confirmado no banco: só essa uma
+  ocorrência real na conta.
+- Corrigido: `place_order` agora grava `lastPlacedOrderId` no estado
+  da conversa; o resumo injetado no prompt avisa quando já existe
+  pedido criado e instrui a cancelar antes de recriar; nova ferramenta
+  `cancel_order` (mesmos efeitos colaterais de um cancelamento manual
+  pelo painel — webhook + automação). Recusa cancelar automaticamente
+  se o pedido já saiu pra entrega/foi entregue.
+- 8 testes novos (delivery.test.ts + order-state.test.ts). Um bug real
+  no próprio fake de teste foi pego no processo: `maybeSingle()`
+  devolvia a referência viva da linha em vez de uma cópia, então o
+  `.update()` alterava retroativamente o objeto que o código já tinha
+  lido — mascararia exatamente o tipo de bug que o teste queria pegar.
 
 ### 2026-08-12 — Cache de prompt (custo de IA)
 

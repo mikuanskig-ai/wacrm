@@ -35,6 +35,8 @@ describe('readOrderInfo', () => {
       paymentMethod: null,
       paymentNotes: null,
       lastFeeQuote: null,
+      lastPlacedOrderId: null,
+      lastPlacedOrderTotal: null,
     })
   })
 
@@ -172,5 +174,32 @@ describe('buildOrderStateSummary', () => {
     })
     const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
     expect(summary).not.toMatch(/STALE/)
+  })
+
+  // Regression, 2026-08-13: a customer corrected their quantity right
+  // after place_order — with nothing telling the model an order already
+  // existed this conversation, it placed a SECOND order instead of
+  // cancelling the first, so the kitchen got two separate tickets
+  // (R$95 and R$55) for what should have been one. This line + the
+  // cancel_order tool (tools/delivery.ts) close that gap.
+  it('surfaces an already-placed order with an explicit cancel-before-reordering instruction', async () => {
+    const { db } = fakeDb({
+      ai_cart: [],
+      ai_order_info: { lastPlacedOrderId: 'order-1', lastPlacedOrderTotal: 95 },
+    })
+    const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
+    expect(summary).toContain('ALREADY PLACED')
+    expect(summary).toContain('order-1')
+    expect(summary).toMatch(/R\$\s?95/)
+    expect(summary).toMatch(/cancel_order/)
+  })
+
+  it('omits the already-placed-order line once lastPlacedOrderId is cleared', async () => {
+    const { db } = fakeDb({
+      ai_cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [] }],
+      ai_order_info: { lastPlacedOrderId: null },
+    })
+    const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
+    expect(summary).not.toContain('ALREADY PLACED')
   })
 })

@@ -6,6 +6,8 @@ import type { ToolContext } from './types'
 const h = vi.hoisted(() => ({
   loadProductWithAddonGroups: vi.fn(),
   finalizeDeliveryOrder: vi.fn(),
+  dispatchWebhookEvent: vi.fn(async () => {}),
+  runAutomationsForTrigger: vi.fn(async () => {}),
 }))
 
 vi.mock('@/lib/flows/engine', () => ({
@@ -17,6 +19,8 @@ vi.mock('@/lib/delivery/create-order', async () => {
   )
   return { ...actual, finalizeDeliveryOrder: h.finalizeDeliveryOrder }
 })
+vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: h.dispatchWebhookEvent }))
+vi.mock('@/lib/automations/engine', () => ({ runAutomationsForTrigger: h.runAutomationsForTrigger }))
 
 import {
   searchMenuTool,
@@ -26,6 +30,7 @@ import {
   placeOrderTool,
   calculateDeliveryFeeTool,
   updateOrderInfoTool,
+  cancelOrderTool,
   getAvailableTools,
 } from './delivery'
 
@@ -67,6 +72,9 @@ function makeDb(
      *  exactly as before. Set `content_type: 'location'` to simulate a
      *  just-shared WhatsApp pin. */
     lastCustomerMessage?: { content_type: string; content_text: string | null } | null
+    /** Seeds `delivery_orders` — cancelOrderTool's own lookup/update
+     *  target. Keyed by id since a test may need more than one row. */
+    deliveryOrders?: Record<string, unknown>[]
   } = {},
 ) {
   let cart = opts.cart ?? []
@@ -76,8 +84,10 @@ function makeDb(
   const businessHours = opts.businessHours ?? null
   const feeConfig = opts.feeConfig ?? null
   const lastCustomerMessage = opts.lastCustomerMessage ?? null
+  const deliveryOrders = opts.deliveryOrders ?? []
   const writes: CartLineItem[][] = []
   const orderInfoWrites: Record<string, unknown>[] = []
+  const deliveryOrderUpdates: Record<string, unknown>[] = []
 
   const db = {
     from: (table: string) => {
@@ -170,11 +180,50 @@ function makeDb(
         }
         return chain
       }
+      if (table === 'delivery_orders') {
+        let matchId: string | undefined
+        let matchAccountId: string | undefined
+        const chain = {
+          select: () => chain,
+          eq: (col: string, val: string) => {
+            if (col === 'id') matchId = val
+            if (col === 'account_id') matchAccountId = val
+            return chain
+          },
+          maybeSingle: () => {
+            const row = deliveryOrders.find(
+              (o) => o.id === matchId && (matchAccountId === undefined || o.account_id === matchAccountId),
+            )
+            // A copy, not the live reference — a real Supabase response
+            // is a freshly deserialized object every call, independent
+            // of whatever a later .update() does to the row. Returning
+            // the same object by reference here let an update mutate
+            // this test's own "order" variable out from under it.
+            return Promise.resolve({ data: row ? { ...row } : null, error: null })
+          },
+          update: (payload: Record<string, unknown>) => ({
+            eq: (_col: string, val: string) => {
+              const row = deliveryOrders.find((o) => o.id === val)
+              if (row) Object.assign(row, payload)
+              deliveryOrderUpdates.push({ id: val, ...payload })
+              return Promise.resolve({ error: null })
+            },
+          }),
+        }
+        return chain
+      }
       throw new Error(`unexpected table in test fake db: ${table}`)
     },
   } as unknown as SupabaseClient
 
-  return { db, writes, getCart: () => cart, getOrderInfo: () => orderInfo, orderInfoWrites }
+  return {
+    db,
+    writes,
+    getCart: () => cart,
+    getOrderInfo: () => orderInfo,
+    orderInfoWrites,
+    deliveryOrderUpdates,
+  }
 }
 
 function ctxFor(db: SupabaseClient, overrides: Partial<ToolContext> = {}): ToolContext {
@@ -192,6 +241,8 @@ function ctxFor(db: SupabaseClient, overrides: Partial<ToolContext> = {}): ToolC
 beforeEach(() => {
   h.loadProductWithAddonGroups.mockReset()
   h.finalizeDeliveryOrder.mockReset()
+  h.dispatchWebhookEvent.mockClear()
+  h.runAutomationsForTrigger.mockClear()
 })
 
 describe('searchMenuTool', () => {
@@ -584,6 +635,15 @@ describe('placeOrderTool', () => {
       db,
       expect.objectContaining({ paymentMethod: 'Pix', paymentNotes: 'troco para R$100' }),
     )
+  })
+
+  it('records lastPlacedOrderId/lastPlacedOrderTotal so a later correction can find and cancel it — regression, 2026-08-13 duplicate-order incident', async () => {
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-12', total: 95, currency: 'BRL' })
+    const { db, getOrderInfo } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 95, quantity: 1, addons: [] }],
+    })
+    await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
+    expect(getOrderInfo()).toMatchObject({ lastPlacedOrderId: 'order-12', lastPlacedOrderTotal: 95 })
   })
 
   const cart: CartLineItem[] = [
@@ -1023,7 +1083,7 @@ describe('getAvailableTools', () => {
     ).toEqual([])
   })
 
-  it('returns all seven tools for live chat once tools_enabled is on', () => {
+  it('returns all eight tools for live chat once tools_enabled is on', () => {
     const tools = getAvailableTools({
       accountHasDeliveryModule: true,
       toolsEnabled: true,
@@ -1032,11 +1092,84 @@ describe('getAvailableTools', () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       'add_to_cart',
       'calculate_delivery_fee',
+      'cancel_order',
       'get_product_details',
       'place_order',
       'search_menu',
       'update_order_info',
       'view_cart',
     ])
+  })
+})
+
+describe('cancelOrderTool', () => {
+  it('does nothing when no order was placed this conversation', async () => {
+    const { db } = makeDb({})
+    const res = await cancelOrderTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/no order was placed/i)
+  })
+
+  it('cancels the order recorded as lastPlacedOrderId and clears it from order info', async () => {
+    const { db, getOrderInfo, deliveryOrderUpdates } = makeDb({
+      orderInfo: { lastPlacedOrderId: 'order-1', lastPlacedOrderTotal: 95 },
+      deliveryOrders: [
+        { id: 'order-1', account_id: 'acct-1', status: 'pending_confirmation', contact_id: 'contact-1', total: 95, currency: 'BRL' },
+      ],
+    })
+    const res = await cancelOrderTool.execute({}, ctxFor(db))
+    expect(res.content).toContain('order-1')
+    expect(res.content).toContain('cancelled')
+    expect(deliveryOrderUpdates).toEqual([expect.objectContaining({ id: 'order-1', status: 'cancelled' })])
+    expect(getOrderInfo()).toMatchObject({ lastPlacedOrderId: null, lastPlacedOrderTotal: null })
+  })
+
+  it('dispatches the same webhook/automation a staff-initiated cancel fires', async () => {
+    const { db } = makeDb({
+      orderInfo: { lastPlacedOrderId: 'order-1' },
+      deliveryOrders: [
+        { id: 'order-1', account_id: 'acct-1', status: 'pending_confirmation', contact_id: 'contact-9', total: 95, currency: 'BRL' },
+      ],
+    })
+    await cancelOrderTool.execute({}, ctxFor(db))
+    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(
+      db,
+      'acct-1',
+      'order.status_changed',
+      expect.objectContaining({ order_id: 'order-1', previous_status: 'pending_confirmation', status: 'cancelled' }),
+    )
+    expect(h.runAutomationsForTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'acct-1', triggerType: 'order_status_changed', contactId: 'contact-9' }),
+    )
+  })
+
+  it('is a no-op (still reports success) when the order is already cancelled', async () => {
+    const { db, deliveryOrderUpdates } = makeDb({
+      orderInfo: { lastPlacedOrderId: 'order-1' },
+      deliveryOrders: [{ id: 'order-1', account_id: 'acct-1', status: 'cancelled', contact_id: 'c1', total: 10, currency: 'BRL' }],
+    })
+    const res = await cancelOrderTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/already cancelled/i)
+    expect(deliveryOrderUpdates).toEqual([])
+  })
+
+  it('refuses to auto-cancel an order that is already out for delivery or delivered', async () => {
+    const { db, deliveryOrderUpdates } = makeDb({
+      orderInfo: { lastPlacedOrderId: 'order-1' },
+      deliveryOrders: [{ id: 'order-1', account_id: 'acct-1', status: 'out_for_delivery', contact_id: 'c1', total: 10, currency: 'BRL' }],
+    })
+    const res = await cancelOrderTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/too late to cancel/i)
+    expect(res.content).toMatch(/human/i)
+    expect(deliveryOrderUpdates).toEqual([])
+  })
+
+  it('clears the stale pointer and reports gracefully when the referenced order row no longer exists', async () => {
+    const { db, getOrderInfo } = makeDb({
+      orderInfo: { lastPlacedOrderId: 'order-deleted', lastPlacedOrderTotal: 10 },
+      deliveryOrders: [],
+    })
+    const res = await cancelOrderTool.execute({}, ctxFor(db))
+    expect(res.content).toMatch(/no longer exists/i)
+    expect(getOrderInfo()).toMatchObject({ lastPlacedOrderId: null, lastPlacedOrderTotal: null })
   })
 })

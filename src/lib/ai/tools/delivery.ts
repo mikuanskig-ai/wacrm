@@ -39,6 +39,8 @@ import { getBusinessHours, isWithinBusinessHours, closedMessage } from '@/lib/de
 import { effectivePrice, type DayPriceOverrides } from '@/lib/delivery/day-price'
 import { calculateDeliveryFeeForAccount, type DeliveryFeeFailureReason } from '@/lib/delivery/fee-engine'
 import { readOrderInfo, writeOrderInfo, clearStaleFeeQuote, type OrderInfo } from '@/lib/ai/order-state'
+import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import type { ToolDefinition } from './types'
 
 /** Model-facing explanation for a failed fee calculation — tells the
@@ -719,6 +721,14 @@ export const placeOrderTool: ToolDefinition = {
     // orders next. Durable facts (name, address, payment method) are
     // deliberately kept; see clearStaleFeeQuote's doc.
     await clearStaleFeeQuote(ctx.db, ctx.conversationId)
+    // See lastPlacedOrderId's doc (order-state.ts) — the fact that
+    // closes the duplicate-order gap: without this, nothing told the
+    // model an order already existed this conversation when the
+    // customer corrected something right after confirming.
+    await writeOrderInfo(ctx.db, ctx.conversationId, {
+      lastPlacedOrderId: order.id,
+      lastPlacedOrderTotal: order.total,
+    })
 
     const payload: PlacedOrderPayload = {
       id: order.id,
@@ -775,6 +785,92 @@ export const updateOrderInfoTool: ToolDefinition = {
   },
 }
 
+export const cancelOrderTool: ToolDefinition = {
+  name: 'cancel_order',
+  description:
+    'Cancels the order placed earlier THIS conversation (see "An order was ALREADY PLACED" in the order-state summary — that is the one this cancels, you never need to pass an id). ' +
+    'Use this the moment the customer corrects or changes anything about an order you already placed — a different quantity, a different item, a different address — BEFORE building the corrected cart and calling place_order again. ' +
+    'Never place a second order without cancelling the first one first: that sends the kitchen two separate tickets for what the customer meant as one single corrected order, and can double-charge them.',
+  parameters: {
+    type: 'object',
+    properties: {
+      reason: { type: 'string', description: 'Short note on why, e.g. "customer corrected quantity". Optional.' },
+    },
+    additionalProperties: false,
+  },
+  async execute(args, ctx) {
+    const orderInfo = await readOrderInfo(ctx.db, ctx.conversationId)
+    if (!orderInfo.lastPlacedOrderId) {
+      return { content: 'No order was placed in this conversation to cancel — nothing to do.' }
+    }
+
+    const { data: order } = await ctx.db
+      .from('delivery_orders')
+      .select('id, status, contact_id, total, currency')
+      .eq('id', orderInfo.lastPlacedOrderId)
+      .eq('account_id', ctx.accountId)
+      .maybeSingle()
+    if (!order) {
+      // Row's gone (rare — a staff member could have deleted it) —
+      // still clear the stale pointer so a future turn doesn't keep
+      // trying to cancel a ghost.
+      await writeOrderInfo(ctx.db, ctx.conversationId, { lastPlacedOrderId: null, lastPlacedOrderTotal: null })
+      return { content: 'That order no longer exists — nothing to cancel.' }
+    }
+    if (order.status === 'cancelled') {
+      return { content: 'That order is already cancelled.' }
+    }
+    // Once it's out the door, an automatic cancel here is more likely
+    // to cause confusion (a driver already carrying it, a kitchen
+    // ticket already fired) than to help — same "too far along" line
+    // a human would draw. Tell the model to hand this one to staff
+    // instead of silently flipping a status a delivery is already
+    // committed to.
+    if (order.status === 'out_for_delivery' || order.status === 'delivered') {
+      return {
+        content: `Order ${order.id} is already ${order.status} — too late to cancel automatically. Tell the customer a human needs to help with this correction.`,
+      }
+    }
+
+    const { error } = await ctx.db
+      .from('delivery_orders')
+      .update({ status: 'cancelled', status_changed_at: new Date().toISOString() })
+      .eq('id', order.id)
+    if (error) {
+      return { content: `Failed to cancel order ${order.id}: ${error.message}` }
+    }
+
+    await writeOrderInfo(ctx.db, ctx.conversationId, { lastPlacedOrderId: null, lastPlacedOrderTotal: null })
+
+    // Same two side effects the manual PATCH /api/delivery/orders/:id
+    // route fires on a staff-initiated status change — an AI-initiated
+    // cancel should look identical to anything downstream (webhooks,
+    // automations) watching for order status changes.
+    await dispatchWebhookEvent(ctx.db, ctx.accountId, 'order.status_changed', {
+      order_id: order.id,
+      previous_status: order.status,
+      status: 'cancelled',
+    })
+    await runAutomationsForTrigger({
+      accountId: ctx.accountId,
+      triggerType: 'order_status_changed',
+      contactId: order.contact_id,
+      context: {
+        order_status: 'cancelled',
+        vars: {
+          order_id: order.id,
+          order_status: 'cancelled',
+          order_previous_status: order.status,
+          order_total: order.total,
+          order_currency: order.currency,
+        },
+      },
+    })
+
+    return { content: `Order ${order.id} cancelled.` }
+  },
+}
+
 export function getAvailableTools(args: {
   accountHasDeliveryModule: boolean
   toolsEnabled: boolean
@@ -798,5 +894,6 @@ export function getAvailableTools(args: {
     addToCartTool,
     placeOrderTool,
     updateOrderInfoTool,
+    cancelOrderTool,
   ]
 }

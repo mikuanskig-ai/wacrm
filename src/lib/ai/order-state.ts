@@ -57,6 +57,21 @@ export interface OrderInfo {
   paymentMethod: string | null
   paymentNotes: string | null
   lastFeeQuote: OrderFeeQuote | null
+  /** Set by place_order right after it creates an order, cleared by
+   *  cancel_order. Root-caused a real duplicate-order incident live
+   *  (2026-08-13): a customer corrected their quantity AFTER the model
+   *  had already called place_order for the original — with no way to
+   *  know an order already existed this conversation, or to cancel it,
+   *  the model's only move was placing a SECOND order for the
+   *  corrected amount, so the kitchen got two separate tickets (R$95
+   *  and R$55) for what should have been one. This is the fact that
+   *  lets both the prompt (see defaults.ts) and the new cancel_order
+   *  tool close that gap — see also lastPlacedOrderTotal below. */
+  lastPlacedOrderId: string | null
+  /** Shown alongside lastPlacedOrderId in the order-state summary so
+   *  the model doesn't need a tool call just to remind itself what the
+   *  order it might need to cancel actually totalled. */
+  lastPlacedOrderTotal: number | null
 }
 
 const EMPTY_ORDER_INFO: OrderInfo = {
@@ -68,6 +83,8 @@ const EMPTY_ORDER_INFO: OrderInfo = {
   paymentMethod: null,
   paymentNotes: null,
   lastFeeQuote: null,
+  lastPlacedOrderId: null,
+  lastPlacedOrderTotal: null,
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -169,6 +186,19 @@ export async function buildOrderStateSummary(
       `Last delivery fee quote${staleness ? ' (STALE — address changed since, recalculate)' : ''}: ` +
         `for "${q.address ?? '(pickup)'}" — fee ${formatCurrency(q.fee, currency)}, ` +
         `total ${formatCurrency(q.total, currency)}, quoted ${q.quotedAt}.`,
+    )
+  }
+
+  // Root-caused a real duplicate-order incident (2026-08-13, see
+  // lastPlacedOrderId's doc) — surfaced here as loudly as the STALE
+  // fee-quote flag above so the model can't miss it.
+  if (info.lastPlacedOrderId) {
+    lines.push(
+      `An order was ALREADY PLACED in this conversation: id ${info.lastPlacedOrderId}` +
+        (info.lastPlacedOrderTotal != null ? `, total ${formatCurrency(info.lastPlacedOrderTotal, currency)}` : '') +
+        '. If the customer is now correcting or changing that order (a different quantity, item, or address), you MUST call ' +
+        'cancel_order first, THEN build the corrected cart and call place_order again — never place a second order without ' +
+        'cancelling the first one, that sends the kitchen two separate tickets for what should be a single corrected order.',
     )
   }
 

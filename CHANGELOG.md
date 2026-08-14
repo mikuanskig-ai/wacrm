@@ -2,6 +2,33 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.10] — 2026-08-14
+
+### Corrigido
+
+- **IA duplicava pedido quando o cliente corrigia algo depois de já ter
+  confirmado** — achado ao investigar a reclamação da Concórdia ("a IA
+  estava errando nos cálculos finais"). Não era erro de aritmética: um
+  cliente pediu 4 marmitas P (pedido de R$95 criado e impresso), corrigiu
+  pra 2 marmitas 48 segundos depois, e a IA — sem nenhuma forma de saber
+  que já existia um pedido nesta conversa, e sem nenhuma ferramenta pra
+  cancelá-lo — criou um SEGUNDO pedido (R$55) em vez de corrigir o
+  primeiro. A cozinha recebeu duas notinhas pra um pedido só.
+  - Novo campo `lastPlacedOrderId`/`lastPlacedOrderTotal` no estado do
+    pedido (`order-state.ts`), gravado por `place_order` toda vez que
+    cria um pedido.
+  - Resumo do estado do pedido (injetado no prompt a cada turno) agora
+    avisa explicitamente quando já existe um pedido criado nesta
+    conversa, e instrui a IA a cancelar antes de recriar.
+  - Nova ferramenta `cancel_order` — cancela o último pedido criado
+    nesta conversa (dispara os mesmos webhook/automação de quando um
+    humano cancela manualmente pelo painel). Recusa cancelar
+    automaticamente um pedido já saiu para entrega ou entregue —
+    nesse caso avisa que precisa de um humano.
+  - Conferido no banco: só houve essa uma ocorrência de duplicação
+    real na conta (os outros pares de mesmo valor encontrados são
+    pedidos repetidos em dias diferentes, não duplicação de sessão).
+
 ## [0.10.9] — 2026-08-12
 
 ### Adicionado
