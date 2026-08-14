@@ -6,6 +6,13 @@
 
 ## Pendentes
 
+- [ ] **Rename completo pra ZDelivery** — 14/08: só a pasta local
+  mudou de lugar (`clients/zontalk/zdelivery/`), o resto ainda diz
+  "wacrm": `package.json` (`name`), repo do GitHub
+  (`mikuanskig-ai/wacrm`), path no VPS (`/opt/wacrm`,
+  `wacrm.service`), e qualquer branding visível na UI. Rename de
+  verdade (nome do produto, domínio se mudar, repo) é decisão maior,
+  fica pra quando o dono da conta confirmar o escopo exato.
 - [ ] **Sem sinal visual no inbox quando a IA para de responder uma
   conversa** (handoff ou limite de respostas atingido). Descoberto
   investigando o incidente de 10/08 na Churrascaria Concórdia: 84
@@ -58,6 +65,24 @@
   não é sintoma de algo pior.
 
 ## Feitas
+
+### 2026-08-14 — Reorganização: pasta movida pra dentro de zontalk
+
+- Anúncio: o wacrm vai passar a se chamar **ZDelivery** (Zontalk
+  Delivery), CRM focado em delivery, parte do ecossistema Zontalk.
+  Primeiro passo (organização): pasta movida de `clients/wacrm/wacrm/`
+  pra `clients/zontalk/zdelivery/`, e o agente de impressão de
+  `clients/wacrm/print-agent/` pra
+  `clients/zontalk/zdelivery-print-agent/` — sem mudar nada de código,
+  histórico de git preservado nos dois (confirmado: `git log` intacto,
+  `git status` limpo, remotes preservados).
+- **Nada mudou em produção** — deploy continua em `/opt/wacrm` no VPS,
+  serviço continua `wacrm.service`, repo do GitHub continua
+  `mikuanskig-ai/wacrm`. Só a organização local mudou. Rename completo
+  (produto, repo, path do servidor) é item separado nas Pendentes.
+- Memória (`project_zdelivery.md`) criada pra registrar isso — não
+  existia memória nenhuma pro projeto até agora, apesar de semanas de
+  trabalho nele.
 
 ### 2026-08-14 — Pente fino: reclamação de impressão + cálculo da Concórdia
 
