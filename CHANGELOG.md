@@ -2,6 +2,21 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.11] — 2026-08-15
+
+### Revertido
+
+- **Cache de prompt (0.10.9) revertido** — reportado pelo dono da
+  conta: depois de aplicado, a IA começou a alucinar. Revertida a
+  reordenação do `buildSystemPrompt` e o `cache_control` do Anthropic,
+  voltando ao comportamento de antes de 0.10.9. Nota honesta: no mesmo
+  período o administrador da Concórdia também trocou o modelo de
+  `openai/gpt-5.4` pra `meta-llama/llama-3.3-70b-instruct` (sugestão
+  de custo dada em 0.10.9) — revertido de volta pro GPT-5.4 também,
+  a pedido. As duas mudanças aconteceram juntas, então não dá pra
+  cravar qual das duas foi a causa real da alucinação; revertidas as
+  duas por precaução.
+
 ## [0.10.10] — 2026-08-14
 
 ### Corrigido
@@ -57,7 +72,7 @@
   - Cache de histórico de mensagens dentro de um mesmo loop de
     ferramentas (múltiplas chamadas pro mesmo pedido) fica de fora
     desta rodada — ganho menor, mais complexidade de implementar; pode
-    ser revisitado depois.
+    ser revisitado depois. **Revertido em 0.10.11 — ver acima.**
 
 ## [0.10.8] — 2026-08-12
 

@@ -252,7 +252,7 @@ export async function dispatchInboundToAiReply(
         allowSideEffects: true,
       }
       const orderState = await buildOrderStateSummary(db, conversationId, currency)
-      const { text: systemPrompt, cacheableText: cacheableSystemPrompt } = buildSystemPrompt({
+      const systemPrompt = buildSystemPrompt({
         userPrompt: config.systemPrompt,
         mode: 'auto_reply',
         knowledge,
@@ -265,7 +265,6 @@ export async function dispatchInboundToAiReply(
         const result = await generateReplyWithTools({
           config,
           systemPrompt,
-          cacheableSystemPrompt,
           messages,
           tools,
           toolContext,
@@ -311,7 +310,7 @@ export async function dispatchInboundToAiReply(
         return
       }
 
-      const { text: systemPrompt, cacheableText: cacheableSystemPrompt } = buildSystemPrompt({
+      const systemPrompt = buildSystemPrompt({
         userPrompt: config.systemPrompt,
         mode: 'auto_reply',
         knowledge,
@@ -319,7 +318,7 @@ export async function dispatchInboundToAiReply(
         dailyMenu: todaysMenu,
       })
       try {
-        const result = await generateReply({ config, systemPrompt, cacheableSystemPrompt, messages })
+        const result = await generateReply({ config, systemPrompt, messages })
         text = result.text
         handoff = result.handoff
         usage = result.usage

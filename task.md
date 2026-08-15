@@ -66,6 +66,26 @@
 
 ## Feitas
 
+### 2026-08-15 — Revertido: cache de prompt causou alucinação
+
+- Reportado pelo dono da conta: depois do fix de cache de prompt
+  (0.10.9), a IA começou a alucinar. Revertido o commit inteiro
+  (`git revert`) — `buildSystemPrompt` volta a retornar string simples
+  (sem `cacheableText`), reordenação de conteúdo desfeita, `cache_control`
+  do Anthropic removido.
+- No mesmo período, o administrador da Concórdia também tinha trocado
+  o modelo de `openai/gpt-5.4` pra `meta-llama/llama-3.3-70b-instruct`
+  (era uma das sugestões de custo dadas junto com o cache) — revertido
+  de volta pro GPT-5.4 também, a pedido.
+- **Nota honesta**: as duas mudanças (cache + troca de modelo)
+  aconteceram no mesmo período, então não dá pra saber com certeza
+  qual das duas causou a alucinação — Llama 3.3 70B é um modelo bem
+  mais fraco que GPT-5.4 pra esse tipo de tarefa (cálculo preciso,
+  respeitar guardrails rígidos), então é uma explicação pelo menos tão
+  provável quanto a reordenação do prompt. Revertidas as duas por
+  precaução; se quiser isolar a causa depois, dá pra reaplicar o cache
+  sozinho (sem trocar de modelo) e observar.
+
 ### 2026-08-14 — Reorganização: pasta movida pra dentro de zontalk
 
 - Anúncio: o wacrm vai passar a se chamar **ZDelivery** (Zontalk
@@ -133,6 +153,8 @@
 - Fora de escopo por ora: cache do histórico de mensagens dentro de um
   mesmo loop de ferramentas (várias chamadas do mesmo pedido) — ganho
   menor, mais complexo, revisitar se fizer sentido depois.
+- **Revertido em 15/08 — ver entrada acima ("Revertido: cache de
+  prompt")**: causou alucinação na IA segundo relato do dono da conta.
 
 ### 2026-08-12 — Notinha não avisava quando o pedido era retirada
 

@@ -1,11 +1,10 @@
 {
-  "name": "wacrm",
-  "version": "0.10.10",
+  "name": "zdelivery",
+  "version": "0.10.11",
   "private": true,
   "description": "Self-hostable CRM template for WhatsApp built on Next.js and Supabase — shared inbox, contacts, sales pipelines, broadcasts, and no-code automations.",
   "license": "MIT",
-  "author": "Arnas Donauskas",
-  "homepage": "https://github.com/ArnasDon/wacrm",
+  "author": "ZonTalk",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ArnasDon/wacrm.git"

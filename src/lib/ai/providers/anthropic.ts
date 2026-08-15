@@ -14,50 +14,10 @@ import {
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_VERSION = '2023-06-01'
-// Was required to opt into `cache_control` support back when prompt
-// caching first launched (2024) — sent defensively in case whatever
-// API version this account is actually pinned to still gates on it;
-// an extra/stale beta flag on a header is the kind of thing providers
-// ignore rather than reject, so there's no real downside to including
-// it even once this is long since general-availability-by-default.
-const ANTHROPIC_BETA_HEADER = 'prompt-caching-2024-07-31'
 
 interface AnthropicResponse {
   content?: { type?: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }[]
-  usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
-}
-
-type AnthropicSystemBlock = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }
-
-/**
- * Splits `systemPrompt` into a cacheable block (`cacheableSystemPrompt`,
- * marked with `cache_control`) plus an uncached tail with whatever's
- * left — instead of the flat string every other provider gets. Only
- * worth doing when the cacheable prefix is both a genuine prefix of
- * the full prompt AND large enough to matter: Anthropic requires 1024+
- * tokens (roughly 4+ characters/token, so ~4000 chars is a safe floor)
- * for a cache write to be accepted at all; below that, the API
- * silently writes zero cache tokens and this would just add an unused
- * extra content block for nothing. Falls back to a single uncached
- * block whenever the split isn't usable (no cacheableSystemPrompt
- * given, or it doesn't actually match the start of systemPrompt —
- * e.g. a future caller changes the format without updating this).
- */
-function buildSystemBlocks(systemPrompt: string, cacheableSystemPrompt?: string): AnthropicSystemBlock[] {
-  const MIN_CACHEABLE_CHARS = 4000
-  if (
-    !cacheableSystemPrompt ||
-    cacheableSystemPrompt.length < MIN_CACHEABLE_CHARS ||
-    !systemPrompt.startsWith(cacheableSystemPrompt)
-  ) {
-    return [{ type: 'text', text: systemPrompt }]
-  }
-  const rest = systemPrompt.slice(cacheableSystemPrompt.length)
-  const blocks: AnthropicSystemBlock[] = [
-    { type: 'text', text: cacheableSystemPrompt, cache_control: { type: 'ephemeral' } },
-  ]
-  if (rest.trim()) blocks.push({ type: 'text', text: rest })
-  return blocks
+  usage?: { input_tokens?: number; output_tokens?: number }
 }
 
 /**
@@ -84,7 +44,7 @@ function normalizeForAnthropic(messages: ChatMessage[]): ChatMessage[] {
  * in `generateReply`).
  */
 export async function generateAnthropic(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, cacheableSystemPrompt, messages, timeoutMs } = args
+  const { apiKey, model, systemPrompt, messages, timeoutMs } = args
 
   let res: Response
   try {
@@ -93,12 +53,11 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
-        'anthropic-beta': ANTHROPIC_BETA_HEADER,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model,
-        system: buildSystemBlocks(systemPrompt, cacheableSystemPrompt),
+        system: systemPrompt,
         max_tokens: MAX_OUTPUT_TOKENS,
         messages: normalizeForAnthropic(messages),
       }),
@@ -185,31 +144,11 @@ export async function callAnthropicTurn(args: {
   apiKey: string
   model: string
   systemPrompt: string
-  cacheableSystemPrompt?: string
   nativeMessages: AnthropicNativeMessage[]
   tools: ProviderToolDef[]
   timeoutMs: number
 }): Promise<ProviderCallResult> {
-  const { apiKey, model, systemPrompt, cacheableSystemPrompt, nativeMessages, tools, timeoutMs } = args
-
-  // Every one of the (up to maxToolIterations) round-trips this one
-  // reply makes resends the exact same `tools` array — it's static
-  // for the whole loop, and identical across every turn of every
-  // conversation this account has while tools are enabled at all. The
-  // real payoff is here, not just on the system prompt: a
-  // Delivery-enabled account's tool loop is the majority of its
-  // volume (search_menu -> get_product_details -> add_to_cart ->
-  // view_cart -> calculate_delivery_fee -> place_order is 5-6 calls
-  // for one clean order), so caching the ~1-2k tokens of tool schemas
-  // once and reading them back cheap on every subsequent round-trip
-  // compounds fast. Marking the LAST tool caches everything up to and
-  // including it, same rule as the system blocks above.
-  const toolDefs = tools.map((t, i) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: t.parameters,
-    ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
-  }))
+  const { apiKey, model, systemPrompt, nativeMessages, tools, timeoutMs } = args
 
   let res: Response
   try {
@@ -218,15 +157,16 @@ export async function callAnthropicTurn(args: {
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
-        'anthropic-beta': ANTHROPIC_BETA_HEADER,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model,
-        system: buildSystemBlocks(systemPrompt, cacheableSystemPrompt),
+        system: systemPrompt,
         max_tokens: MAX_OUTPUT_TOKENS,
         messages: nativeMessages,
-        ...(tools.length > 0 ? { tools: toolDefs } : {}),
+        ...(tools.length > 0
+          ? { tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) }
+          : {}),
       }),
       signal: AbortSignal.timeout(timeoutMs),
     })

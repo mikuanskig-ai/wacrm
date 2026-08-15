@@ -107,7 +107,7 @@ export async function POST(request: Request) {
       allowSideEffects: false,
     }).filter((t) => t.name !== 'view_cart')
 
-    const { text: systemPrompt, cacheableText: cacheableSystemPrompt } = buildSystemPrompt({
+    const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
@@ -127,7 +127,6 @@ export async function POST(request: Request) {
       const result = await generateReplyWithTools({
         config,
         systemPrompt,
-        cacheableSystemPrompt,
         messages,
         tools,
         toolContext,
@@ -138,7 +137,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ reply: result.text, handoff: result.handoff })
     }
 
-    const { text, handoff } = await generateReply({ config, systemPrompt, cacheableSystemPrompt, messages })
+    const { text, handoff } = await generateReply({ config, systemPrompt, messages })
     markPlaygroundTested(supabase, accountId)
     return NextResponse.json({ reply: text, handoff })
   } catch (err) {

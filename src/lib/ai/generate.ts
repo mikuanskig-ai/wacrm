@@ -35,11 +35,6 @@ export interface GenerateArgs {
   config: AiConfig
   /** Fully-built system prompt (see `buildSystemPrompt`). */
   systemPrompt: string
-  /** `buildSystemPrompt`'s `cacheableText` — only consumed by
-   *  providers with explicit prompt caching (Anthropic today); every
-   *  other provider ignores it. Optional so every existing call site
-   *  that predates caching support keeps compiling unchanged. */
-  cacheableSystemPrompt?: string
   /** Recent conversation turns, oldest first. */
   messages: ChatMessage[]
 }
@@ -50,13 +45,12 @@ export interface GenerateArgs {
  * of the raw text. Throws `AiError` on any provider/network failure.
  */
 export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {
-  const { config, systemPrompt, cacheableSystemPrompt, messages } = args
+  const { config, systemPrompt, messages } = args
   const timeoutMs = aiRequestTimeoutMs()
   const providerArgs = {
     apiKey: config.apiKey,
     model: config.model,
     systemPrompt,
-    cacheableSystemPrompt,
     messages,
     timeoutMs,
   }
@@ -117,8 +111,6 @@ function sumUsage(a: AiUsage | null, b: AiUsage | null): AiUsage | null {
 export interface GenerateWithToolsArgs {
   config: AiConfig
   systemPrompt: string
-  /** See GenerateArgs's field of the same name. */
-  cacheableSystemPrompt?: string
   messages: ChatMessage[]
   tools: ToolDefinition[]
   toolContext: ToolContext
@@ -161,7 +153,7 @@ export interface GenerateWithToolsResult extends GenerateResult {
 export async function generateReplyWithTools(
   args: GenerateWithToolsArgs,
 ): Promise<GenerateWithToolsResult> {
-  const { config, systemPrompt, cacheableSystemPrompt, messages, tools, toolContext, rateLimit } = args
+  const { config, systemPrompt, messages, tools, toolContext, rateLimit } = args
   const timeoutMs = aiRequestTimeoutMs()
   const providerTools: ProviderToolDef[] = tools.map((t) => ({
     name: t.name,
@@ -252,7 +244,6 @@ export async function generateReplyWithTools(
         apiKey: config.apiKey,
         model: config.model,
         systemPrompt,
-        cacheableSystemPrompt,
         nativeMessages: native,
         tools: providerTools,
         timeoutMs,
