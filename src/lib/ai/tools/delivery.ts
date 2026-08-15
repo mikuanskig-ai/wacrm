@@ -420,8 +420,22 @@ export const addToCartTool: ToolDefinition = {
     let noteUpdated = false
     if (exactMatchIndex >= 0) {
       cart = [...cartBefore]
-      mergedQuantity = cart[exactMatchIndex]!.quantity + quantity
+      const previousQuantity = cart[exactMatchIndex]!.quantity
+      mergedQuantity = previousQuantity + quantity
       cart[exactMatchIndex] = { ...cart[exactMatchIndex]!, quantity: mergedQuantity }
+      // This merge is the confirmed mechanism behind three separate
+      // live incidents so far (2026-08-06 x2, 2026-08-07) — legitimate
+      // when the customer really did ask for more, but also exactly
+      // what happens when the model redundantly re-adds an item it
+      // already committed (confirmed live 2026-08-15: several customer
+      // messages arriving back-to-back led to a full re-add that
+      // silently doubled every quantity in the order summary). No
+      // reliable way to tell the two apart here — logging every
+      // occurrence is what was missing to root-cause the 08-15
+      // incident with any confidence; this is the trail for next time.
+      console.warn(
+        `[ai add_to_cart] merged into existing line — conversation ${ctx.conversationId}, product ${item.product_id} (${item.product_name}): ${previousQuantity} + ${quantity} = ${mergedQuantity}`,
+      )
     } else if (refinementMatchIndex >= 0) {
       cart = [...cartBefore]
       mergedQuantity = cart[refinementMatchIndex]!.quantity

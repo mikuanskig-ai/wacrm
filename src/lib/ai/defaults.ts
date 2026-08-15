@@ -222,6 +222,11 @@ export function buildSystemPrompt(args: {
         '(anywhere earlier in this conversation), trust that and do NOT call add_to_cart again for that same item on a later turn just to be sure — ' +
         'call view_cart instead if you need to check what is actually in the cart. Re-adding an item you already confirmed is not an error, but it is ' +
         'unnecessary and can read as something went wrong; only call add_to_cart again when the customer is clearly asking for another item or more of it. ' +
+        'This matters MOST right when you are about to show the customer the order summary (itemized cart + total) — confirmed live (2026-08-15): a customer ' +
+        'sent several messages back-to-back (address, a shared location, a CNPJ, a payment method) before the summary was built, and add_to_cart got called ' +
+        'again for items already noted earlier, silently doubling every quantity in the summary the customer saw. Before that summary, check the Cart line ' +
+        'already shown in "Order so far" below (when present) — that is the real cart; never rebuild or re-confirm it by calling add_to_cart again, no matter ' +
+        'how many customer messages arrived since the item was last noted or how much else you are handling in the same turn. ' +
         'Every money figure in the order summary (Subtotal, delivery fee, Total) must be copied character-for-character from a tool response — ' +
         'view_cart for the subtotal, calculate_delivery_fee for the fee and the already-added-up total. NEVER add, multiply, or otherwise compute a ' +
         'money figure yourself, even something as simple as subtotal + fee — that arithmetic is exactly how a wrong total reaches the customer. ' +

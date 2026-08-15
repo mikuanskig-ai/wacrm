@@ -66,6 +66,30 @@
 
 ## Feitas
 
+### 2026-08-15 — IA dobrou quantidade do pedido do Bruno (Concórdia)
+
+- Print mandado ao vivo: cliente pediu 3 marmitas M + 1 Coca 2L, IA
+  anotou certo em duas respostas separadas ("Anotado: 3 marmitas M",
+  "Anotado também: 1 Coca 2L"), mas o resumo final de confirmação
+  mostrou 6 marmitas + 2 Cocas. Dono do restaurante já corrigiu na mão
+  ("vou arrumar ali o pedido..."). Confirmado: não tem relação com o
+  revert do cache/modelo (aconteceu depois, já em GPT-5.4).
+- Reconstruído pela conversa: entre o último "Anotado" e o resumo
+  final, o cliente mandou várias mensagens seguidas (endereço,
+  localização, CNPJ, nota fiscal, forma de pagamento) — nesse meio
+  tempo `add_to_cart` foi chamado de novo pros mesmos itens, e o
+  merge por match exato (soma quantidade — é o comportamento certo
+  pra "bota mais uma") dobrou tudo.
+- **Não consegui confirmar 100% o mecanismo exato** — esse caminho de
+  merge já causou 3 incidentes ao vivo antes (06/08 x2, 07/08) mas
+  nunca teve log nenhum. Corrigido isso: `console.warn` em todo merge
+  por match exato (produto, quantidade antes/depois, conversa) — na
+  próxima ocorrência (se houver) dá pra confirmar com certeza.
+- Prompt reforçado: checar o carrinho de "Order so far" antes de
+  montar o resumo, nunca reconstruir chamando `add_to_cart` de novo.
+  **Sem garantia de eliminar por completo** — é reforço de prompt, não
+  trava de código.
+
 ### 2026-08-15 — Revertido: cache de prompt causou alucinação
 
 - Reportado pelo dono da conta: depois do fix de cache de prompt

@@ -2,6 +2,34 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.12] — 2026-08-15
+
+### Corrigido
+
+- **IA dobrou a quantidade de todos os itens do pedido do Bruno**
+  (Churrascaria Concórdia) — 3 marmitas M viraram 6, 1 Coca 2L virou 2
+  no resumo de confirmação. Não relacionado ao revert do cache/modelo
+  acima — aconteceu depois, já no GPT-5.4. Reconstruído pela conversa:
+  a IA anotou 3 marmitas e 1 Coca corretamente, depois o cliente mandou
+  várias mensagens seguidas (endereço, localização, CNPJ, pedido de
+  nota fiscal, forma de pagamento) antes do resumo final — e em algum
+  ponto disso `add_to_cart` foi chamado de novo pros mesmos itens,
+  somando a quantidade (comportamento correto pra "bota mais uma", mas
+  errado quando é só re-adicionar o que já tinha).
+  - Prompt reforçado: instrução explícita pra checar o carrinho já
+    mostrado em "Order so far" antes de montar o resumo do pedido, e
+    nunca reconstruir o carrinho chamando `add_to_cart` de novo, não
+    importa quantas mensagens chegaram desde a última vez que o item
+    foi anotado.
+  - Log de diagnóstico adicionado no merge de `add_to_cart` (esse
+    exato caminho de código já causou 3 incidentes ao vivo antes
+    desse, mas nunca tinha log nenhum — não deu pra confirmar 100% o
+    mecanismo desta vez por falta de rastro).
+  - **Sem garantia de que isso elimina o problema por completo** —
+    é reforço de prompt, não uma trava de código; a próxima ocorrência
+    (se houver) já vai ficar registrada no log pra confirmar o
+    mecanismo com certeza.
+
 ## [0.10.11] — 2026-08-15
 
 ### Revertido
