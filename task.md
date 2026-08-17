@@ -66,6 +66,34 @@
 
 ## Feitas
 
+### 2026-08-17 — Agente de impressão: checagem real de status antes de marcar "impresso"
+
+- Gap achado investigando a reclamação de impressão do mesmo dia (ver
+  item logo abaixo): tanto o envio pra impressora de rede (socket TCP)
+  quanto pra impressora compartilhada do Windows (`copy /b`) só provam
+  que os bytes foram aceitos — nunca que o papel de fato saiu. Sem
+  papel, tampa aberta ou impressora offline (mas ainda alcançável)
+  passavam batido, e o job ficava marcado "impresso" do mesmo jeito.
+- Adicionada checagem best-effort ANTES de cada tentativa de impressão
+  (`zdelivery-print-agent/src/printer.ts`, `checkPrinterStatus`):
+  - Rede: consulta ESC/POS real-time status (`DLE EOT 1`/`4`) pela
+    própria conexão TCP — offline e sem-papel.
+  - Windows: WMI (`Win32_Printer` via PowerShell) — `WorkOffline` e
+    `DetectedErrorState`.
+  - **Sempre "falha aberta"**: impressora que não responde à consulta
+    (comum em clone barato) ou compartilhamento que o WMI não acha
+    conta como "não sei dizer" — nunca bloqueia a impressão. Só fala
+    alguma coisa quando a impressora/Windows reporta um problema real,
+    e nesse caso o job já vai pra `failed` com motivo legível em vez de
+    um "impresso" falso.
+  - Alvo de empacotamento corrigido `node20-win-x64` → `node22-win-x64`
+    (cache do `pkg` não tem mais binário pré-compilado pro node20 —
+    já estava documentado no README como limitação conhecida).
+- `.exe` novo publicado em `v2.zontalk.shop/downloads/zontalk-print-agent.exe`.
+  **Não é automático**: não existe mecanismo de auto-update — cada
+  loja com o agente já instalado precisa baixar e trocar o `.exe`
+  manualmente pra ganhar essa checagem (a Concórdia incluída).
+
 ### 2026-08-17 — Pedido fantasma: IA "confirmava" sem criar o pedido (Concórdia)
 
 - Reclamação: "não está saindo os pedidos na impressora". Investigado
