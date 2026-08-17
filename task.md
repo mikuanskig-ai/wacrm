@@ -66,6 +66,33 @@
 
 ## Feitas
 
+### 2026-08-17 — Pedido fantasma: IA "confirmava" sem criar o pedido (Concórdia)
+
+- Reclamação: "não está saindo os pedidos na impressora". Investigado
+  ao vivo: fila de impressão 100% saudável (37/37 impressos em 5 dias,
+  agente conectado e respondendo na hora da reclamação — `last_polled_at`
+  literalmente a poucos minutos) — não era problema de impressora.
+- Achado o problema real em duas conversas da mesma manhã:
+  - Francisco: IA mandou "Pedido confirmado! 🎉 Já estou passando para
+    a cozinha" — sem nenhum `delivery_order`/`print_job` criado.
+    `add_to_cart`/`place_order` nunca foram chamados.
+  - Ederson (pego a tempo, antes de virar pedido): resumo com "3x
+    Marmita M", cliente perguntou "Porque 3?", IA "corrigiu" pra "1x"
+    mas manteve Subtotal R$75 e Total R$87 idênticos — carrinho real
+    vazio (`ai_cart: []`) o tempo todo.
+- Causa raiz: mensagem de atendente humano (áudio, num caso claramente
+  conversa interna da equipe sobre outro pedido, não pro cliente) era
+  transcrita e entrava no histórico da IA marcada como `assistant`,
+  indistinguível da própria fala da IA — ela lia a promessa do humano
+  como se já tivesse feito a ação, e parava de chamar as ferramentas
+  de verdade.
+- Corrigido em [context.ts](src/lib/ai/context.ts): mensagem de
+  atendente humano agora entra no histórico marcada explicitamente
+  como não sendo a IA (`formatHumanAgentMessage`).
+- **Não resolvido**: por que conversa interna da equipe está caindo no
+  chat do cliente (provável mesmo número de WhatsApp usado pra equipe
+  conversar entre si) — investigar depois.
+
 ### 2026-08-15 — IA dobrou quantidade do pedido do Bruno (Concórdia)
 
 - Print mandado ao vivo: cliente pediu 3 marmitas M + 1 Coca 2L, IA

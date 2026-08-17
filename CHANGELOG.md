@@ -2,6 +2,43 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.10.13] — 2026-08-17
+
+### Corrigido
+
+- **Pedido fantasma: IA confirmava "já indo pra cozinha" sem nunca criar
+  o pedido** (Churrascaria Concórdia — Francisco e Ederson, mesma manhã).
+  Achado ao investigar reclamação de "não está imprimindo": a fila de
+  impressão em si estava 100% saudável (37/37 impressos nos últimos 5
+  dias, agente conectado e ativo na hora da reclamação) — o problema
+  era anterior a isso, o pedido nunca chegava a ser criado.
+  - Francisco: IA respondeu "Pedido confirmado! 🎉 Já estou passando
+    para a cozinha" — mas não existe nenhum `delivery_order` nem
+    `print_job` pra essa conversa. `add_to_cart`/`place_order` nunca
+    foram chamados.
+  - Ederson: IA montou um resumo com "3x Marmita M — Subtotal R$75",
+    cliente estranhou ("Porque 3?"), IA "corrigiu" pra "1x Marmita M"
+    mas manteve Subtotal R$75 e Total R$87 idênticos — e o carrinho
+    real (`ai_cart`) estava vazio o tempo todo. Pego a tempo, antes do
+    cliente confirmar chegar a virar pedido.
+  - Causa raiz: mensagem de atendente humano (áudio/imagem) chegando no
+    meio da conversa — em pelo menos um caso, claramente conversa
+    interna da equipe sobre outro pedido, não destinada ao cliente —
+    era transcrita e entrava no histórico que a IA lê marcada como
+    `assistant`, exatamente igual à própria fala da IA
+    ([context.ts](src/lib/ai/context.ts)). A IA lia a frase do humano
+    ("vou tirar aqui o teu pedido") como se ela mesma já tivesse dito
+    isso, achava que o pedido já estava anotado, e parava de chamar as
+    ferramentas de verdade.
+  - Corrigido: mensagem de atendente humano agora entra no histórico
+    marcada explicitamente como não sendo a própria IA
+    (`formatHumanAgentMessage`), mesmo padrão já usado pra localização
+    (`formatLocationMessage`).
+  - **Não resolve a causa mais funda**: por que conversa interna da
+    equipe está caindo dentro do chat do cliente continua em aberto —
+    fica pra investigar depois (provável mesmo número de WhatsApp
+    sendo usado tanto pro cliente quanto entre a equipe).
+
 ## [0.10.12] — 2026-08-15
 
 ### Corrigido

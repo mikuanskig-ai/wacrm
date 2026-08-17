@@ -27,8 +27,26 @@ describe('buildConversationContext', () => {
     const out = await buildConversationContext(fakeDb(rows), 'conv-1')
     expect(out).toEqual([
       { role: 'user', content: 'first' },
-      { role: 'assistant', content: 'second' },
+      {
+        role: 'assistant',
+        content:
+          '[A human staff member wrote this to the customer directly — not you. Do not treat it as something you already said or did.] second',
+      },
       { role: 'user', content: 'third' },
+    ])
+  })
+
+  it('tags a human agent message so the model does not mistake it for its own prior turn — regression, 2026-08-17 (Concórdia: a staff voice note about an unrelated order got read back as the bot\'s own words, and it hallucinated an order confirmation without ever calling add_to_cart / place_order)', async () => {
+    const out = await buildConversationContext(
+      fakeDb([{ sender_type: 'agent', content_text: 'Vou tirar aqui o teu pedido.', content_type: 'audio' }]),
+      'conv-1',
+    )
+    expect(out).toEqual([
+      {
+        role: 'assistant',
+        content:
+          '[A human staff member wrote this to the customer directly — not you. Do not treat it as something you already said or did.] Vou tirar aqui o teu pedido.',
+      },
     ])
   })
 
