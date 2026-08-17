@@ -11,6 +11,7 @@ import type { DeliveryOrder, DeliveryOrderStatus } from "@/types";
 import { OrderList } from "@/components/delivery/order-list";
 import { OrderForm } from "@/components/delivery/order-form";
 import { OrderDetailSheet } from "@/components/delivery/order-detail-sheet";
+import { OrderDateRangeFilter, type OrderDateRange } from "@/components/delivery/order-date-range-filter";
 import { GatedButton } from "@/components/ui/gated-button";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, LayoutGrid, Plus, UtensilsCrossed } from "lucide-react";
@@ -39,18 +40,28 @@ function DeliveryOrdersPageInner() {
   const [orders, setOrders] = useState<DeliveryOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<DeliveryOrderStatus | "all">("all");
+  // null = no date filter, every order loads (today's default — same
+  // behaviour as before this filter existed).
+  const [dateRange, setDateRange] = useState<OrderDateRange | null>(null);
   const [orderFormOpen, setOrderFormOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<DeliveryOrder | null>(null);
 
   const moduleEnabled = hasModule(account, "delivery");
 
   const loadOrders = useCallback(async () => {
-    const { data } = await supabase
+    let query = supabase
       .from("delivery_orders")
       .select("*, contact:contacts(*), items:delivery_order_items(*)")
       .order("created_at", { ascending: false });
+    // Filtered server-side (not sliced from an already-loaded array) —
+    // an account with months of order history shouldn't have to
+    // download all of it just to look at today's orders.
+    if (dateRange) {
+      query = query.gte("created_at", dateRange.from.toISOString()).lte("created_at", dateRange.to.toISOString());
+    }
+    const { data } = await query;
     setOrders((data ?? []) as DeliveryOrder[]);
-  }, [supabase]);
+  }, [supabase, dateRange]);
 
   useEffect(() => {
     if (profileLoading || !moduleEnabled) return;
@@ -138,7 +149,8 @@ function DeliveryOrdersPageInner() {
             <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <OrderDateRangeFilter value={dateRange} onChange={setDateRange} />
           <Button
             render={<Link href="/delivery/operacao" />}
             variant="outline"

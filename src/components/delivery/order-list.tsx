@@ -7,6 +7,8 @@ import { OrderStatusBadge } from "./order-status-badge";
 import { PaymentStatusBadge } from "./payment-status-badge";
 import { ClipboardList } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 const STATUS_FILTERS: (DeliveryOrderStatus | "all")[] = [
   "all",
@@ -61,6 +63,7 @@ export function OrderList({ orders, statusFilter, onStatusFilterChange, onSelect
             <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">{t("colOrder")}</th>
+                <th className="px-3 py-2 text-left font-medium">{t("colDate")}</th>
                 <th className="px-3 py-2 text-left font-medium">{t("colCustomer")}</th>
                 <th className="px-3 py-2 text-left font-medium">{t("colSource")}</th>
                 <th className="px-3 py-2 text-left font-medium">{t("colStatus")}</th>
@@ -77,6 +80,9 @@ export function OrderList({ orders, statusFilter, onStatusFilterChange, onSelect
                 >
                   <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground">
                     #{order.id.slice(0, 8)}
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-xs text-muted-foreground">
+                    {format(new Date(order.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                   </td>
                   <td className="px-3 py-2.5 text-foreground">
                     {order.contact?.name || order.customer_name || t("unknownCustomer")}

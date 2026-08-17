@@ -1046,7 +1046,19 @@
       "newOrder": "New Order",
       "viewOperations": "Operations",
       "moduleOffTitle": "Delivery isn't turned on",
-      "goToSettings": "Go to Settings"
+      "goToSettings": "Go to Settings",
+      "dateFilter": {
+        "allTime": "All time",
+        "custom": "Custom",
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "thisWeek": "This week",
+        "lastWeek": "Last week",
+        "last30Days": "Last 30 days",
+        "last90Days": "Last 90 days",
+        "cancel": "Cancel",
+        "apply": "Apply"
+      }
     },
     "operationsBoard": {
       "title": "Operations",
@@ -1097,6 +1109,7 @@
       "allStatuses": "All",
       "noOrders": "No orders match this filter",
       "colOrder": "Order",
+      "colDate": "Date/Time",
       "colCustomer": "Customer",
       "colSource": "Source",
       "colStatus": "Status",
@@ -1166,7 +1179,10 @@
       "orderNumber": "Order #{id}",
       "customer": "Customer",
       "unknownCustomer": "Unknown customer",
+      "placedAt": "Date/Time",
       "address": "Address",
+      "paymentMethod": "Payment method",
+      "paymentNotes": "Payment notes",
       "notes": "Notes",
       "sourceFlow": "Placed via WhatsApp Flow",
       "sourceManual": "Placed manually",

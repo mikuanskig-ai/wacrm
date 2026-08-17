@@ -136,7 +136,7 @@ const BASE_ORDER = {
   account_id: "acct-1",
   contact_id: "contact-1",
   conversation_id: null as string | null,
-  status: "pending_confirmation",
+  status: "confirmed",
   source: "manual" as const,
   customer_name: "Ana",
   total: 40,

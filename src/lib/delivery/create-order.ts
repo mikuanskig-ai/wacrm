@@ -96,9 +96,18 @@ export interface FinalizeDeliveryOrderArgs {
  * returns the created row. Not wrapped in a DB transaction (Supabase
  * client doesn't expose multi-statement transactions) — if the items
  * insert fails after the order insert succeeds, the order is left in
- * `pending_confirmation` with zero items rather than rolled back;
- * acceptable for Fase 1 (no payment is captured at this point) and
- * visible/fixable from the Pedidos list.
+ * `confirmed` with zero items rather than rolled back; acceptable for
+ * Fase 1 (no payment is captured at this point) and visible/fixable
+ * from the Pedidos list.
+ *
+ * Starts life as `confirmed`, not `pending_confirmation` — the kitchen
+ * ticket (`enqueuePrintJob` below) already fires unconditionally on
+ * every new order regardless of status, so an extra "needs
+ * confirmation" step before the order even shows as confirmed on the
+ * Pedidos list was pure friction: the print already happened, there
+ * was nothing left to confirm. `pending_confirmation` stays a valid
+ * status (existing orders, the DB CHECK, STATUS_FLOW) — it just isn't
+ * where a NEW order starts anymore.
  */
 export async function finalizeDeliveryOrder(
   db: SupabaseClient,
@@ -116,7 +125,7 @@ export async function finalizeDeliveryOrder(
       conversation_id: args.conversationId ?? null,
       user_id: args.userId ?? null,
       flow_run_id: args.flowRunId ?? null,
-      status: 'pending_confirmation',
+      status: 'confirmed',
       source: args.source,
       customer_name: args.customerName ?? null,
       delivery_address: args.deliveryAddress ?? null,

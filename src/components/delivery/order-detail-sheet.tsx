@@ -18,6 +18,8 @@ import { STATUS_FLOW } from "@/lib/delivery/status-flow";
 import { Loader2, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface OrderDetailSheetProps {
   open: boolean;
@@ -90,10 +92,26 @@ export function OrderDetailSheet({ open, onOpenChange, order, onStatusChanged }:
                 <span className="text-muted-foreground">{t("customer")}: </span>
                 {order.contact?.name || order.customer_name || t("unknownCustomer")}
               </p>
+              <p className="text-foreground">
+                <span className="text-muted-foreground">{t("placedAt")}: </span>
+                {format(new Date(order.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+              </p>
               {order.delivery_address && (
                 <p className="text-foreground">
                   <span className="text-muted-foreground">{t("address")}: </span>
                   {order.delivery_address}
+                </p>
+              )}
+              {order.payment_method && (
+                <p className="text-foreground">
+                  <span className="text-muted-foreground">{t("paymentMethod")}: </span>
+                  {order.payment_method}
+                </p>
+              )}
+              {order.payment_notes && (
+                <p className="text-foreground">
+                  <span className="text-muted-foreground">{t("paymentNotes")}: </span>
+                  {order.payment_notes}
                 </p>
               )}
               {order.notes && (

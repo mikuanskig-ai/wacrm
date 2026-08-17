@@ -1046,7 +1046,19 @@
       "newOrder": "Novo Pedido",
       "viewOperations": "Operação",
       "moduleOffTitle": "O Delivery não está ativado",
-      "goToSettings": "Ir para Configurações"
+      "goToSettings": "Ir para Configurações",
+      "dateFilter": {
+        "allTime": "Todo o período",
+        "custom": "Personalizado",
+        "today": "Hoje",
+        "yesterday": "Ontem",
+        "thisWeek": "Essa semana",
+        "lastWeek": "Semana passada",
+        "last30Days": "Últimos 30 dias",
+        "last90Days": "Últimos 90 dias",
+        "cancel": "Cancelar",
+        "apply": "Atualizar"
+      }
     },
     "operationsBoard": {
       "title": "Operação",
@@ -1097,6 +1109,7 @@
       "allStatuses": "Todos",
       "noOrders": "Nenhum pedido corresponde a este filtro",
       "colOrder": "Pedido",
+      "colDate": "Data/Hora",
       "colCustomer": "Cliente",
       "colSource": "Origem",
       "colStatus": "Status",
@@ -1166,7 +1179,10 @@
       "orderNumber": "Pedido #{id}",
       "customer": "Cliente",
       "unknownCustomer": "Cliente desconhecido",
+      "placedAt": "Data/Hora",
       "address": "Endereço",
+      "paymentMethod": "Forma de pagamento",
+      "paymentNotes": "Observação do pagamento",
       "notes": "Observações",
       "sourceFlow": "Feito via Fluxo do WhatsApp",
       "sourceManual": "Feito manualmente",
