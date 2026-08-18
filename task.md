@@ -66,6 +66,20 @@
 
 ## Feitas
 
+### 2026-08-17 — Merge da v10 (Ederson Marques): filtros na página de Pedidos
+
+- Tag `v10` / branch `feat/pedidos-page-filters`, subida pelo Ederson
+  direto em cima do commit mais recente da main (fast-forward, sem
+  conflito). Reconferido tudo antes de mergear: tsc/eslint limpos,
+  986/991 testes (mesmas 5 falhas pré-existentes), build limpo.
+- Coluna Data/Hora + filtro de período (atalhos + calendário
+  personalizado) na lista de Pedidos, detalhe do pedido passa a
+  mostrar também data/hora/pagamento, e pedido novo nasce `confirmed`
+  em vez de `pending_confirmation` (a impressão já disparava sempre,
+  independente do status).
+- Mergeado na main e publicado como **v0.11.0**. Ainda não deployado
+  no VPS — falta `git pull` + build + restart.
+
 ### 2026-08-17 — Agente de impressão: checagem real de status antes de marcar "impresso"
 
 - Gap achado investigando a reclamação de impressão do mesmo dia (ver
