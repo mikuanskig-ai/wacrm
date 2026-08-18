@@ -2,6 +2,33 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.11.0] — 2026-08-17
+
+### Adicionado
+
+- **Página de Pedidos: coluna de data/hora e filtro de período** —
+  popover com atalhos (Hoje/Ontem/Semana passada/Essa semana/30 dias/
+  90 dias) + calendário de intervalo personalizado, filtrando direto
+  no banco (`react-day-picker`, novo `order-date-range-filter.tsx` e
+  `ui/calendar.tsx`).
+- **Detalhe do pedido** agora mostra também data/hora, forma de
+  pagamento e observação de pagamento (já existiam no registro, nunca
+  apareciam na tela).
+
+### Mudado
+
+- **Pedido novo agora nasce como `confirmed`**, não mais
+  `pending_confirmation` — a nota de impressão pra cozinha já dispara
+  sempre, independente do status, então o passo extra de "aguardando
+  confirmação" ficava sem função real antes de o pedido sequer
+  aparecer como confirmado na lista. `pending_confirmation` continua
+  válido (pedidos antigos, o CHECK do banco, `STATUS_FLOW`) — só deixa
+  de ser onde um pedido novo começa.
+
+Implementado por Ederson Marques (branch `feat/pedidos-page-filters`,
+tag `v10`), revisado e mergeado nesta sessão — verificação completa
+(tsc/eslint/vitest/build) refeita antes do merge, tudo limpo.
+
 ## [0.10.13] — 2026-08-17
 
 ### Corrigido
