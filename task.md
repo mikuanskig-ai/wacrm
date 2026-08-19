@@ -66,6 +66,27 @@
 
 ## Feitas
 
+### 2026-08-19 — Trava de código contra resumo de pedido inventado (Concórdia — Juan)
+
+- Terceira ocorrência ao vivo do mesmo padrão (Francisco e Ederson em
+  17/08, agora Juan): a IA monta um resumo de pedido completo e
+  convincente sem nunca ter chamado `add_to_cart`/`calculate_delivery_fee`.
+  Juan pediu 1 marmita G, IA confirmou certo, mas o resumo final
+  inventou "2 marmitas G — R$64". Cliente percebeu na hora. `ai_cart`
+  no banco confirmado vazio — resumo fabricado do zero, não duplicação.
+- Reforço de prompt (0.10.12, 0.10.13) não segurou essa variação nova.
+  Implementada trava de código: depois da IA gerar a resposta, se o
+  texto menciona "Total" perto de um valor em dinheiro E o carrinho
+  real está vazio, a mensagem é bloqueada antes de sair e a conversa
+  vai pra um humano com aviso específico (🚨) — nunca chega o número
+  inventado no WhatsApp do cliente.
+- `hasCartItems` novo em `order-state.ts`, motivo de handoff
+  `hallucinated_summary` novo em `handoff.ts`. 3 testes novos.
+- Pendente de observar: essa é a trava reativa (impede o envio), não
+  resolve a IA pular a ferramenta — se continuar acontecendo, vale
+  reconsiderar a ideia de `view_cart` obrigatório antes de qualquer
+  resumo (discutido antes, não implementado).
+
 ### 2026-08-19 — IA não achava a taxa do bairro "Guarujá" (Concórdia)
 
 - Reportado com print: cliente Sirlei disse "jardim Guarujá" e depois

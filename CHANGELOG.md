@@ -2,6 +2,39 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.11.2] — 2026-08-19
+
+### Adicionado
+
+- **Trava de código contra resumo de pedido inventado** (Churrascaria
+  Concórdia — Juan, mesmo dia). Terceira ocorrência confirmada ao vivo
+  (Francisco e Ederson em 17/08, agora Juan) do mesmo padrão: a IA
+  monta um resumo de pedido inteiro convincente — itens, subtotal,
+  taxa, total, "Posso confirmar?" — sem NUNCA ter chamado
+  `add_to_cart` nem `calculate_delivery_fee`. No caso do Juan: cliente
+  pediu 1 marmita G, IA confirmou certo ("Anotei 1 marmita G"), mas o
+  resumo final inventou "2 marmitas G — Subtotal R$56 — Total R$64".
+  Cliente percebeu ("É só uma marmita 😂"). `ai_cart` no banco: `[]`
+  (nunca foi tocado) — não é duplicação de item, é resumo fabricado do
+  zero.
+  - Reforço de prompt sozinho (0.10.12, 0.10.13) não impediu essa
+    variação nova aparecer — desta vez é uma trava de código
+    determinística: depois que a IA gera a resposta, se o texto tem
+    "Total" perto de um valor em dinheiro E o carrinho real está vazio
+    no banco, a mensagem é **bloqueada antes de ir pro cliente** e a
+    conversa passa pra um humano, com um aviso interno específico
+    (🚨) explicando o motivo — em vez de mandar o número inventado.
+  - Cuidado para não travar o caso legítimo: só dispara com a palavra
+    "Total" (não qualquer preço — cotação de cardápio tipo "P: R$20,
+    M: R$25, G: R$28" passa direto) E carrinho vazio checado DEPOIS do
+    turno (se a IA chamou `add_to_cart` de verdade nesse mesmo turno,
+    não bloqueia).
+  - Novo helper `hasCartItems` (`order-state.ts`), novo motivo de
+    handoff `hallucinated_summary` (`handoff.ts`). 3 testes novos em
+    `auto-reply.test.ts`.
+  - **Não impede a IA de tentar de novo depois** — só impede que ESSA
+    mensagem específica, com número inventado, chegue ao cliente.
+
 ## [0.11.1] — 2026-08-19
 
 ### Corrigido

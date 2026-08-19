@@ -458,6 +458,42 @@ describe('dispatchInboundToAiReply — tool-calling path', () => {
     })
   })
 
+  it('blocks a hallucinated order summary — "Total" + a price, but the cart is empty — and hands off instead of sending it', async () => {
+    // Regression, 2026-08-17/19 (Concórdia — Francisco/Ederson/Juan): the
+    // model composed a fully convincing itemized summary with nothing
+    // behind it (ai_cart still []).
+    h.generateReplyWithTools.mockResolvedValue({
+      text: 'Confirmando seu pedido:\n* 2 marmitas G\n* Subtotal: R$56\n* Total: R$64\nPosso confirmar?',
+      handoff: false,
+      usage: null,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, ai_cart: [] })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('cart is empty')
+  })
+
+  it('does not block a real order summary when the cart genuinely has items', async () => {
+    h.state.conv = { ...(h.state.conv as object), ai_cart: [{ product_id: 'p1', product_name: 'Marmita G', quantity: 2, unit_price: 28 }] }
+    h.generateReplyWithTools.mockResolvedValue({
+      text: 'Confirmando seu pedido:\n* 2 marmitas G\n* Total: R$64\nPosso confirmar?',
+      handoff: false,
+      usage: null,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('R$64') }))
+  })
+
+  it('does not block an ordinary menu-price quote (no "total" wording) even with an empty cart', async () => {
+    h.generateReplyWithTools.mockResolvedValue({
+      text: 'As marmitas estão nesses valores:\n• P: R$20\n• M: R$25\n• G: R$28',
+      handoff: false,
+      usage: null,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('R$28') }))
+  })
+
   it('hands off to a human — instead of silently dropping the thread — when the provider throws mid tool-loop', async () => {
     h.generateReplyWithTools.mockRejectedValue(
       new Error('Gemini rate limit reached: quota exceeded'),

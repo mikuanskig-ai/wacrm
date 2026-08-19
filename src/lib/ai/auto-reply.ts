@@ -11,7 +11,7 @@ import { engineSendText } from '@/lib/flows/meta-send'
 import { getAccountCurrency } from '@/lib/flows/engine'
 import { getEnabledModules, hasModule } from '@/lib/accounts/modules'
 import { getAvailableTools, type PlacedOrderPayload } from './tools/delivery'
-import { buildOrderStateSummary, readOrderInfo } from './order-state'
+import { buildOrderStateSummary, readOrderInfo, hasCartItems } from './order-state'
 import type { ToolContext } from './tools/types'
 import { formatCurrency } from '@/lib/currency'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -48,6 +48,26 @@ interface DispatchArgs {
  *  bot's own reply — it runs in the webhook's `after()`, off the
  *  critical path of the 200 ack). */
 const AI_REPLY_DEBOUNCE_MS = 2000
+
+// Confirmed live three times now (2026-08-17 x2, 2026-08-19 — Concórdia,
+// conversations with Francisco, Ederson, and Juan): the model can compose a
+// completely convincing itemized order summary — items, subtotal, delivery
+// fee, total, "Posso confirmar?" — without ever having called add_to_cart
+// or calculate_delivery_fee. The numbers are invented, not copied from a
+// tool result, and the cart backing them is genuinely empty in the
+// database. Twice this was caught before real damage (customer noticed the
+// wrong count, or it was checked before the customer replied); once
+// (Francisco) the model went on to also claim the order was placed and
+// "sent to the kitchen" with nothing behind it at all. Prompt reinforcement
+// alone (v0.10.12, v0.10.13) has not stopped new variants of this from
+// showing up, so this is a deterministic, code-level backstop: a reply
+// that talks about a "Total" with a price attached, sent while the cart is
+// still empty, cannot possibly be grounded in a real tool result — it is
+// intercepted below and routed to a human instead of sent to the customer.
+// Deliberately narrow (requires "total" AND a digit close together, not
+// just any price mention) so it doesn't fire on an ordinary menu-price
+// quote ("P: R$20, M: R$25, G: R$28" — no "total" anywhere in that).
+const ORDER_SUMMARY_WITH_PRICE_PATTERN = /total[^\n\d]{0,15}\d/i
 
 /** Builds the deterministic (non-LLM) order-confirmation message. Kept
  *  as plain string formatting — not another provider round-trip — so a
@@ -225,6 +245,7 @@ export async function dispatchInboundToAiReply(
     // right now, so silently retrying forever would leave the customer
     // with no reply and no human ever notified.
     let providerErrored = false
+    let hallucinatedSummary = false
 
     if (tools.length > 0) {
       // Tools can create a real order — a redelivered webhook running
@@ -286,6 +307,22 @@ export async function dispatchInboundToAiReply(
         handoff = result.handoff
         usage = result.usage
         placedOrder = result.placedOrder
+
+        // See ORDER_SUMMARY_WITH_PRICE_PATTERN's doc above — a real order
+        // was already turned into the deterministic confirmation above, so
+        // this only ever inspects free-text the model composed itself.
+        // Checked AFTER generation (current DB state, not the snapshot
+        // from before the tool loop) so a legitimate same-turn add_to_cart
+        // followed by a real summary is never blocked — only a summary
+        // with literally nothing behind it.
+        if (!placedOrder && text && ORDER_SUMMARY_WITH_PRICE_PATTERN.test(text) && !(await hasCartItems(db, conversationId))) {
+          console.error(
+            `[ai auto-reply] blocked a price/total-looking reply with an empty cart — conversation ${conversationId}: ${text}`,
+          )
+          text = ''
+          handoff = true
+          hallucinatedSummary = true
+        }
       } catch (err) {
         console.error('[ai auto-reply] provider call failed mid tool-loop, handing off to a human:', err)
         providerErrored = true
@@ -367,7 +404,7 @@ export async function dispatchInboundToAiReply(
       const summary = buildHandoffSummary({
         messages,
         replyCount: conv.ai_reply_count ?? 0,
-        reason: providerErrored ? 'provider_error' : undefined,
+        reason: providerErrored ? 'provider_error' : hallucinatedSummary ? 'hallucinated_summary' : undefined,
       })
       // Same reasoning for both resets below: don't resume something
       // stale if this conversation gets re-enabled for AI later.

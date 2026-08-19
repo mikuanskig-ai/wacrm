@@ -22,6 +22,17 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { computeCartTotal, type CartLineItem } from '@/lib/delivery/create-order'
 import { formatCurrency } from '@/lib/currency'
 
+/** Same defensive read/shape-check as the cart line inside
+ *  `buildOrderStateSummary` below, split out standalone for
+ *  `auto-reply.ts`'s post-generation sanity check (see its doc comment
+ *  for why that exists) — reused rather than re-derived so the two
+ *  never drift on what counts as "the cart has something in it". */
+export async function hasCartItems(db: SupabaseClient, conversationId: string): Promise<boolean> {
+  const { data } = await db.from('conversations').select('ai_cart').eq('id', conversationId).maybeSingle()
+  const rawCart = (data as { ai_cart?: unknown } | null)?.ai_cart
+  return Array.isArray(rawCart) && rawCart.length > 0
+}
+
 export interface OrderFeeQuote {
   subtotal: number
   fee: number
