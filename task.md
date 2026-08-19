@@ -66,6 +66,27 @@
 
 ## Feitas
 
+### 2026-08-19 — IA não achava a taxa do bairro "Guarujá" (Concórdia)
+
+- Reportado com print: cliente Sirlei disse "jardim Guarujá" e depois
+  "Bairro Guarujá" explicitamente, a IA repetiu "não encontrei a taxa,
+  qual o bairro?" 3 vezes seguidas — mesmo o bairro estando cadastrado
+  certinho (R$15). Cliente cancelou o pedido. Confirmado no banco:
+  bairro existe, preço certo — o bug era no matching.
+- Causa: `matchNeighborhood` só tinha match exato ou correção de erro
+  de digitação por distância de edição; "jardim Guarujá" está 7
+  edições de "Guarujá" (a palavra "jardim" inteira), longe do limite.
+  Não dava pra simplesmente cortar "jardim" como prefixo (a Concórdia
+  também tem "Jardim Veredas"/"Jardim Itália" cadastrados de verdade).
+- Corrigido: novo nível de match por contenção (nome cadastrado
+  aparece inteiro dentro do que o cliente disse, ou vice-versa —  só
+  quando é o único candidato assim, nunca chuta em caso de colisão).
+  Também: quando nada casa, a ferramenta agora sugere até 3 nomes
+  próximos pra IA oferecer, em vez de repetir a mesma pergunta sem
+  informação nova. Log de diagnóstico adicionado.
+- 6 testes novos em `fee-engine.test.ts` cobrindo o caso exato, o caso
+  ambíguo (não pode chutar), e as sugestões.
+
 ### 2026-08-17 — Merge da v10 (Ederson Marques): filtros na página de Pedidos
 
 - Tag `v10` / branch `feat/pedidos-page-filters`, subida pelo Ederson

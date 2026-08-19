@@ -172,7 +172,16 @@ export type DeliveryFeeResult =
        *  distance at all (`fixed`) or the real call succeeded. */
       distanceEstimated: boolean
     }
-  | { ok: false; reason: DeliveryFeeFailureReason }
+  | {
+      ok: false
+      reason: DeliveryFeeFailureReason
+      /** Only ever populated for `neighborhood_not_found`, and only
+       *  when at least one registered name is plausibly close (see
+       *  `suggestNeighborhoods`) — up to 3 registered names to offer
+       *  the customer as a pick-list instead of just re-asking the same
+       *  question. Omitted (not just empty) otherwise. */
+      suggestions?: string[]
+    }
 
 const DEFAULT_CONFIG: DeliveryFeeConfig = {
   method: 'fixed',
@@ -328,12 +337,35 @@ function levenshteinDistance(a: string, b: string): number {
  *  registered names are equally close — guessing wrong here charges
  *  the customer the wrong fee, so an ambiguous typo falls through to
  *  neighborhood_not_found (the model then asks the customer to
- *  confirm) instead of silently picking one. */
+ *  confirm) instead of silently picking one.
+ *
+ *  Between those two tiers: a whole-name containment check. Confirmed
+ *  live (2026-08-19, Concórdia) — a customer answered "jardim Guarujá"
+ *  for a bairro registered as plain "Guarujá"; edit distance between
+ *  the two is 7 (the whole extra word), way past the typo-tolerance
+ *  threshold above, so it fell through to neighborhood_not_found three
+ *  times in a row and the order was lost. "jardim"/"vila"/"parque" as a
+ *  colloquial locality prefix is completely normal spoken Portuguese —
+ *  but unlike "bairro" it's also legitimately part of plenty of real
+ *  registered names (this same account also has "Jardim Veredas" and
+ *  "Jardim Itália" on file), so it can never be blindly stripped the
+ *  way the "bairro" label is in `normalizeName`. Containment only
+ *  auto-matches when it is unambiguous — exactly one registered name is
+ *  a whole run of words inside what the customer said, or vice versa —
+ *  two zones sharing a word must still fall through and ask, never
+ *  guess. */
 function matchNeighborhood(rules: NeighborhoodRule[], name: string): NeighborhoodRule | null {
   const target = normalizeName(name)
+  if (!target || rules.length === 0) return null
+
   const exact = rules.find((r) => normalizeName(r.name) === target)
   if (exact) return exact
-  if (!target || rules.length === 0) return null
+
+  const containing = rules.filter((r) => {
+    const rn = normalizeName(r.name)
+    return rn.length > 0 && (target.includes(rn) || rn.includes(target))
+  })
+  if (containing.length === 1) return containing[0]!
 
   const scored = rules
     .map((rule) => ({ rule, distance: levenshteinDistance(target, normalizeName(rule.name)) }))
@@ -343,6 +375,29 @@ function matchNeighborhood(rules: NeighborhoodRule[], name: string): Neighborhoo
   if (closest.distance > maxAllowed) return null
   if (scored[1] && scored[1].distance === closest.distance) return null // ambiguous — two equally-close names
   return closest.rule
+}
+
+/** Up to 3 registered names plausibly close to what the customer said,
+ *  for when `matchNeighborhood` couldn't return a confident single
+ *  match. Surfaced to the model (see `calculate_delivery_fee`'s tool
+ *  wrapper) so it can offer the customer a short pick-list instead of
+ *  just repeating the same "what's your bairro?" question with no new
+ *  information — confirmed live (2026-08-19): a customer stated their
+ *  real, registered bairro three times running and the conversation
+ *  never recovered; the order was cancelled. Deliberately more lenient
+ *  than `matchNeighborhood`'s own auto-accept threshold, since these
+ *  are shown to a human to confirm, never silently trusted as the
+ *  actual fee. */
+function suggestNeighborhoods(rules: NeighborhoodRule[], name: string): string[] {
+  const target = normalizeName(name)
+  if (!target || rules.length === 0) return []
+  const maxAllowed = Math.max(3, Math.ceil(target.length * 0.5))
+  return rules
+    .map((rule) => ({ rule, distance: levenshteinDistance(target, normalizeName(rule.name)) }))
+    .filter((s) => s.distance <= maxAllowed)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 3)
+    .map((s) => s.rule.name)
 }
 
 function matchDistanceRange(rules: DistanceRangeRule[], distanceKm: number): DistanceRangeRule | null {
@@ -516,8 +571,20 @@ export async function calculateDeliveryFee(
     case 'neighborhood': {
       const name = args.neighborhoodName?.trim() || geocodedNeighborhood
       if (!name) return { ok: false, reason: 'neighborhood_not_found' }
-      const match = matchNeighborhood(config.settings.neighborhoods ?? [], name)
-      if (!match) return { ok: false, reason: 'neighborhood_not_found' }
+      const rules = config.settings.neighborhoods ?? []
+      const match = matchNeighborhood(rules, name)
+      if (!match) {
+        const suggestions = suggestNeighborhoods(rules, name)
+        // Not necessarily a bug — most of these are a customer genuinely
+        // outside the delivery area. Still worth a breadcrumb: this
+        // exact path had zero diagnostic trail during a real incident
+        // (2026-08-19) that took three tries and lost the order, and a
+        // wave of these for the SAME raw name is a real signal (a
+        // common local spelling/prefix worth teaching `matchNeighborhood`
+        // next, same as "jardim Guarujá" was this time).
+        console.warn(`[fee-engine] neighborhood_not_found for "${name}" — suggestions: ${suggestions.join(', ') || '(none)'}`)
+        return suggestions.length > 0 ? { ok: false, reason: 'neighborhood_not_found', suggestions } : { ok: false, reason: 'neighborhood_not_found' }
+      }
       return {
         ok: true,
         fee: roundCents(match.price),

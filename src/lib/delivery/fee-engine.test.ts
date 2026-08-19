@@ -181,7 +181,9 @@ describe('calculateDeliveryFee — neighborhood', () => {
       { neighborhoodName: 'Alty', subtotal: 30 },
       fakeProvider(),
     )
-    expect(result).toEqual({ ok: false, reason: 'neighborhood_not_found' })
+    // Refuses to guess between the two — but both are genuinely close,
+    // so they still come back as suggestions for the model to offer.
+    expect(result).toEqual({ ok: false, reason: 'neighborhood_not_found', suggestions: ['Alta', 'Alto'] })
   })
 
   it('does not match a genuinely different name just because typo tolerance exists', async () => {
@@ -195,6 +197,103 @@ describe('calculateDeliveryFee — neighborhood', () => {
       { neighborhoodName: 'Nowhereland', subtotal: 30 },
       fakeProvider(),
     )
+    expect(result).toEqual({ ok: false, reason: 'neighborhood_not_found' })
+  })
+
+  it('matches a colloquial locality prefix the customer added that is not part of the registered name — regression, 2026-08-19 (Concórdia: "jardim Guarujá" for a bairro registered as plain "Guarujá")', async () => {
+    const config2: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'neighborhood',
+      settings: { neighborhoods: [{ id: '6', name: 'Guarujá', price: 15 }] },
+    }
+    const result = await calculateDeliveryFee(
+      config2,
+      { neighborhoodName: 'jardim Guarujá', subtotal: 30 },
+      fakeProvider(),
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.fee).toBe(15)
+  })
+
+  it('prefers an exact match over containment when both a plain and a prefixed name are registered', async () => {
+    // Exact-match tier runs before containment, so a customer typing
+    // the FULL registered name never gets bumped to a shorter zone
+    // just because it also happens to be a substring.
+    const config2: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'neighborhood',
+      settings: {
+        neighborhoods: [
+          { id: '6', name: 'Guarujá', price: 15 },
+          { id: '7', name: 'Jardim Guarujá', price: 9 },
+        ],
+      },
+    }
+    const result = await calculateDeliveryFee(
+      config2,
+      { neighborhoodName: 'Jardim Guarujá', subtotal: 30 },
+      fakeProvider(),
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.fee).toBe(9)
+  })
+
+  it('does not guess a locality-prefix match when containment is genuinely ambiguous between two registered names', async () => {
+    // "jardim guaruja" contains "guaruja" AND is itself contained by
+    // "jardim guaruja novo" — two different zones, neither an exact
+    // match — must fall through and ask instead of silently picking
+    // either one.
+    const config2: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'neighborhood',
+      settings: {
+        neighborhoods: [
+          { id: '6', name: 'Guarujá', price: 15 },
+          { id: '7', name: 'Jardim Guarujá Novo', price: 9 },
+        ],
+      },
+    }
+    const result = await calculateDeliveryFee(
+      config2,
+      { neighborhoodName: 'jardim Guarujá', subtotal: 30 },
+      fakeProvider(),
+    )
+    expect(result.ok).toBe(false)
+  })
+
+  it('still rejects a genuine typo-plus-prefix combo rather than guessing', async () => {
+    const config2: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'neighborhood',
+      settings: { neighborhoods: [{ id: '6', name: 'Guarujá', price: 15 }] },
+    }
+    // Not a whole-word containment (extra letters inside "guaruja"
+    // itself, not just an added locality word) and too far by edit
+    // distance once the prefix is factored in — must still fail.
+    const result = await calculateDeliveryFee(
+      config2,
+      { neighborhoodName: 'jardim guarulhos', subtotal: 30 },
+      fakeProvider(),
+    )
+    expect(result.ok).toBe(false)
+  })
+
+  it('surfaces close registered names as suggestions when nothing auto-matches', async () => {
+    const config2: DeliveryFeeConfig = {
+      ...BASE_CONFIG,
+      method: 'neighborhood',
+      settings: { neighborhoods: [{ id: '1', name: 'Centro', price: 5 }, { id: '2', name: 'Cetrolandia', price: 9 }] },
+    }
+    const result = await calculateDeliveryFee(config2, { neighborhoodName: 'Cetropoli', subtotal: 30 }, fakeProvider())
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.reason).toBe('neighborhood_not_found')
+      expect(result.suggestions).toEqual(['Centro', 'Cetrolandia'])
+    }
+  })
+
+  it('omits suggestions entirely when nothing registered is plausibly close', async () => {
+    const result = await calculateDeliveryFee(config, { neighborhoodName: 'Nowhereland', subtotal: 30 }, fakeProvider())
     expect(result).toEqual({ ok: false, reason: 'neighborhood_not_found' })
   })
 

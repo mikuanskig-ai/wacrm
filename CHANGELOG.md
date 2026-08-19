@@ -2,6 +2,43 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.11.1] — 2026-08-19
+
+### Corrigido
+
+- **IA não achava a taxa do bairro "Guarujá" mesmo com o bairro
+  cadastrado e com preço certo** (Churrascaria Concórdia — Sirlei).
+  Cliente disse "jardim Guarujá" logo no início; bairro cadastrado é
+  só "Guarujá" (R$15). A IA perguntou o bairro de novo 3 vezes — mesmo
+  depois da cliente responder "Bairro Guarujá" explicitamente — e o
+  pedido acabou cancelado ("não precisa mandar"). Atendente humano
+  interveio na mão, mas cobrou R$20 (não bate com o R$15 cadastrado).
+  - Confirmado por que: `matchNeighborhood` (`fee-engine.ts`) só tinha
+    match exato ou correção de erro de digitação por distância de
+    edição — "jardim Guarujá" está 7 edições de "Guarujá" (a palavra
+    inteira "jardim "), longe do limite de tolerância a erro de
+    digitação. "Jardim"/"Vila"/"Parque" como prefixo de localidade é
+    português coloquial normal — mas ao contrário de "bairro", às
+    vezes É parte do nome oficial (essa mesma conta tem "Jardim
+    Veredas" e "Jardim Itália" cadastrados), então não dá pra
+    simplesmente cortar o prefixo como já é feito com "bairro".
+  - Corrigido com um novo nível de match: se o nome cadastrado aparece
+    inteiro dentro do que o cliente disse (ou vice-versa), e só existe
+    UM cadastro assim — casa. Dois cadastros que colidiriam nesse
+    critério continuam caindo em "não encontrado" (nunca chuta).
+  - **Também**: quando nada casa automaticamente, a ferramenta agora
+    devolve pra IA até 3 nomes cadastrados parecidos, pra ela oferecer
+    como opção ("Você quis dizer X?") em vez de repetir a mesma
+    pergunta sem informação nova — foi exatamente esse loop que
+    cansou a cliente e perdeu a venda.
+  - Log de diagnóstico adicionado em todo `neighborhood_not_found`
+    (nome tentado + sugestões), e a descrição da ferramenta reforçada
+    pra IA sempre passar o bairro dito separadamente no campo
+    `neighborhood`, não só embutido no endereço.
+  - **Sem garantia de cobrir toda variação de como alguém descreve um
+    bairro** — o log novo é o que faltava pra confirmar com certeza a
+    próxima vez que algo parecido acontecer.
+
 ## [0.11.0] — 2026-08-17
 
 ### Adicionado

@@ -45,7 +45,7 @@ import type { ToolDefinition } from './types'
 
 /** Model-facing explanation for a failed fee calculation — tells the
  *  assistant what to ask the customer for next, never a raw code. */
-function describeFeeFailure(reason: DeliveryFeeFailureReason): string {
+function describeFeeFailure(reason: DeliveryFeeFailureReason, suggestions?: string[]): string {
   switch (reason) {
     case 'address_required':
       return 'A delivery address is required to calculate the fee. Ask the customer for their full delivery address.'
@@ -63,7 +63,17 @@ function describeFeeFailure(reason: DeliveryFeeFailureReason): string {
     case 'out_of_range':
       return "Sorry, we currently don't deliver to that address — it's outside our service area."
     case 'neighborhood_not_found':
-      return "That neighborhood isn't in our delivery list. Ask the customer which neighborhood they're in, or provide a more complete address."
+      // Confirmed live (2026-08-19): a customer stated their real,
+      // registered bairro three times running, worded slightly
+      // differently each time, and got the exact same "which
+      // neighbourhood?" question back all three times — no new
+      // information for her to react to. The order was cancelled.
+      // When the engine found anything plausibly close, hand it over so
+      // the next message can be a pick-list ("Você quis dizer X?")
+      // instead of a verbatim repeat.
+      return suggestions && suggestions.length > 0
+        ? `That exact neighborhood name isn't in our delivery list, but these registered ones are close: ${suggestions.join(', ')}. Ask the customer to confirm which one they meant — do NOT just repeat "what's your neighbourhood?" verbatim, they already answered that.`
+        : "That neighborhood isn't in our delivery list. Ask the customer which neighborhood they're in, or provide a more complete address."
     case 'no_matching_distance_range':
       return "That address falls outside our configured delivery distance ranges — we can't calculate a fee for it."
   }
@@ -470,7 +480,7 @@ export const addToCartTool: ToolDefinition = {
 export const calculateDeliveryFeeTool: ToolDefinition = {
   name: 'calculate_delivery_fee',
   description:
-    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change. If you already asked the customer for their neighbourhood/bairro separately, ALWAYS pass it as `neighborhood` too — accounts using a fixed per-neighbourhood fee can then skip address lookup (and its external-service dependency) entirely instead of guessing the neighbourhood from the free-text address. " +
+    "Calculate the real delivery fee for a customer's address. ALWAYS call this before telling the customer what delivery costs — never estimate, guess, or reuse a number from earlier in the conversation, since fees depend on the account's configured method and can change. Whenever you know the customer's neighbourhood/bairro as its own answer — you asked for it separately, or they volunteered it on its own ('bairro Guarujá', 'jardim Guarujá', etc.) — you MUST pass it verbatim as `neighborhood`, not just fold it into `address`: accounts using a fixed per-neighbourhood fee match directly against that name and skip address lookup entirely, while relying on `address` alone forces a geocoder guess that can miss a real, registered neighbourhood on a small/local street (confirmed live 2026-08-19 — a customer's real bairro was registered and correctly priced, but omitting it from `neighborhood` and geocoding the street instead failed three times running and lost the order). " +
     "If the customer's last message was a shared WhatsApp location (a GPS pin, not typed text), you don't need to look up or pass any coordinates yourself — this tool detects it automatically and uses the exact numbers, which is more accurate than any typed address; just call it, `address` can be omitted entirely. You may still pass `latitude`/`longitude` explicitly if you already have them for some other reason. " +
     "The response may include a Resolved address for that location/address — always read it back to the customer and get their explicit confirmation ('is this address correct?') before calling place_order; never assume a resolved address or coordinates are correct without asking. " +
     "The response also includes the cart Subtotal and the Total (subtotal + fee) — when you write the order summary, copy those two numbers character-for-character from here. Doing that arithmetic yourself is exactly how a wrong total gets shown to the customer (confirmed live 2026-08-06: a single R$25 item was summarized as a R$100 subtotal).",
@@ -532,7 +542,7 @@ export const calculateDeliveryFeeTool: ToolDefinition = {
       location,
       subtotal,
     })
-    if (!result.ok) return { content: describeFeeFailure(result.reason) }
+    if (!result.ok) return { content: describeFeeFailure(result.reason, result.suggestions) }
 
     const freeNote = result.freeShipping ? ' (free shipping applied)' : ''
     // Total is computed here, server-side, and handed to the model as a
