@@ -621,7 +621,11 @@ export const placeOrderTool: ToolDefinition = {
     properties: {
       delivery_address: { type: 'string' },
       customer_name: { type: 'string' },
-      notes: { type: 'string' },
+      notes: {
+        type: 'string',
+        description:
+          "A GENERAL note about the order as a whole — e.g. a gate code, 'call on arrival', 'leave with the doorman'. Never restate an item (that's each item's own `notes` in add_to_cart, already saved and printed with it) or the payment method (already captured separately) — doing so prints the same information twice on the kitchen ticket, confirmed live (2026-08-23, Churrascaria Concórdia): an item's customization notes plus 'Pagamento: pix' got echoed into this field verbatim, duplicating what the ticket already showed for that item. Omit this field entirely when there is no order-level instruction beyond what's already on the cart/payment.",
+      },
       is_pickup: {
         type: 'boolean',
         description:
