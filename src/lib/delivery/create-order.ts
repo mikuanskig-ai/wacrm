@@ -33,6 +33,11 @@ export interface CartLineItem {
   quantity: number;
   addons: CartLineItemAddon[];
   notes?: string | null;
+  /** ISO timestamp of the last time this exact line was added/merged —
+   *  see addToCartTool's re-add guard (tools/delivery.ts). Optional so
+   *  older in-flight carts written before this field existed still
+   *  deserialize fine. */
+  addedAt?: string;
 }
 
 export interface CartTotal {
