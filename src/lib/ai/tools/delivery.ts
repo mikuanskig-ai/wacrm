@@ -1,10 +1,10 @@
 // ============================================================
-// Delivery tool-calling for the AI chat path (Fase 2). Five tools,
-// deliberately minimal: search the menu, inspect one product's
-// customization options, add to cart, view the cart, place the order.
-// No edit/remove-from-cart tool — the model can just add again, or the
-// customer restates what they want; a full cart CRUD surface is not
-// needed for a first version.
+// Delivery tool-calling for the AI chat path (Fase 2): search the menu,
+// inspect one product's customization options, add to cart, view the
+// cart, correct/remove a cart line, calculate the delivery fee, and
+// place the order. update_cart_item (added 2026-08-21) is the one
+// mutation that can shrink or clear the cart — everything else here
+// only ever adds.
 //
 // Every tool re-validates any id the model hands it against
 // `ctx.accountId` before touching the database (never trust an id or a

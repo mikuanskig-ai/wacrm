@@ -76,12 +76,28 @@
   apenas uma" e a IA não fez nada, conversa ficou parada até fechar.
 - `view_cart` e "Order so far" agora numeram as linhas do carrinho.
 - Parte 2 do plano (mudar `add_to_cart` de "soma" pra "define
-  quantidade total") **não implementada ainda** — no meio do trabalho
-  descobri que o Ederson já subiu um fix pro mesmo problema raiz
-  (`fix/cart-readd-duplicate-guard`, já mesclado na main do GitHub:
-  bloqueia o merge automático quando nada na conversa desde então
-  menciona o produto de novo). Precisa revisar o fix dele antes de
-  decidir se a parte 2 ainda é necessária ou se o dele já resolve.
+  quantidade total") — revisado o fix que o Ederson subiu em paralelo
+  (`fix/cart-readd-duplicate-guard`, mesclado): antes de somar num
+  match exato, agora checa se alguma mensagem do cliente desde a
+  última vez que aquela linha foi tocada realmente menciona o produto
+  de novo (ou um `confirm_quantity_increase` explícito do modelo); se
+  não, não soma, avisa o modelo e mantém a quantidade. Ataca a mesma
+  causa raiz de forma mais cirúrgica do que mudar a semântica inteira
+  da ferramenta. **Decisão: parte 2 fica em espera** — dar 1-2 semanas
+  de produção rodando com o fix dele antes de decidir se ainda precisa
+  de algo mais forte.
+- Merge feito (`git merge mikuanskig-ai/main`, sem conflito), 1010/1010
+  testes passando (as 5 falhas de timezone que carregava a sessão
+  inteira também foram corrigidas por ele, `fix/env-dependent-test-flakiness`).
+  Outras duas correções vieram junto: `place_order`'s `notes` ganhou
+  descrição pra parar de duplicar pagamento/observação de item na
+  notinha, e a notinha de impressão (`imprimir/page.tsx`) ganhou
+  agrupamento visual de adicionais/observação, data/hora, canal,
+  telefone e checkbox de conferido.
+- **Pendência anotada pelo próprio Ederson**: a correção de layout da
+  notinha só cobre a página de reimpressão no navegador — o agente de
+  impressão térmica (`zdelivery-print-agent`) não recebeu o mesmo
+  ajuste ainda. Fica pra próxima sessão.
 
 ### 2026-08-19 — Trava de código contra resumo de pedido inventado (Concórdia — Juan)
 

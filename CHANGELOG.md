@@ -23,10 +23,31 @@
     correção, e **executar a correção na mesma resposta** assim que o
     cliente confirmar — não só perguntar e parar.
   - 6 testes novos.
-- Essa é a parte 1 do plano de duas etapas discutido; parte 2 (mudar a
-  semântica do `add_to_cart` em si) segue em aberto — avaliar depois de
-  revisar o fix equivalente que o Ederson já subiu pro mesmo problema
-  (`fix/cart-readd-duplicate-guard`, mesclado no GitHub).
+- Essa é a parte 1 do plano de duas etapas discutido. Parte 2 (mudar a
+  semântica do `add_to_cart`) fica **em espera**: o Ederson já subiu,
+  em paralelo, um fix mais cirúrgico pra mesma causa raiz — `add_to_cart`
+  agora só soma automaticamente num match exato se alguma mensagem do
+  cliente desde então realmente menciona o produto de novo (ou o
+  modelo confirma explicitamente via `confirm_quantity_increase`);
+  caso contrário avisa e não soma. Mesclado sem conflito nesta sessão.
+
+### Corrigido (via merge do GitHub — trabalho do Ederson Marques)
+
+- `add_to_cart` não soma mais silenciosamente num re-add sem nenhuma
+  evidência na conversa de que o cliente pediu mais (5º incidente ao
+  vivo confirmado, Lucas Claro 26/08).
+- `place_order`'s `notes` ganhou descrição explícita pra parar de
+  duplicar a forma de pagamento e a observação de item na notinha
+  (Laurete Rocha De Lima, 23/08).
+- Notinha de impressão (página do navegador): adicionais/observação
+  agrupados visualmente por item, regra tracejada entre itens,
+  observação geral movida pro fim em bloco próprio, mais data/hora,
+  canal e telefone do cliente, checkbox de conferido/embalado.
+  **Pendente**: o agente de impressão térmica (`zdelivery-print-agent`)
+  não recebeu o mesmo ajuste ainda.
+- As 5 falhas de teste de timezone/locale que persistiam a sessão
+  inteira foram corrigidas (dependiam do timezone/locale da máquina
+  local, não da CI).
 
 ## [0.11.2] — 2026-08-19
 
