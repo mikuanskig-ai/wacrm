@@ -539,7 +539,7 @@ describe('addToCartTool', () => {
     expect(res.content).toMatch(/now 2x total/i)
   })
 
-  it('attaches a note to the existing bare line instead of duplicating it — regression, 2026-08-07', async () => {
+  it('attaches a note to the existing bare line instead of duplicating it — regression, 2026-08-07 — only when the model explicitly says attach_note_to_existing', async () => {
     // Live incident: customer said "1 marmita P" (added bare, no notes),
     // then in the next message described how they wanted it prepared
     // ("sem carne, com ovo frito, sem macarrão"). The model, with no
@@ -557,7 +557,7 @@ describe('addToCartTool', () => {
       cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: null }],
     })
     const res = await addToCartTool.execute(
-      { product_id: 'p1', quantity: 1, notes: 'Sem carne, com ovo frito, sem macarrão' },
+      { product_id: 'p1', quantity: 1, notes: 'Sem carne, com ovo frito, sem macarrão', attach_note_to_existing: true },
       ctxFor(db),
     )
     expect(getCart()).toHaveLength(1)
@@ -569,6 +569,30 @@ describe('addToCartTool', () => {
     expect(writes[0]).toHaveLength(1)
     expect(res.content).toMatch(/noted for the 1x marmita p/i)
     expect(res.content).not.toMatch(/added 1x marmita p to the cart/i)
+  })
+
+  it('does NOT auto-merge into a bare line without attach_note_to_existing — regression, 2026-08-27 (Fernanda Mendonça: 3 marmitas listed at once — plain, "sem macarrão", and a large — silently became only 2 lines because the "sem macarrão" call got merged into the plain one instead of becoming its own line)', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'Marmita M',
+      price: 25,
+      addon_groups: [],
+    })
+    const { db, writes, getCart } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita M', unit_price: 25, quantity: 1, addons: [], notes: null }],
+    })
+    // Same call as the 2026-08-07 case, but WITHOUT the explicit flag —
+    // must default to a new line, not a merge, so the customer's 2nd
+    // distinct marmita is never silently dropped.
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', quantity: 1, notes: 'sem macarrão' },
+      ctxFor(db),
+    )
+    expect(getCart()).toHaveLength(2)
+    expect(getCart()[0]).toMatchObject({ product_id: 'p1', quantity: 1, notes: null })
+    expect(getCart()[1]).toMatchObject({ product_id: 'p1', quantity: 1, notes: 'sem macarrão' })
+    expect(writes[0]).toHaveLength(2)
+    expect(res.content).toMatch(/added 1x marmita m to the cart/i)
   })
 
   it('keeps a different customization of the same product as its own line', async () => {

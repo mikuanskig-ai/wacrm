@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Sparkles, Hand, Undo2, Loader2 } from "lucide-react";
+import { Sparkles, Hand, Undo2, Loader2, ClipboardCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/hooks/use-auth";
+import { hasModule } from "@/lib/accounts/modules";
 import { fetchAiAccountStatus } from "@/lib/inbox/ai-account-status";
+import { AiOrderConfirmDialog } from "./ai-order-confirm-dialog";
 
 interface AiThreadBannerProps {
   conversationId: string;
@@ -45,9 +47,12 @@ export function AiThreadBanner({
   onChange,
 }: AiThreadBannerProps) {
   const t = useTranslations("Inbox.aiBanner");
-  const { accountId } = useAuth();
+  const tOrder = useTranslations("Inbox.aiOrderConfirm");
+  const { accountId, account } = useAuth();
+  const deliveryEnabled = hasModule(account, "delivery");
   const [autoReplyOn, setAutoReplyOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   // Optimistic local mirror of the pause flag so the banner flips
   // instantly on click; re-seeds whenever the thread (or its server
   // state via realtime) changes.
@@ -103,22 +108,39 @@ export function AiThreadBanner({
   // Account has no auto-reply → nothing to show. (Still loading → nothing.)
   if (!autoReplyOn) return null;
 
-  // Paused here (a human took over, or the model handed off).
+  // Paused here (a human took over, or the model handed off). This is
+  // exactly the moment a rescue via AiOrderConfirmDialog is relevant —
+  // whatever cart/order info the AI built up before pausing is still
+  // sitting on the conversation with no real order behind it yet.
   if (paused) {
     return (
-      <Banner tone="muted">
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-foreground">{t("pausedTitle")}</p>
-          {handoffSummary && (
-            <p className="truncate text-muted-foreground" title={handoffSummary}>
-              {handoffSummary}
-            </p>
+      <>
+        <Banner tone="muted">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium text-foreground">{t("pausedTitle")}</p>
+            {handoffSummary && (
+              <p className="truncate text-muted-foreground" title={handoffSummary}>
+                {handoffSummary}
+              </p>
+            )}
+          </div>
+          {deliveryEnabled && (
+            <BannerButton onClick={() => setOrderDialogOpen(true)} busy={false} icon={ClipboardCheck}>
+              {tOrder("reviewButton")}
+            </BannerButton>
           )}
-        </div>
-        <BannerButton onClick={() => toggle(false)} busy={busy} icon={Undo2}>
-          {t("resume")}
-        </BannerButton>
-      </Banner>
+          <BannerButton onClick={() => toggle(false)} busy={busy} icon={Undo2}>
+            {t("resume")}
+          </BannerButton>
+        </Banner>
+        {deliveryEnabled && (
+          <AiOrderConfirmDialog
+            conversationId={conversationId}
+            open={orderDialogOpen}
+            onOpenChange={setOrderDialogOpen}
+          />
+        )}
+      </>
     );
   }
 

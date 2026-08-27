@@ -606,6 +606,32 @@
       "resumed": "IA retomada.",
       "updateError": "Não foi possível atualizar o assistente de IA.",
       "networkError": "Não foi possível conectar ao servidor."
+    },
+    "aiOrderConfirm": {
+      "reviewButton": "Revisar pedido da IA",
+      "dialogTitle": "Confirmar pedido",
+      "dialogDescription": "Isso é o que a IA anotou nesta conversa. Revise e ajuste o que for preciso — nada é enviado pra cozinha até você confirmar aqui.",
+      "loading": "Carregando...",
+      "loadError": "Não foi possível carregar o pedido da IA.",
+      "empty": "A IA não tem nenhum item anotado nesta conversa.",
+      "itemsTitle": "Itens",
+      "removeItem": "Remover item",
+      "customerName": "Nome do cliente",
+      "deliveryType": "Tipo",
+      "pickup": "Retirada",
+      "delivery": "Entrega",
+      "address": "Endereço",
+      "addressPlaceholder": "Rua, número, bairro",
+      "paymentMethod": "Forma de pagamento",
+      "deliveryFee": "Taxa de entrega",
+      "notes": "Observação geral",
+      "subtotal": "Subtotal",
+      "total": "Total",
+      "cancel": "Cancelar",
+      "confirm": "Confirmar e enviar pra cozinha",
+      "confirming": "Confirmando...",
+      "successToast": "Pedido criado e enviado pra impressão.",
+      "errorToast": "Não foi possível confirmar o pedido."
     }
   },
   "Contacts": {

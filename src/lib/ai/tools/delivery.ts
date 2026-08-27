@@ -111,7 +111,13 @@ function describeFeeFailure(reason: DeliveryFeeFailureReason, suggestions?: stri
   }
 }
 
-async function readCart(db: SupabaseClient, conversationId: string): Promise<CartLineItem[]> {
+// Exported (not just an internal helper) so /api/conversations/[id]/ai-order
+// (the staff-side "confirm/force the AI's pending order" review, added
+// 2026-08-27) reads and clears the exact same cart shape the tools
+// write, rather than re-deriving the same jsonb read/self-heal logic a
+// third time — see readOrderInfo/hasCartItems (order-state.ts) for the
+// other two existing copies of this reasoning.
+export async function readCart(db: SupabaseClient, conversationId: string): Promise<CartLineItem[]> {
   const { data } = await db
     .from('conversations')
     .select('ai_cart')
@@ -129,7 +135,7 @@ async function readCart(db: SupabaseClient, conversationId: string): Promise<Car
   return Array.isArray(raw) ? (raw as CartLineItem[]) : []
 }
 
-async function writeCart(db: SupabaseClient, conversationId: string, cart: CartLineItem[]): Promise<void> {
+export async function writeCart(db: SupabaseClient, conversationId: string, cart: CartLineItem[]): Promise<void> {
   await db.from('conversations').update({ ai_cart: cart }).eq('id', conversationId)
 }
 
@@ -354,6 +360,11 @@ export const addToCartTool: ToolDefinition = {
         description: "Chosen addon option ids for this product, if any.",
       },
       notes: { type: 'string', description: 'Free-text note for this item, e.g. "no onions".' },
+      attach_note_to_existing: {
+        type: 'boolean',
+        description:
+          "Set to true ONLY when this call is adding a preparation/customization detail — in a separate, LATER message — to a single item the customer already ordered bare (no notes yet), e.g. they said '1 marmita P' earlier and just now said 'sem cebola'. Leave false/omitted whenever this is really a distinct additional unit, even of the exact same product with different customization — especially when the customer listed multiple quantities together in one message (e.g. '1 marmita P, 1 marmita P sem cebola' is always 2 separate lines, never merge them into one, even though the second one would otherwise look like a bare-line match). Confirmed live (2026-08-27): a customer listed 3 marmitas at once this way and the wrong guess here silently dropped one — the customer paid for 3, only 2 reached the kitchen.",
+      },
       confirm_quantity_increase: {
         type: 'boolean',
         description:
@@ -461,12 +472,35 @@ export const addToCartTool: ToolDefinition = {
     // that as `notes`. Without this, the two calls (notes "" vs notes
     // "sem carne...") don't match the exact check above, so they
     // became two separate 1x lines — R$20 x 2 shown as R$40 for what
-    // was really one R$20 marmita. This is almost always the customer
-    // volunteering a customization detail for the item they just
-    // ordered, not asking for a second unit, so it updates the note in
-    // place rather than summing quantity.
+    // was really one R$20 marmita.
+    //
+    // This ONLY fires when the model explicitly says so
+    // (attach_note_to_existing: true) — it used to auto-detect this
+    // from cart shape alone (same product/addons + an empty-notes
+    // line), which is exactly what silently ATE an item in a different
+    // live incident (2026-08-27, Fernanda Mendonça): the customer
+    // listed 3 marmitas in one message — one plain, one "sem
+    // macarrão", one a different size — and the model's second
+    // add_to_cart call (for the "sem macarrão" one) got auto-merged
+    // into the first (plain) line's notes instead of becoming its own
+    // line. The customer paid for 3 marmitas; only 2 reached the
+    // kitchen. Both incidents look identical from inside this
+    // function (same product+addons, an empty-notes line sitting
+    // there, a quantity-1 call with notes arriving) — there is no
+    // way to tell "customer is describing the one item they already
+    // ordered" from "customer just listed a second, differently-
+    // customized unit of the same product" without the model's own
+    // knowledge of which one it actually is. Defaulting to NOT
+    // merging (create a new line) is the safer failure: an extra line
+    // is visible and fixable in review (update_cart_item, or the
+    // staff-side AI-order confirmation dialog); a silently eaten item
+    // is invisible until the customer notices it's missing, or never.
     const refinementMatchIndex =
-      exactMatchIndex === -1 && quantity === 1 && item.notes && item.notes.trim()
+      args.attach_note_to_existing === true &&
+      exactMatchIndex === -1 &&
+      quantity === 1 &&
+      item.notes &&
+      item.notes.trim()
         ? cartBefore.findIndex(
             (line) =>
               line.product_id === item.product_id &&

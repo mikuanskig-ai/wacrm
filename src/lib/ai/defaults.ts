@@ -261,6 +261,14 @@ export function buildSystemPrompt(args: {
         'quantity they already stated just because it was not a plain digit — that reads as not having listened, and is exactly the kind of question that ' +
         'makes an automated assistant feel broken. Only ask for quantity when the customer named an item with no indication at all of how many.',
     )
+    parts.push(
+      'When a customer lists several units of the same product in one go, each with its own description ("01 média, 01 média sem macarrão, 01 ' +
+        'grande" — two mediums, differently customized, plus a large), call add_to_cart once per unit and leave attach_note_to_existing false/omitted ' +
+        'for every one of them — each is its own cart line, even the two that share a product. Only set attach_note_to_existing: true when a ' +
+        'customization detail arrives in a genuinely separate LATER message about an item already ordered bare, by itself, with nothing else waiting ' +
+        'to be added alongside it. Confirmed live (2026-08-27): guessing wrong here silently merged a distinct second unit into the first line instead ' +
+        'of adding it — the customer paid for 3 marmitas, only 2 reached the kitchen, and nothing in the conversation showed the mistake.',
+    )
     if (orderState) {
       parts.push(
         'Order so far in this conversation (ground truth, not a suggestion) — never ask the customer again for anything listed here, and never ' +

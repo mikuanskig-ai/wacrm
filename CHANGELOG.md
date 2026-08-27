@@ -2,6 +2,48 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.12.0] — 2026-08-27
+
+### Adicionado
+
+- **Sistema de confirmação de pedido pelo atendente** — quando a IA
+  para de responder numa conversa (por qualquer motivo: alucinação
+  detectada, erro, decisão do próprio modelo), o que ela já tinha
+  anotado (carrinho, endereço, forma de pagamento) não precisa mais
+  ser perdido ou redigitado do zero. No banner "IA pausada" agora
+  aparece um botão **"Revisar pedido da IA"** que abre uma tela de
+  revisão: itens editáveis (quantidade, remover), endereço/retirada,
+  forma de pagamento, taxa de entrega, observação geral, subtotal e
+  total calculados na hora. Confirmando, cria o pedido de verdade
+  (mesma função que o `place_order` da IA usa) e **força o envio pra
+  impressão** — resolve direto o "não está imprimindo" quando a causa
+  é a IA ter travado sem nunca chamar `place_order`.
+  - Novo endpoint `GET/POST /api/conversations/[id]/ai-order`.
+  - Novo componente `AiOrderConfirmDialog`, integrado ao
+    `AiThreadBanner`.
+  - 6 testes novos no endpoint.
+  - Só aparece quando o módulo Delivery está ativo e a conversa está
+    pausada — não aparece com a IA ainda respondendo.
+
+### Corrigido
+
+- **Item perdido em silêncio no `add_to_cart`** (Fernanda Mendonça,
+  27/08 — achado investigando o caso do "pedido confirmado" falso
+  dessa mesma conversa). Cliente listou 3 marmitas numa mensagem só (1
+  lisa, 1 sem macarrão, 1 grande), mas o carrinho real ficou só com 2
+  — a lisa nunca entrou. Causa: a lógica de "o cliente está só
+  detalhando o item que já pediu" (criada em 07/08 pra um caso
+  diferente) tratou a segunda marmita como se fosse nota da primeira,
+  sobrescrevendo em vez de criar uma linha nova.
+  - Essa lógica agora só roda com sinal explícito do modelo
+    (`attach_note_to_existing: true`) — o padrão passa a ser **não
+    fundir** (cria linha nova), porque perder um item em silêncio é
+    pior do que uma linha a mais e visível (correção fácil por
+    `update_cart_item` ou pela nova tela de revisão acima). Prompt
+    também reforçado com o caso concreto.
+  - 1 teste novo confirmando que sem o sinal explícito nada se perde;
+    o teste de 07/08 original passa a exigir o sinal explícito.
+
 ## [0.11.4] — 2026-08-27
 
 ### Corrigido

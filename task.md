@@ -6,18 +6,6 @@
 
 ## Pendentes
 
-- [ ] **`refinementMatchIndex` de `add_to_cart` pode PERDER item em vez
-  de duplicar** — achado 27/08 investigando o caso da Fernanda
-  Mendonça: cliente pediu 3 marmitas (1 M lisa, 1 M sem macarrão, 1 G)
-  em uma mensagem só, mas o carrinho real só ficou com 2 linhas — a M
-  lisa nunca entrou. Suspeita: a lógica pensada pra "cliente detalha o
-  item que já pediu numa mensagem separada" (07/08) está confundindo
-  com "cliente pediu um segundo item do mesmo produto, customizado
-  diferente" — a segunda chamada sobrescreve a nota da primeira linha
-  em vez de criar uma nova. Oposto do bug de duplicação (aqui o
-  cliente paga e recebe menos do que pediu). Precisa de investigação
-  própria — não mexido ainda, a lógica de match já foi ajustada com
-  cuidado várias vezes este mês e merece atenção isolada.
 - [ ] **Rename completo pra ZDelivery** — 14/08: só a pasta local
   mudou de lugar (`clients/zontalk/zdelivery/`), o resto ainda diz
   "wacrm": `package.json` (`name`), repo do GitHub
@@ -77,6 +65,24 @@
   não é sintoma de algo pior.
 
 ## Feitas
+
+### 2026-08-27 — Sistema de confirmação de pedido pelo atendente + item perdido no `add_to_cart`
+
+- **Confirmação de pedido pelo atendente** (pedido do dono da conta):
+  banner "IA pausada" ganhou botão "Revisar pedido da IA" — abre tela
+  com o que a IA já tinha anotado (carrinho editável, endereço/
+  retirada, pagamento, taxa, observação), confirmando cria o pedido de
+  verdade e **força a impressão** (mesma função que `place_order`
+  usa). Resolve o "não imprime" nos casos em que a IA trava sem chamar
+  `place_order`. Novo endpoint `GET/POST /api/conversations/[id]/ai-order`
+  + componente `AiOrderConfirmDialog`. 6 testes novos.
+- **Corrigido o item perdido documentado abaixo**: `refinementMatchIndex`
+  de `add_to_cart` só funde nota numa linha existente com sinal
+  explícito do modelo agora (`attach_note_to_existing: true`) — o
+  padrão passou a ser NÃO fundir (cria linha nova), já que perder item
+  em silêncio é pior que uma linha a mais e visível. Prompt reforçado
+  com o caso da Fernanda. 1 teste novo + o de 07/08 ajustado pra exigir
+  o sinal explícito.
 
 ### 2026-08-27 — 4ª ocorrência do "pedido confirmado" falso, sem preço na mensagem (Concórdia — Fernanda)
 

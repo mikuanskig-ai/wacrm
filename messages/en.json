@@ -606,6 +606,32 @@
       "resumed": "AI resumed.",
       "updateError": "Couldn’t update the AI assistant.",
       "networkError": "Couldn’t reach the server."
+    },
+    "aiOrderConfirm": {
+      "reviewButton": "Review AI order",
+      "dialogTitle": "Confirm order",
+      "dialogDescription": "This is what the AI noted down in this conversation. Review and adjust anything needed — nothing goes to the kitchen until you confirm here.",
+      "loading": "Loading...",
+      "loadError": "Couldn’t load the AI’s order.",
+      "empty": "The AI doesn’t have any items noted in this conversation.",
+      "itemsTitle": "Items",
+      "removeItem": "Remove item",
+      "customerName": "Customer name",
+      "deliveryType": "Type",
+      "pickup": "Pickup",
+      "delivery": "Delivery",
+      "address": "Address",
+      "addressPlaceholder": "Street, number, neighbourhood",
+      "paymentMethod": "Payment method",
+      "deliveryFee": "Delivery fee",
+      "notes": "General note",
+      "subtotal": "Subtotal",
+      "total": "Total",
+      "cancel": "Cancel",
+      "confirm": "Confirm and send to the kitchen",
+      "confirming": "Confirming...",
+      "successToast": "Order created and sent to print.",
+      "errorToast": "Couldn’t confirm the order."
     }
   },
   "Contacts": {
