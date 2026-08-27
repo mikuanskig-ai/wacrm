@@ -27,6 +27,7 @@ import {
   getProductDetailsTool,
   viewCartTool,
   addToCartTool,
+  updateCartItemTool,
   placeOrderTool,
   calculateDeliveryFeeTool,
   updateOrderInfoTool,
@@ -372,6 +373,18 @@ describe('viewCartTool', () => {
     expect(res.content).toContain('60')
   })
 
+  it('numbers each line and shows notes — the identifier update_cart_item relies on', async () => {
+    const { db } = makeDb({
+      cart: [
+        { product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: 'sem cebola' },
+        { product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: 'com ovo' },
+      ],
+    })
+    const res = await viewCartTool.execute({}, ctxFor(db))
+    expect(res.content).toContain('1. 1x Marmita P [sem cebola]')
+    expect(res.content).toContain('2. 1x Marmita P [com ovo]')
+  })
+
   it('treats a corrupted (non-array) ai_cart as empty instead of crashing — regression, 2026-08-06', async () => {
     // A past bug wrote the literal string "[]" instead of an array on
     // handoff; readCart() blindly cast it back to CartLineItem[] and
@@ -575,6 +588,72 @@ describe('addToCartTool', () => {
     )
     expect(res.content).toMatch(/ponto da carne.*allows only one choice/i)
     expect(writes).toHaveLength(0)
+  })
+})
+
+describe('updateCartItemTool', () => {
+  it('rejects an empty cart', async () => {
+    const { db } = makeDb({ cart: [] })
+    const res = await updateCartItemTool.execute({ line_number: 1, new_quantity: 1 }, ctxFor(db))
+    expect(res.content).toMatch(/empty/i)
+  })
+
+  it('rejects a line_number out of range', async () => {
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 2, addons: [] }],
+    })
+    const res = await updateCartItemTool.execute({ line_number: 5, new_quantity: 1 }, ctxFor(db))
+    expect(res.content).toMatch(/no line 5/i)
+  })
+
+  it('rejects an invalid line_number or new_quantity without touching the cart', async () => {
+    const { db, writes } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 2, addons: [] }],
+    })
+    const res1 = await updateCartItemTool.execute({ line_number: 0, new_quantity: 1 }, ctxFor(db))
+    expect(res1.content).toMatch(/invalid line_number/i)
+    const res2 = await updateCartItemTool.execute({ line_number: 1, new_quantity: -1 }, ctxFor(db))
+    expect(res2.content).toMatch(/invalid new_quantity/i)
+    expect(writes).toHaveLength(0)
+  })
+
+  it('reduces a line to a lower quantity — regression, 2026-08-20 (Concórdia, Fabiane: cart mistakenly showed 2 marmitas, customer confirmed she wanted only 1, but the model had no tool to actually make that change)', async () => {
+    const { db, writes } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 2, addons: [], notes: 'tradicional' }],
+    })
+    const res = await updateCartItemTool.execute({ line_number: 1, new_quantity: 1 }, ctxFor(db))
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toEqual([
+      { product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: 'tradicional' },
+    ])
+    expect(res.content).toMatch(/updated line 1.*1x/i)
+  })
+
+  it('removes the line entirely when new_quantity is 0', async () => {
+    const { db, writes } = makeDb({
+      cart: [
+        { product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [] },
+        { product_id: 'p2', product_name: 'Coca 2L', unit_price: 12, quantity: 1, addons: [] },
+      ],
+    })
+    const res = await updateCartItemTool.execute({ line_number: 1, new_quantity: 0 }, ctxFor(db))
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toEqual([{ product_id: 'p2', product_name: 'Coca 2L', unit_price: 12, quantity: 1, addons: [] }])
+    expect(res.content).toMatch(/removed 1x marmita p/i)
+  })
+
+  it('targets the correct line by position when the same product sits on two different lines — the exact ambiguity a product_id-only tool could not resolve', async () => {
+    const { db, writes } = makeDb({
+      cart: [
+        { product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: 'sem cebola' },
+        { product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: 'com ovo' },
+      ],
+    })
+    const res = await updateCartItemTool.execute({ line_number: 2, new_quantity: 0 }, ctxFor(db))
+    expect(writes[0]).toEqual([
+      { product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: 'sem cebola' },
+    ])
+    expect(res.content).toMatch(/removed 1x marmita p/i)
   })
 })
 
@@ -1083,7 +1162,7 @@ describe('getAvailableTools', () => {
     ).toEqual([])
   })
 
-  it('returns all eight tools for live chat once tools_enabled is on', () => {
+  it('returns all nine tools for live chat once tools_enabled is on', () => {
     const tools = getAvailableTools({
       accountHasDeliveryModule: true,
       toolsEnabled: true,
@@ -1096,6 +1175,7 @@ describe('getAvailableTools', () => {
       'get_product_details',
       'place_order',
       'search_menu',
+      'update_cart_item',
       'update_order_info',
       'view_cart',
     ])

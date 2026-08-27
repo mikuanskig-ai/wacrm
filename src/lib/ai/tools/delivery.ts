@@ -287,10 +287,20 @@ export const viewCartTool: ToolDefinition = {
     const cart = await readCart(ctx.db, ctx.conversationId)
     if (cart.length === 0) return { content: 'The cart is currently empty.' }
     const { subtotal } = computeCartTotal(cart)
-    const lines = cart.map((item) => {
+    // Numbered (1-based) and notes shown explicitly — this is the
+    // identifier update_cart_item's line_number refers to. Necessary
+    // because the SAME product can legitimately appear on more than one
+    // line with different notes (e.g. two separately-customized orders
+    // of the same dish) — confirmed live (2026-08-20, Concórdia,
+    // Fabiane): a customer described how they wanted one marmita
+    // prepared across two messages, and it ended up on two different
+    // lines instead of one — without a line number, there would be no
+    // way to tell the model which "Marmita P" line to fix.
+    const lines = cart.map((item, i) => {
       const addons = item.addons ?? []
       const addonsTxt = addons.length ? ` (${addons.map((a) => a.option_name).join(', ')})` : ''
-      return `- ${item.quantity}x ${item.product_name}${addonsTxt}`
+      const notesTxt = item.notes?.trim() ? ` [${item.notes.trim()}]` : ''
+      return `${i + 1}. ${item.quantity}x ${item.product_name}${addonsTxt}${notesTxt}`
     })
     return { content: `Current cart:\n${lines.join('\n')}\nSubtotal: ${formatCurrency(subtotal, ctx.currency)}` }
   },
@@ -299,7 +309,8 @@ export const viewCartTool: ToolDefinition = {
 export const addToCartTool: ToolDefinition = {
   name: 'add_to_cart',
   description:
-    "Add one item to the customer's cart. product_id must be one returned by a prior search_menu call — never guess an id. addon_option_ids are option ids from that product's addon groups (see get_product_details) — required groups MUST have a selection or this call is rejected.",
+    "Add one item to the customer's cart. product_id must be one returned by a prior search_menu call — never guess an id. addon_option_ids are option ids from that product's addon groups (see get_product_details) — required groups MUST have a selection or this call is rejected. " +
+    'Only for adding — if the customer is reducing a quantity, removing an item, or you need to undo something already in the cart, use update_cart_item instead, never a workaround here.',
   parameters: {
     type: 'object',
     properties: {
@@ -473,6 +484,80 @@ export const addToCartTool: ToolDefinition = {
           : noteUpdated
             ? `Noted for the ${mergedQuantity}x ${product.name} already in the cart — no new line added, quantity unchanged. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
             : `Added ${quantity}x ${product.name} to the cart. Cart now has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`,
+    }
+  },
+}
+
+/**
+ * Confirmed live (2026-08-20, Concórdia, Fabiane): a customer corrected
+ * an order down from 2 marmitas to 1, the model correctly recognized
+ * it and asked "quer que eu deixe só 1?", the customer confirmed — and
+ * then the model had no way to actually DO that, so it silently handed
+ * off instead of finishing the correction. add_to_cart only ever adds;
+ * there was no tool that could remove a line or bring a quantity down,
+ * so a customer catching their own mistake (or the model's) hit a dead
+ * end every time.
+ *
+ * Takes a line_number (the 1-based position shown by view_cart / the
+ * "Order so far" Cart line), not a product_id — the same product can
+ * legitimately sit on more than one cart line with different notes
+ * (exactly what happened in the Fabiane incident), so a product_id
+ * alone can't say which line to touch.
+ */
+export const updateCartItemTool: ToolDefinition = {
+  name: 'update_cart_item',
+  description:
+    'Change or remove ONE line already in the cart. Use this — never add_to_cart — whenever the customer is correcting something already in the cart: they want fewer of an item, want to remove it entirely, or you added the wrong thing and need to take it back out. ' +
+    "line_number is the position shown in view_cart's Current cart list or the Cart line in Order so far (1 = first line, 2 = second, etc.) — call view_cart first if you are not already looking at current line numbers. new_quantity is the item's new TOTAL quantity on that line, not an amount to add or subtract — set it to 0 to remove the line completely.",
+  parameters: {
+    type: 'object',
+    properties: {
+      line_number: {
+        type: 'integer',
+        description: '1-based position of the cart line to change, as shown by view_cart.',
+      },
+      new_quantity: {
+        type: 'integer',
+        description: 'The new total quantity for this line. 0 removes the line entirely.',
+      },
+    },
+    required: ['line_number', 'new_quantity'],
+    additionalProperties: false,
+  },
+  async execute(args, ctx) {
+    const lineNumber = Math.trunc(Number(args.line_number))
+    if (!Number.isFinite(lineNumber) || lineNumber < 1) {
+      return { content: 'Invalid line_number — call view_cart first to see the current line numbers, then try again.' }
+    }
+    const newQuantity = Math.trunc(Number(args.new_quantity))
+    if (!Number.isFinite(newQuantity) || newQuantity < 0) {
+      return { content: 'Invalid new_quantity — it must be 0 (to remove the line) or a positive whole number.' }
+    }
+
+    const cart = await readCart(ctx.db, ctx.conversationId)
+    const index = lineNumber - 1
+    if (index < 0 || index >= cart.length) {
+      return {
+        content:
+          cart.length === 0
+            ? 'The cart is currently empty — there is nothing to update.'
+            : `There is no line ${lineNumber} — the cart currently has ${cart.length} line(s). Call view_cart to see the current lines, then try again.`,
+      }
+    }
+
+    const target = cart[index]!
+    const nextCart =
+      newQuantity === 0 ? cart.filter((_, i) => i !== index) : cart.map((line, i) => (i === index ? { ...line, quantity: newQuantity } : line))
+    await writeCart(ctx.db, ctx.conversationId, nextCart)
+    const { subtotal } = computeCartTotal(nextCart)
+
+    if (newQuantity === 0) {
+      return {
+        content: `Removed ${target.quantity}x ${target.product_name} from the cart. Cart now has ${nextCart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`,
+      }
+    }
+    return {
+      content: `Updated line ${lineNumber} (${target.product_name}) to ${newQuantity}x. Cart now has ${nextCart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`,
     }
   },
 }
@@ -916,6 +1001,7 @@ export function getAvailableTools(args: {
     viewCartTool,
     calculateDeliveryFeeTool,
     addToCartTool,
+    updateCartItemTool,
     placeOrderTool,
     updateOrderInfoTool,
     cancelOrderTool,

@@ -171,11 +171,14 @@ export async function buildOrderStateSummary(
 
   if (cart.length > 0) {
     const { subtotal } = computeCartTotal(cart)
-    const items = cart.map((item) => {
+    // Numbered 1-based, same scheme as view_cart's own output — this is
+    // the line_number update_cart_item takes, so it's usable straight
+    // off this summary without a fresh view_cart call first.
+    const items = cart.map((item, i) => {
       const addons = item.addons ?? []
       const addonsTxt = addons.length ? ` (${addons.map((a) => a.option_name).join(', ')})` : ''
       const notesTxt = item.notes?.trim() ? ` [${item.notes.trim()}]` : ''
-      return `${item.quantity}x ${item.product_name}${addonsTxt}${notesTxt}`
+      return `${i + 1}. ${item.quantity}x ${item.product_name}${addonsTxt}${notesTxt}`
     })
     lines.push(`Cart: ${items.join('; ')} — Subtotal ${formatCurrency(subtotal, currency)}`)
   } else {

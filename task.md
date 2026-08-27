@@ -66,6 +66,23 @@
 
 ## Feitas
 
+### 2026-08-21 — Ferramenta `update_cart_item` (parte 1 do plano de 2 etapas)
+
+- IA ganhou capacidade de reduzir/remover item do carrinho de verdade
+  (`update_cart_item`, por número de linha — não por `product_id`,
+  porque o mesmo produto pode estar em 2 linhas com observações
+  diferentes). Antes ela só sabia detectar o problema e perguntar,
+  nunca executar a correção — caso da Fabiane (20/08): confirmou "sim,
+  apenas uma" e a IA não fez nada, conversa ficou parada até fechar.
+- `view_cart` e "Order so far" agora numeram as linhas do carrinho.
+- Parte 2 do plano (mudar `add_to_cart` de "soma" pra "define
+  quantidade total") **não implementada ainda** — no meio do trabalho
+  descobri que o Ederson já subiu um fix pro mesmo problema raiz
+  (`fix/cart-readd-duplicate-guard`, já mesclado na main do GitHub:
+  bloqueia o merge automático quando nada na conversa desde então
+  menciona o produto de novo). Precisa revisar o fix dele antes de
+  decidir se a parte 2 ainda é necessária ou se o dele já resolve.
+
 ### 2026-08-19 — Trava de código contra resumo de pedido inventado (Concórdia — Juan)
 
 - Terceira ocorrência ao vivo do mesmo padrão (Francisco e Ederson em

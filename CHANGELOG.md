@@ -2,6 +2,32 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.11.3] — 2026-08-21
+
+### Adicionado
+
+- **Nova ferramenta `update_cart_item`** — a IA agora consegue reduzir
+  quantidade ou remover uma linha do carrinho de verdade. Antes só
+  existia `add_to_cart` (que só soma); quando o cliente corrigia um
+  pedido pra menos, a IA identificava certo o que precisava mudar mas
+  não tinha como agir — confirmado ao vivo (20/08, Concórdia, Fabiane):
+  cliente confirmou "sim, apenas uma", a IA nunca executou a correção e
+  a conversa ficou parada até fechar o horário, pedido perdido.
+  - Identifica a linha por **posição** (`line_number`, 1-based, igual
+    ao que `view_cart` já mostra) — não por `product_id`, porque o
+    mesmo produto pode legitimamente estar em duas linhas diferentes
+    com observações diferentes (exatamente o caso da Fabiane).
+  - `view_cart` e o bloco "Order so far" (prompt) agora numeram as
+    linhas, pra ferramenta ter como referenciar.
+  - Prompt reforçado: usar `update_cart_item` (nunca `add_to_cart`) pra
+    correção, e **executar a correção na mesma resposta** assim que o
+    cliente confirmar — não só perguntar e parar.
+  - 6 testes novos.
+- Essa é a parte 1 do plano de duas etapas discutido; parte 2 (mudar a
+  semântica do `add_to_cart` em si) segue em aberto — avaliar depois de
+  revisar o fix equivalente que o Ederson já subiu pro mesmo problema
+  (`fix/cart-readd-duplicate-guard`, mesclado no GitHub).
+
 ## [0.11.2] — 2026-08-19
 
 ### Adicionado

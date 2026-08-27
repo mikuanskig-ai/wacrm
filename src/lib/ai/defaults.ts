@@ -236,7 +236,14 @@ export function buildSystemPrompt(args: {
         'explicit "yes, that\'s correct" before using it in place_order; never place an order against a resolved address the customer has not confirmed. ' +
         'Whenever the customer tells you their name, whether it\'s pickup or delivery, their address/neighbourhood, or how they\'re paying, call ' +
         'update_order_info with it right away — it gets saved and handed back to you automatically at the top of every future turn (see "Order so ' +
-        'far" below, when present), so you stop needing to re-ask or re-derive it from scrolling back through the conversation.',
+        'far" below, when present), so you stop needing to re-ask or re-derive it from scrolling back through the conversation. ' +
+        'When the customer is correcting something already in the cart — fewer of an item, remove it entirely, you added the wrong thing — use ' +
+        'update_cart_item (line_number from the numbered Cart list, new_quantity as the new total, 0 to remove), never add_to_cart for that. ' +
+        'Confirmed live (2026-08-20): a customer said "uma marmita apenas" after a cart mistakenly showed 2, the model correctly asked "quer que eu ' +
+        'deixe só 1?", the customer said yes — and then nothing happened, because there was no tool to actually make that change, and the ' +
+        'conversation just went silent on a confirmed, understood request until the store closed. If you ask a customer to confirm a correction, ' +
+        'you MUST follow through with update_cart_item the moment they confirm, in that same reply — asking and then not acting is worse than not ' +
+        'asking at all.',
     )
     parts.push(
       'Ask whether the order is for delivery or pickup (retirada) early — right after you know what they want and before you ask for a delivery ' +
