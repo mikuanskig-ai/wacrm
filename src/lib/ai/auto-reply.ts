@@ -69,6 +69,23 @@ const AI_REPLY_DEBOUNCE_MS = 2000
 // quote ("P: R$20, M: R$25, G: R$28" — no "total" anywhere in that).
 const ORDER_SUMMARY_WITH_PRICE_PATTERN = /total[^\n\d]{0,15}\d/i
 
+// A 4th occurrence (2026-08-27, Fernanda Mendonça) slipped past the
+// pattern above: the hallucinated reply was just "Pedido confirmado! 🎉
+// Já estou passando para a cozinha." — no "Total", no price at all (this
+// was a pickup order whose summary never showed one), so the check above
+// never even ran. But this phrasing doesn't need a cart check to catch —
+// it's ALWAYS false when placedOrder isn't set, by construction: the only
+// legitimate way the customer hears the order is confirmed/on its way to
+// the kitchen is formatOrderConfirmation() above, right after a real
+// place_order call succeeds. Free text making that same claim, with no
+// real order behind it, is a lie regardless of what the cart holds.
+// Matched narrowly on the completion claim itself (not bare "confirmado",
+// which legitimately shows up confirming an address or a detail) — and
+// deliberately distinct from the real message's own wording ("Pedido
+// recebido" / "enviado para a cozinha", past tense) so this can never
+// mistake the real deterministic confirmation for a hallucinated one.
+const ORDER_COMPLETION_CLAIM_PATTERN = /pedido confirmado|passando (para|pra) a?\s*cozinha|indo (para|pra) a?\s*cozinha/i
+
 /** Builds the deterministic (non-LLM) order-confirmation message. Kept
  *  as plain string formatting — not another provider round-trip — so a
  *  successful `place_order` can never leave a real order created with
@@ -308,20 +325,26 @@ export async function dispatchInboundToAiReply(
         usage = result.usage
         placedOrder = result.placedOrder
 
-        // See ORDER_SUMMARY_WITH_PRICE_PATTERN's doc above — a real order
-        // was already turned into the deterministic confirmation above, so
-        // this only ever inspects free-text the model composed itself.
-        // Checked AFTER generation (current DB state, not the snapshot
-        // from before the tool loop) so a legitimate same-turn add_to_cart
-        // followed by a real summary is never blocked — only a summary
-        // with literally nothing behind it.
-        if (!placedOrder && text && ORDER_SUMMARY_WITH_PRICE_PATTERN.test(text) && !(await hasCartItems(db, conversationId))) {
-          console.error(
-            `[ai auto-reply] blocked a price/total-looking reply with an empty cart — conversation ${conversationId}: ${text}`,
-          )
-          text = ''
-          handoff = true
-          hallucinatedSummary = true
+        // See ORDER_SUMMARY_WITH_PRICE_PATTERN / ORDER_COMPLETION_CLAIM_PATTERN's
+        // docs above — a real order was already turned into the
+        // deterministic confirmation above, so this only ever inspects
+        // free-text the model composed itself. Cart state is checked
+        // AFTER generation (current DB state, not the snapshot from
+        // before the tool loop) so a legitimate same-turn add_to_cart
+        // followed by a real summary is never blocked. The completion
+        // claim needs no cart check at all — it is always false on this
+        // branch, cart empty or not.
+        if (!placedOrder && text) {
+          const claimsCompletion = ORDER_COMPLETION_CLAIM_PATTERN.test(text)
+          const claimsPriceOnEmptyCart = ORDER_SUMMARY_WITH_PRICE_PATTERN.test(text) && !(await hasCartItems(db, conversationId))
+          if (claimsCompletion || claimsPriceOnEmptyCart) {
+            console.error(
+              `[ai auto-reply] blocked a hallucinated reply (${claimsCompletion ? 'false completion claim' : 'price/total on an empty cart'}) — conversation ${conversationId}: ${text}`,
+            )
+            text = ''
+            handoff = true
+            hallucinatedSummary = true
+          }
         }
       } catch (err) {
         console.error('[ai auto-reply] provider call failed mid tool-loop, handing off to a human:', err)

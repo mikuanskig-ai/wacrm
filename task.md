@@ -6,6 +6,18 @@
 
 ## Pendentes
 
+- [ ] **`refinementMatchIndex` de `add_to_cart` pode PERDER item em vez
+  de duplicar** — achado 27/08 investigando o caso da Fernanda
+  Mendonça: cliente pediu 3 marmitas (1 M lisa, 1 M sem macarrão, 1 G)
+  em uma mensagem só, mas o carrinho real só ficou com 2 linhas — a M
+  lisa nunca entrou. Suspeita: a lógica pensada pra "cliente detalha o
+  item que já pediu numa mensagem separada" (07/08) está confundindo
+  com "cliente pediu um segundo item do mesmo produto, customizado
+  diferente" — a segunda chamada sobrescreve a nota da primeira linha
+  em vez de criar uma nova. Oposto do bug de duplicação (aqui o
+  cliente paga e recebe menos do que pediu). Precisa de investigação
+  própria — não mexido ainda, a lógica de match já foi ajustada com
+  cuidado várias vezes este mês e merece atenção isolada.
 - [ ] **Rename completo pra ZDelivery** — 14/08: só a pasta local
   mudou de lugar (`clients/zontalk/zdelivery/`), o resto ainda diz
   "wacrm": `package.json` (`name`), repo do GitHub
@@ -65,6 +77,23 @@
   não é sintoma de algo pior.
 
 ## Feitas
+
+### 2026-08-27 — 4ª ocorrência do "pedido confirmado" falso, sem preço na mensagem (Concórdia — Fernanda)
+
+- A trava de código de 0.11.2 (checa "Total" perto de valor) não pegou
+  essa: a mensagem hallucinada foi só "Pedido confirmado! 🎉 Já estou
+  passando para a cozinha." — sem preço nenhum (pedido de retirada,
+  resumo nunca mostrou total). Zero `delivery_order`/`print_job`
+  criados, `place_order` nunca chamado.
+- Nova trava: reivindicar confirmação/despacho pra cozinha sem
+  `place_order` ter sido chamado é sempre mentira, não precisa checar
+  carrinho — a única forma legítima de ouvir isso é a confirmação
+  determinística já existente, com redação diferente ("recebido...
+  enviado"). Frase específica pra nunca travar um "confirmado" solto
+  sem relação com pedido. 2 testes novos.
+- Achado no meio da investigação (documentado em Pendentes, não
+  corrigido ainda): o carrinho real da Fernanda também estava errado
+  — faltava 1 dos 3 itens pedidos.
 
 ### 2026-08-21 — Ferramenta `update_cart_item` (parte 1 do plano de 2 etapas)
 

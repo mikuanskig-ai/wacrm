@@ -2,6 +2,46 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.11.4] — 2026-08-27
+
+### Corrigido
+
+- **4ª ocorrência do "pedido confirmado" falso — dessa vez sem preço
+  nenhum na mensagem, passou batido pela trava anterior** (Concórdia —
+  Fernanda Mendonça). A trava de código de 0.11.2 só disparava quando
+  a mensagem tinha "Total" perto de um valor; essa aqui foi só "Pedido
+  confirmado! 🎉 Já estou passando para a cozinha." — sem preço, sem
+  `place_order` ter sido chamado, sem pedido nem impressão criados.
+  - Nova trava, complementar: reivindicar que o pedido foi confirmado/
+    está indo pra cozinha, sem `place_order` ter sido chamado de
+    verdade nessa resposta, **é sempre mentira** — não precisa checar
+    carrinho pra saber disso (a única forma legítima do cliente ouvir
+    isso é a confirmação determinística que já existe, com outra
+    redação: "Pedido recebido... enviado para a cozinha"). Frase
+    específica ("pedido confirmado", "passando/indo pra cozinha") pra
+    nunca travar um "endereço confirmado 😊" legítimo no meio da
+    conversa.
+  - Mensagem de aviso interno pro atendente generalizada (não fala
+    mais só de "carrinho vazio", já que cobre os dois casos).
+  - 2 testes novos (bloqueia a reivindicação falsa; não bloqueia a
+    confirmação determinística real nem um "confirmado" solto sem
+    relação com pedido).
+
+### Encontrado, ainda não corrigido
+
+- **Carrinho da Fernanda estava faltando 1 item**: ela pediu 3
+  marmitas (1 M lisa, 1 M sem macarrão, 1 G), mas o carrinho real só
+  tinha 2 linhas — a M lisa nunca entrou. Suspeita: o
+  `refinementMatchIndex` de `add_to_cart` (feito originalmente pra
+  "cliente detalha o item que acabou de pedir numa mensagem separada")
+  está confundindo isso com "cliente pediu um segundo item do mesmo
+  produto, mas customizado diferente" — e faz a linha nova
+  *sobrescrever* a existente em vez de criar uma segunda linha,
+  perdendo um item em silêncio. Precisa de investigação própria antes
+  de mexer — é o oposto do bug de duplicação (aqui alguém pode ficar
+  sem receber o que pagou), e a lógica de match já foi ajustada com
+  cuidado várias vezes este mês.
+
 ## [0.11.3] — 2026-08-21
 
 ### Adicionado

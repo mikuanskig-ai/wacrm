@@ -470,7 +470,7 @@ describe('dispatchInboundToAiReply — tool-calling path', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, ai_cart: [] })
-    expect(h.state.updatePayload?.ai_handoff_summary).toContain('cart is empty')
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('without a real order behind it')
   })
 
   it('does not block a real order summary when the cart genuinely has items', async () => {
@@ -492,6 +492,54 @@ describe('dispatchInboundToAiReply — tool-calling path', () => {
     })
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('R$28') }))
+  })
+
+  it('blocks a false "order confirmed / sent to kitchen" claim even with no price mentioned at all — regression, 2026-08-27 (Fernanda Mendonça)', async () => {
+    // The Total-based check above never even ran for this one — the
+    // hallucinated reply was just "Pedido confirmado! 🎉 Já estou
+    // passando para a cozinha.", no price anywhere (a pickup order whose
+    // summary never showed a total). No delivery_order/print_job existed
+    // afterwards; place_order was never actually called.
+    h.generateReplyWithTools.mockResolvedValue({
+      text: 'Pedido confirmado! 🎉 Já estou passando para a cozinha.',
+      handoff: false,
+      usage: null,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, ai_cart: [] })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('without a real order behind it')
+  })
+
+  it('does not block the real deterministic order-confirmation text on an actually placed order', async () => {
+    h.generateReplyWithTools.mockResolvedValue({
+      text: '',
+      handoff: false,
+      usage: null,
+      placedOrder: {
+        id: 'order-1',
+        total: 42,
+        deliveryFee: 0,
+        currency: 'BRL',
+        items: [{ product_name: 'Marmita G', quantity: 1, line_total: 42 }],
+      },
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Seu pedido foi enviado para a cozinha.') }),
+    )
+  })
+
+  it('does not block ordinary "confirmado" chatter unrelated to order completion', async () => {
+    h.generateReplyWithTools.mockResolvedValue({
+      text: 'Perfeito, endereço confirmado 😊 Agora me diga a forma de pagamento.',
+      handoff: false,
+      usage: null,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('endereço confirmado') }),
+    )
   })
 
   it('hands off to a human — instead of silently dropping the thread — when the provider throws mid tool-loop', async () => {
