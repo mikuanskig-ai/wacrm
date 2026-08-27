@@ -43,6 +43,38 @@ import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import type { ToolDefinition } from './types'
 
+/** Did the customer say anything, after `since`, that plausibly asks
+ *  for more of `productName`? Word-match on the product name (reusing
+ *  `matchesSearch`'s accent/case-insensitive logic) or a bare
+ *  "quantity again" phrase/digit. Deliberately narrow — generic
+ *  filler words like "também" are excluded on purpose: in the
+ *  confirmed 2026-08-26 incident (Lucas Claro), "Uma coca 600
+ *  também" was itself one of the messages in the window, and "também"
+ *  there refers to the Coke, not the marmita already in the cart — a
+ *  looser match would have waved the marmita re-add through as
+ *  "confirmed" for exactly the wrong reason. */
+async function customerMentionedProductSince(
+  db: SupabaseClient,
+  conversationId: string,
+  productName: string,
+  since: string,
+): Promise<boolean> {
+  const { data } = await db
+    .from('messages')
+    .select('content_text')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .gt('created_at', since)
+    .order('created_at', { ascending: true })
+    .limit(20)
+  const rows = (data ?? []) as { content_text: string | null }[]
+  const reorderPhrase = /\b(mais\s+\d+|mais\s+um|mais\s+uma|outra\s+unidade|de\s+novo|novamente)\b/i
+  return rows.some((r) => {
+    const text = r.content_text ?? ''
+    return matchesSearch(productName, text) || reorderPhrase.test(normalizeSearchText(text))
+  })
+}
+
 /** Model-facing explanation for a failed fee calculation — tells the
  *  assistant what to ask the customer for next, never a raw code. */
 function describeFeeFailure(reason: DeliveryFeeFailureReason, suggestions?: string[]): string {
@@ -322,6 +354,11 @@ export const addToCartTool: ToolDefinition = {
         description: "Chosen addon option ids for this product, if any.",
       },
       notes: { type: 'string', description: 'Free-text note for this item, e.g. "no onions".' },
+      confirm_quantity_increase: {
+        type: 'boolean',
+        description:
+          "Set to true ONLY when this product is already in the cart AND the customer, in a message you can point to, just explicitly confirmed wanting an additional unit (e.g. you asked 'quer mais uma?' and they said yes, or they said 'quero mais uma X'). Leave false/omitted for a normal add. You do not need this for a product's first time in the cart — only matters when it's already there.",
+      },
     },
     required: ['product_id'],
     additionalProperties: false,
@@ -384,6 +421,7 @@ export const addToCartTool: ToolDefinition = {
       }
     }
 
+    const nowIso = new Date().toISOString()
     const item: CartLineItem = {
       product_id: product.id,
       product_name: product.name,
@@ -391,6 +429,7 @@ export const addToCartTool: ToolDefinition = {
       quantity,
       addons,
       notes: typeof args.notes === 'string' ? args.notes : null,
+      addedAt: nowIso,
     }
 
     // The model has no memory of tool calls from earlier turns (they're
@@ -439,24 +478,45 @@ export const addToCartTool: ToolDefinition = {
     let cart: CartLineItem[]
     let mergedQuantity = quantity
     let noteUpdated = false
+    let blockedDuplicate = false
     if (exactMatchIndex >= 0) {
-      cart = [...cartBefore]
-      const previousQuantity = cart[exactMatchIndex]!.quantity
-      mergedQuantity = previousQuantity + quantity
-      cart[exactMatchIndex] = { ...cart[exactMatchIndex]!, quantity: mergedQuantity }
-      // This merge is the confirmed mechanism behind three separate
-      // live incidents so far (2026-08-06 x2, 2026-08-07) — legitimate
-      // when the customer really did ask for more, but also exactly
-      // what happens when the model redundantly re-adds an item it
-      // already committed (confirmed live 2026-08-15: several customer
-      // messages arriving back-to-back led to a full re-add that
-      // silently doubled every quantity in the order summary). No
-      // reliable way to tell the two apart here — logging every
-      // occurrence is what was missing to root-cause the 08-15
-      // incident with any confidence; this is the trail for next time.
-      console.warn(
-        `[ai add_to_cart] merged into existing line — conversation ${ctx.conversationId}, product ${item.product_id} (${item.product_name}): ${previousQuantity} + ${quantity} = ${mergedQuantity}`,
-      )
+      const existingLine = cartBefore[exactMatchIndex]!
+      const previousQuantity = existingLine.quantity
+      // This merge is the confirmed mechanism behind FIVE live
+      // incidents now (2026-08-06 x2, 2026-08-07, 2026-08-23, and
+      // 2026-08-26 — the last one caught with a full transcript proving
+      // the customer never asked for a second unit at all). Legitimate
+      // when the customer really did ask for more, but far more often
+      // (2/2 incidents with a full transcript available) the model
+      // redundantly re-confirms an item after a burst of unrelated
+      // follow-up messages (address, payment method, a different item)
+      // arrived back-to-back. Only merge silently when either the
+      // model explicitly flags a real customer confirmation
+      // (confirm_quantity_increase) or the customer's own messages
+      // since this line was last touched actually reference the
+      // product again — otherwise the quantity stays put and the model
+      // is told plainly, so a genuine "quero mais uma" still gets
+      // through on the next explicit call instead of being lost.
+      const confirmed = args.confirm_quantity_increase === true
+      const mentionedAgain =
+        confirmed ||
+        !existingLine.addedAt ||
+        (await customerMentionedProductSince(ctx.db, ctx.conversationId, product.name, existingLine.addedAt))
+      if (mentionedAgain) {
+        cart = [...cartBefore]
+        mergedQuantity = previousQuantity + quantity
+        cart[exactMatchIndex] = { ...existingLine, quantity: mergedQuantity, addedAt: nowIso }
+        console.warn(
+          `[ai add_to_cart] merged into existing line — conversation ${ctx.conversationId}, product ${item.product_id} (${item.product_name}): ${previousQuantity} + ${quantity} = ${mergedQuantity} (confirmed=${confirmed})`,
+        )
+      } else {
+        cart = cartBefore
+        mergedQuantity = previousQuantity
+        blockedDuplicate = true
+        console.warn(
+          `[ai add_to_cart] blocked a silent re-add — conversation ${ctx.conversationId}, product ${item.product_id} (${item.product_name}) already at ${previousQuantity}x, no customer message since referenced it again`,
+        )
+      }
     } else if (refinementMatchIndex >= 0) {
       cart = [...cartBefore]
       mergedQuantity = cart[refinementMatchIndex]!.quantity
@@ -466,7 +526,9 @@ export const addToCartTool: ToolDefinition = {
       cart = [...cartBefore, item]
     }
 
-    await writeCart(ctx.db, ctx.conversationId, cart)
+    // Blocked case writes nothing back — `cart` is `cartBefore` itself,
+    // unchanged, so there's nothing to persist.
+    if (!blockedDuplicate) await writeCart(ctx.db, ctx.conversationId, cart)
     const { subtotal } = computeCartTotal(cart)
     // Deliberately phrased the same way whether this merged into an
     // existing line or started a new one — a message that instead
@@ -478,8 +540,9 @@ export const addToCartTool: ToolDefinition = {
     // (the model has no memory of earlier turns' tool calls) and must
     // read as a routine running-total update, not an anomaly.
     return {
-      content:
-        exactMatchIndex >= 0
+      content: blockedDuplicate
+        ? `${product.name} is already in the cart at ${mergedQuantity}x — quantity NOT changed. Nothing in the customer's messages since it was added asks for another one, so this looks like a redundant re-add rather than a real request for more. If the customer explicitly confirmed wanting an additional unit, call add_to_cart again with confirm_quantity_increase: true. Otherwise just continue — this item's quantity is already correct at ${mergedQuantity}x.`
+        : exactMatchIndex >= 0
           ? `Added ${quantity}x ${product.name} — now ${mergedQuantity}x total in the cart. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
           : noteUpdated
             ? `Noted for the ${mergedQuantity}x ${product.name} already in the cart — no new line added, quantity unchanged. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
@@ -706,7 +769,11 @@ export const placeOrderTool: ToolDefinition = {
     properties: {
       delivery_address: { type: 'string' },
       customer_name: { type: 'string' },
-      notes: { type: 'string' },
+      notes: {
+        type: 'string',
+        description:
+          "A GENERAL note about the order as a whole — e.g. a gate code, 'call on arrival', 'leave with the doorman'. Never restate an item (that's each item's own `notes` in add_to_cart, already saved and printed with it) or the payment method (already captured separately) — doing so prints the same information twice on the kitchen ticket, confirmed live (2026-08-23, Churrascaria Concórdia): an item's customization notes plus 'Pagamento: pix' got echoed into this field verbatim, duplicating what the ticket already showed for that item. Omit this field entirely when there is no order-level instruction beyond what's already on the cart/payment.",
+      },
       is_pickup: {
         type: 'boolean',
         description:

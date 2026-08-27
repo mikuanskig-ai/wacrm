@@ -73,6 +73,12 @@ function makeDb(
      *  exactly as before. Set `content_type: 'location'` to simulate a
      *  just-shared WhatsApp pin. */
     lastCustomerMessage?: { content_type: string; content_text: string | null } | null
+    /** Customer messages `customerMentionedProductSince` (tools/delivery.ts)
+     *  reads when add_to_cart is about to merge into an existing line —
+     *  the re-add duplicate-guard's evidence window. Defaults to none, so
+     *  any test that never sets this exercises the "nothing mentioned it
+     *  again" (blocked) path whenever a seeded cart line has `addedAt`. */
+    customerMessagesSince?: { content_text: string | null }[]
     /** Seeds `delivery_orders` — cancelOrderTool's own lookup/update
      *  target. Keyed by id since a test may need more than one row. */
     deliveryOrders?: Record<string, unknown>[]
@@ -85,6 +91,7 @@ function makeDb(
   const businessHours = opts.businessHours ?? null
   const feeConfig = opts.feeConfig ?? null
   const lastCustomerMessage = opts.lastCustomerMessage ?? null
+  const customerMessagesSince = opts.customerMessagesSince ?? []
   const deliveryOrders = opts.deliveryOrders ?? []
   const writes: CartLineItem[][] = []
   const orderInfoWrites: Record<string, unknown>[] = []
@@ -146,19 +153,22 @@ function makeDb(
         }
       }
       if (table === 'messages') {
-        return {
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                order: () => ({
-                  limit: () => ({
-                    maybeSingle: () => Promise.resolve({ data: lastCustomerMessage, error: null }),
-                  }),
-                }),
-              }),
-            }),
-          }),
+        // Thenable chain (same pattern as delivery_products below) so it
+        // serves both real call shapes against this table: `mostRecentSharedLocation`
+        // ends the chain in `.maybeSingle()`; `customerMentionedProductSince`
+        // (the re-add duplicate-guard) adds a `.gt()` and awaits the chain
+        // directly for an array.
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          gt: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: () => Promise.resolve({ data: lastCustomerMessage, error: null }),
+          then: (resolve: (v: { data: { content_text: string | null }[]; error: null }) => void) =>
+            resolve({ data: customerMessagesSince, error: null }),
         }
+        return chain
       }
       if (table === 'delivery_products') {
         let filtered = products
@@ -444,6 +454,88 @@ describe('addToCartTool', () => {
     // after a perfectly correct merge (confirmed live, 2026-08-06). The
     // message must sound like a routine running-total update.
     expect(res.content).not.toMatch(/already in the cart|merged/i)
+    expect(res.content).toMatch(/now 2x total/i)
+  })
+
+  it('blocks a silent re-add when nothing in the customer\'s messages since asks for more — regression, 2026-08-26', async () => {
+    // Live incident (Lucas Claro, Churrascaria Concórdia): customer said
+    // "uma m" once, the AI correctly confirmed "1 marmita M", then after a
+    // burst of unrelated follow-ups (address, switching to pickup, adding a
+    // Coke, payment method) the AI's next reply said "2 marmitas M" — the
+    // model had re-called add_to_cart for a product already committed, with
+    // no new mention of it anywhere in the transcript.
+    h.loadProductWithAddonGroups.mockResolvedValue({ id: 'p1', name: 'Marmita M', price: 28, addon_groups: [] })
+    const { db, writes, getCart } = makeDb({
+      cart: [
+        {
+          product_id: 'p1',
+          product_name: 'Marmita M',
+          unit_price: 28,
+          quantity: 1,
+          addons: [],
+          notes: null,
+          addedAt: '2026-08-26T13:10:00.000Z',
+        },
+      ],
+      // Same shape as the real burst: address, pickup, a different item,
+      // payment method — never the marmita again.
+      customerMessagesSince: [
+        { content_text: 'Na Casas Bahia anexa ao mufatto da prefeitura' },
+        { content_text: 'To indo aí busca' },
+        { content_text: 'Uma coca 600 também' },
+        { content_text: 'No débito daí' },
+      ],
+    })
+    const res = await addToCartTool.execute({ product_id: 'p1', quantity: 1 }, ctxFor(db))
+    expect(getCart()).toHaveLength(1)
+    expect(getCart()[0]).toMatchObject({ product_id: 'p1', quantity: 1 })
+    expect(writes).toHaveLength(0)
+    expect(res.content).toMatch(/already in the cart at 1x.*not changed/i)
+    expect(res.content).toContain('confirm_quantity_increase')
+  })
+
+  it('allows the merge when a customer message since then names the product again', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({ id: 'p1', name: 'Marmita M', price: 28, addon_groups: [] })
+    const { db, getCart } = makeDb({
+      cart: [
+        {
+          product_id: 'p1',
+          product_name: 'Marmita M',
+          unit_price: 28,
+          quantity: 1,
+          addons: [],
+          notes: null,
+          addedAt: '2026-08-26T13:10:00.000Z',
+        },
+      ],
+      customerMessagesSince: [{ content_text: 'Ah e quero mais uma marmita M também' }],
+    })
+    const res = await addToCartTool.execute({ product_id: 'p1', quantity: 1 }, ctxFor(db))
+    expect(getCart()[0]).toMatchObject({ product_id: 'p1', quantity: 2 })
+    expect(res.content).toMatch(/now 2x total/i)
+  })
+
+  it('allows the merge when the model explicitly confirms a real quantity increase', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({ id: 'p1', name: 'Marmita M', price: 28, addon_groups: [] })
+    const { db, getCart } = makeDb({
+      cart: [
+        {
+          product_id: 'p1',
+          product_name: 'Marmita M',
+          unit_price: 28,
+          quantity: 1,
+          addons: [],
+          notes: null,
+          addedAt: '2026-08-26T13:10:00.000Z',
+        },
+      ],
+      customerMessagesSince: [], // nothing textual — the model is vouching directly
+    })
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', quantity: 1, confirm_quantity_increase: true },
+      ctxFor(db),
+    )
+    expect(getCart()[0]).toMatchObject({ product_id: 'p1', quantity: 2 })
     expect(res.content).toMatch(/now 2x total/i)
   })
 
