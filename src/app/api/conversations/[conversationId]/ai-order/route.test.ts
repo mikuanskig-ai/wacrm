@@ -67,8 +67,8 @@ function req(path: string, payload?: unknown) {
   })
 }
 
-function params(id = 'conv-1') {
-  return { params: Promise.resolve({ id }) }
+function params(conversationId = 'conv-1') {
+  return { params: Promise.resolve({ conversationId }) }
 }
 
 const ITEM: CartLineItem = { product_id: 'p1', product_name: 'Marmita M', unit_price: 25, quantity: 1, addons: [] }

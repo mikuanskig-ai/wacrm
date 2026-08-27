@@ -6,7 +6,7 @@ import { finalizeDeliveryOrder, type CartLineItem } from '@/lib/delivery/create-
 import { readCart, writeCart } from '@/lib/ai/tools/delivery';
 import { readOrderInfo, writeOrderInfo } from '@/lib/ai/order-state';
 
-type Params = { params: Promise<{ id: string }> };
+type Params = { params: Promise<{ conversationId: string }> };
 
 // GET/POST /api/conversations/[id]/ai-order  (agent+)
 //
@@ -32,7 +32,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function GET(request: Request, { params }: Params) {
   try {
     const { supabase, accountId } = await requireRole('agent');
-    const { id: conversationId } = await params;
+    const { conversationId } = await params;
 
     const { data: conv } = await supabase
       .from('conversations')
@@ -57,7 +57,7 @@ export async function GET(request: Request, { params }: Params) {
 export async function POST(request: Request, { params }: Params) {
   try {
     const { supabase, accountId, userId } = await requireRole('agent');
-    const { id: conversationId } = await params;
+    const { conversationId } = await params;
 
     const limit = checkRateLimit(`ai-order-confirm:${userId}`, RATE_LIMITS.adminAction);
     if (!limit.success) return rateLimitResponse(limit);
