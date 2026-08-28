@@ -6,10 +6,6 @@
 
 ## Pendentes
 
-- [ ] **Limpar `ai_cart` fantasma da conversa do Edemar em produção**
-  (28/08) — 3 linhas acumuladas desde 26/08, nunca resetadas por
-  falta de `place_order`. Escrita direta em produção, bloqueada pelo
-  classificador de permissão — pedir confirmação ou rodar na mão.
 - [ ] **Rename completo pra ZDelivery** — 14/08: só a pasta local
   mudou de lugar (`clients/zontalk/zdelivery/`), o resto ainda diz
   "wacrm": `package.json` (`name`), repo do GitHub
@@ -85,9 +81,11 @@
   só quando NENHUMA linha foi tocada nas últimas 6h — mesmo limiar já
   usado na trava de merge do Ezequiel, agora fonte única em
   `create-order.ts` (`isStaleCartLine`/`isCartAbandoned`).
-- **Pendente**: adicionar a linha no crontab do VPS (não é código, é
-  infra do servidor — não mexo em crontab sem confirmar, mesmo padrão
-  dos outros crons já configurados).
+- Linha adicionada no crontab do VPS (`*/5 * * * *`, mesmo secret dos
+  outros crons) — confirmado instalado. Resolve de quebra os
+  carrinhos fantasmas do Edemar e do Ezequiel de hoje mais cedo (bem
+  além de 6h de idade) sem precisar de escrita manual em produção — a
+  própria varredura zera os dois na primeira passada.
 - 8 testes novos.
 
 ### 2026-08-28 — Duplicação de item entre dias diferentes (Ezequiel)
