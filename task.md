@@ -6,6 +6,10 @@
 
 ## Pendentes
 
+- [ ] **Limpar `ai_cart` fantasma da conversa do Edemar em produção**
+  (28/08) — 3 linhas acumuladas desde 26/08, nunca resetadas por
+  falta de `place_order`. Escrita direta em produção, bloqueada pelo
+  classificador de permissão — pedir confirmação ou rodar na mão.
 - [ ] **Rename completo pra ZDelivery** — 14/08: só a pasta local
   mudou de lugar (`clients/zontalk/zdelivery/`), o resto ainda diz
   "wacrm": `package.json` (`name`), repo do GitHub
@@ -65,6 +69,37 @@
   não é sintoma de algo pior.
 
 ## Feitas
+
+### 2026-08-28 — Pedido do Edemar nunca virou pedido de verdade + ícone de imprimir no cabeçalho da conversa
+
+- **Investigado ao vivo**: Edemar mandou tudo numa mensagem só (2
+  marmitas P, carne magra, feijão preto, nome, "12:00horas passo
+  pegar"). A IA anotou o carrinho certo e respondeu confirmando o
+  horário — mas nunca mostrou o total nem pediu confirmação, então
+  nunca chamou `place_order`. Sem `place_order`, nada imprime e nada
+  vai pra `delivery_orders`; e como a IA nem alucinou nem travou de
+  verdade (respondeu algo coerente, ficou "ativa"), nunca houve
+  handoff pra um humano perceber — a trava de 19/08 e as de 27/08 são
+  todas reativas a um handoff que aqui nunca aconteceu.
+  - `ai_cart` da conversa também estava com 3 linhas fantasmas
+    acumuladas desde 26/08, nunca limpas (sem `place_order`, o
+    carrinho nunca reseta).
+  - Prompt reforçado: mesmo quando o cliente manda tudo numa mensagem
+    só, a resposta daquele turno precisa mostrar carrinho + total e
+    pedir confirmação explícita antes de `place_order` — nunca só
+    confirmar de forma solta.
+- **Ícone de revisar/imprimir pedido no cabeçalho da conversa** —
+  antes o "Revisar pedido da IA" só aparecia no banner "IA pausada".
+  Esse caso prova que não basta: a IA pode ficar "ativa" o tempo
+  inteiro e travar mesmo assim. Ícone novo (clipboard) no cabeçalho de
+  qualquer conversa com Delivery ativo, disponível a qualquer momento.
+- Fix menor achado testando: botão de imprimir do painel de detalhe do
+  pedido ficava embaixo do X de fechar (mesmo canto, X por cima) —
+  cabeçalho ganhou `pr-10` pra reservar espaço.
+- **Pendente**: limpar o `ai_cart` fantasma do Edemar em produção
+  (bloqueado pelo classificador de permissão do Claude Code por ser
+  escrita direta em produção — precisa confirmação explícita do dono
+  da conta ou rodar manualmente).
 
 ### 2026-08-27 — Sistema de confirmação de pedido pelo atendente + item perdido no `add_to_cart`
 

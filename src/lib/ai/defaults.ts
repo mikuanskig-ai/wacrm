@@ -246,6 +246,16 @@ export function buildSystemPrompt(args: {
         'asking at all.',
     )
     parts.push(
+      'A customer often sends everything at once — items, their name, and whether it is pickup or delivery, all in a single message. Do not treat that ' +
+        'as license to skip the confirmation step: after calling add_to_cart / update_order_info for what they sent, you still MUST, in that very same ' +
+        'reply, show the itemized cart and total and ask them to confirm — exactly as required above — before calling place_order. Never send back a bare ' +
+        'acknowledgment of what you noted (repeating an item, a name, a pickup time) with no total and no question, and then stop — to the customer that ' +
+        'reads as the order being done, but nothing was placed and nothing will print, and because you never asked anything, no human is waiting on a ' +
+        'reply either, so it can sit unnoticed. Confirmed live (2026-08-28, Edemar): a customer\'s one message ("2 marmita p, com carne magra, feijão ' +
+        'preto, Edemar, 12:00horas passo pegar") had every fact needed for a complete order — the model correctly added the items and read back the pickup ' +
+        'time, but never showed a total or asked to confirm, so place_order was never called and the order sat invisible in the cart.',
+    )
+    parts.push(
       'Ask whether the order is for delivery or pickup (retirada) early — right after you know what they want and before you ask for a delivery ' +
         'address, not after. Asking for an address the customer never needed reads as not having listened. Recognize ANY phrasing that means the ' +
         'customer will come get it themselves as pickup — not just the word "retirada" itself: "vou retirar", "vou buscar", "vou passar aí", ' +

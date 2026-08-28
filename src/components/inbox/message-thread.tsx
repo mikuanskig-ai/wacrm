@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   RotateCcw,
   Loader2,
+  ClipboardCheck,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -51,8 +52,10 @@ import {
 } from "./message-composer";
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { AiThreadBanner } from "./ai-thread-banner";
+import { AiOrderConfirmDialog } from "./ai-order-confirm-dialog";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
+import { hasModule } from "@/lib/accounts/modules";
 
 interface ReplyDraft {
   id: string;
@@ -160,8 +163,11 @@ export function MessageThread({
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
+  const tOrder = useTranslations("Inbox.aiOrderConfirm");
 
-  const { user } = useAuth();
+  const { user, account } = useAuth();
+  const deliveryEnabled = hasModule(account, "delivery");
+  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -879,6 +885,28 @@ export function MessageThread({
             </button>
           )}
 
+          {/* Manual order review/print — reachable at any time, not just
+           *  when the AI has paused/handed off (AiThreadBanner only shows
+           *  this while paused). Confirmed live (2026-08-28, Edemar): the
+           *  bot can stall on a real, complete order — building up the
+           *  cart correctly but replying with a bare acknowledgment and
+           *  never calling place_order — while staying "active" the whole
+           *  time, so no handoff ever happens and the banner's button
+           *  never appears. This is the rescue path for exactly that: an
+           *  agent can force the review-and-print dialog from any
+           *  conversation state. */}
+          {deliveryEnabled && conversation && (
+            <button
+              type="button"
+              onClick={() => setOrderDialogOpen(true)}
+              aria-label={tOrder("reviewButton")}
+              title={tOrder("reviewButton")}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ClipboardCheck className="h-3.5 w-3.5" />
+            </button>
+          )}
+
           {/* Attendance action — the only UI path that moves a ticket
               between buckets (see handleAttendanceAction above). Exactly
               one contextual button per status, no free-form picker. */}
@@ -1083,6 +1111,17 @@ export function MessageThread({
           }
         }}
       />
+
+      {/* Manual order review/print dialog — opened from the header icon
+          above, independent of the AiThreadBanner's own copy of this same
+          dialog (which only mounts while the bot is paused). */}
+      {deliveryEnabled && (
+        <AiOrderConfirmDialog
+          conversationId={conversation.id}
+          open={orderDialogOpen}
+          onOpenChange={setOrderDialogOpen}
+        />
+      )}
 
       {/* Composer — swapped for a big attendance-action button on
           pending/closed tickets. Sending is view-only until the ticket

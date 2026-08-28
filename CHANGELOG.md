@@ -2,6 +2,43 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.13.0] — 2026-08-28
+
+### Adicionado
+
+- **Ícone de revisar/imprimir pedido no cabeçalho da conversa** —
+  antes só aparecia no banner "IA pausada" (só quando o bot já tinha
+  travado/passado pro humano). Confirmado ao vivo (Edemar, 28/08): o
+  bot pode ficar "ativo" o tempo todo, com o carrinho certo montado,
+  mas nunca chamar `place_order` — sem handoff, o banner nunca mostra
+  o botão. Agora o ícone (clipboard) fica no cabeçalho de qualquer
+  conversa com o módulo Delivery ativo, disponível a qualquer momento,
+  independente do estado da IA.
+
+### Corrigido
+
+- **Botão de imprimir do painel de detalhe do pedido ficava embaixo do
+  X de fechar** — os dois disputavam o mesmo canto superior direito;
+  o X (absolutamente posicionado pelo componente Sheet) ficava por
+  cima e tornava o botão de imprimir inclicável. Cabeçalho agora
+  reserva espaço (`pr-10`) pro X.
+- **Pedido completo numa mensagem só podia nunca virar pedido de
+  verdade** (Edemar, 28/08 — cliente mandou itens + nome + horário de
+  retirada tudo numa mensagem; a IA anotou o carrinho certo, respondeu
+  confirmando o horário, mas nunca mostrou o total nem pediu
+  confirmação — então nunca chamou `place_order`, nada foi impresso,
+  e como a IA não alucinou nem travou de verdade, não houve handoff
+  pro humano perceber). Prompt reforçado: mesmo quando tudo chega
+  numa mensagem só, a resposta daquele mesmo turno precisa mostrar o
+  carrinho com total e pedir confirmação explícita antes de
+  `place_order` — nunca só confirmar de forma solta ("anotei") sem
+  total nem pergunta.
+  - `ai_cart` da conversa do Edemar ficou com linhas fantasmas
+    acumuladas desde 26/08 (nunca limpas por falta de `place_order`);
+    o pedido real dele já tinha sido criado manualmente pelo atendente
+    antes desse ícone existir. Limpeza do carrinho pendente de
+    confirmação (é gravação direta em produção).
+
 ## [0.12.0] — 2026-08-27
 
 ### Adicionado
@@ -43,6 +80,15 @@
     também reforçado com o caso concreto.
   - 1 teste novo confirmando que sem o sinal explícito nada se perde;
     o teste de 07/08 original passa a exigir o sinal explícito.
+- **Hotfix de deploy do mesmo dia**: a nova rota `ai-order` foi criada
+  como `[id]/ai-order`, mas já existia `[conversationId]/attendance`
+  no mesmo nível — o Next.js exige o mesmo nome de parâmetro dinâmico
+  em todas as rotas de um mesmo nível, e isso derrubou `/login` (500)
+  por ~1 minuto até o restart seguinte. `npm run build` não pega esse
+  erro (só aparece com o servidor realmente respondendo request).
+  Corrigido renomeando a rota pra `[conversationId]/ai-order`.
+  Verificação passou a incluir `npm start` local + curl antes de
+  reenviar, não só o build.
 
 ## [0.11.4] — 2026-08-27
 

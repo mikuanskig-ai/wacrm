@@ -66,7 +66,11 @@ export function OrderDetailSheet({ open, onOpenChange, order, onStatusChanged }:
         className="bg-popover border-border text-popover-foreground sm:max-w-lg w-full p-0"
       >
         <div className="flex h-full flex-col">
-          <SheetHeader className="border-b border-border/50 p-4">
+          {/* pr-10 reserves room for SheetContent's own close (X) button,
+           *  which is absolutely positioned at top-3 right-3 over the whole
+           *  popup — without this the print button sits directly under it
+           *  (same corner, X painted on top), so it's unreachable. */}
+          <SheetHeader className="border-b border-border/50 p-4 pr-10">
             <div className="flex items-center justify-between gap-2">
               <SheetTitle className="flex items-center gap-2 text-popover-foreground">
                 {t("orderNumber", { id: order.id.slice(0, 8) })}
