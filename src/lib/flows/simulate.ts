@@ -89,7 +89,7 @@ export interface SimContact {
 }
 
 interface AoiSubState {
-  step: "product" | "addon_group";
+  step: "product" | "addon_group" | "quantity";
   product_id?: string;
   addon_group_index?: number;
   selected_addons?: SimCartAddon[];
@@ -129,6 +129,9 @@ export function createInitialState(contact: SimContact): SimState {
 const AOI_OPTION_PREFIX = "aoi_opt:";
 const AOI_DONE_PREFIX = "aoi_done:";
 const AOI_SKIP_PREFIX = "aoi_skip:";
+// Mirrors AOI_MAX_QUANTITY in engine.ts — same ceiling add_to_cart's
+// own quantity clamp uses (tools/delivery.ts).
+const AOI_MAX_QUANTITY = 20;
 
 function formatMoney(cents: number): string {
   return `R$ ${cents.toFixed(2).replace(".", ",")}`;
@@ -159,6 +162,10 @@ function renderAddonGroupPrompt(
   const all = [...optionLines, ...controlLines];
   const menu = all.map((l, i) => `${i + 1}: ${l}`).join("\n");
   return `${product.name} — ${group.name}${group.is_required ? " *" : ""}\n\n${menu}`;
+}
+
+function renderQuantityPrompt(product: SimProduct): string {
+  return `How many units of ${product.name} would you like?`;
 }
 
 function aoiGroupReplyIds(group: SimAddonGroup): string[] {
@@ -467,19 +474,29 @@ function handleAddOrderItemReply(
       return { state: prevState, messages: [{ from: "system", text: "🤖 Opção inválida." }] };
     }
     if (product.addon_groups.length === 0) {
-      return finishAddOrderItem(nodesByKey, state, node, cfg, catalog, tagNamesById, {
-        product_id: product.id,
-        product_name: product.name,
-        unit_price: product.price,
-        quantity: 1,
-        addons: [],
-      });
+      state.aoiState[node.node_key] = { step: "quantity", product_id: product.id, selected_addons: [] };
+      return { state, messages: [{ from: "bot", text: renderQuantityPrompt(product) }] };
     }
     state.aoiState[node.node_key] = { step: "addon_group", product_id: product.id, addon_group_index: 0, selected_addons: [] };
     return {
       state,
       messages: [{ from: "bot", text: renderAddonGroupPrompt(product, product.addon_groups[0], []) }],
     };
+  }
+
+  if (sub.step === "quantity") {
+    const product = catalog.find((p) => p.id === sub.product_id);
+    if (!product) {
+      return { state: prevState, messages: [{ from: "system", text: "🤖 Não foi possível continuar — produto não encontrado." }] };
+    }
+    const quantity = Math.min(Math.max(Math.trunc(n), 1), AOI_MAX_QUANTITY);
+    return finishAddOrderItem(nodesByKey, state, node, cfg, catalog, tagNamesById, {
+      product_id: product.id,
+      product_name: product.name,
+      unit_price: product.price,
+      quantity,
+      addons: sub.selected_addons ?? [],
+    });
   }
 
   const product = catalog.find((p) => p.id === sub.product_id);
@@ -531,13 +548,8 @@ function handleAddOrderItemReply(
 
   const nextIndex = groupIndex + 1;
   if (nextIndex >= product.addon_groups.length) {
-    return finishAddOrderItem(nodesByKey, state, node, cfg, catalog, tagNamesById, {
-      product_id: product.id,
-      product_name: product.name,
-      unit_price: product.price,
-      quantity: 1,
-      addons: selected,
-    });
+    state.aoiState[node.node_key] = { step: "quantity", product_id: product.id, selected_addons: selected };
+    return { state, messages: [{ from: "bot", text: renderQuantityPrompt(product) }] };
   }
   state.aoiState[node.node_key] = { step: "addon_group", product_id: product.id, addon_group_index: nextIndex, selected_addons: selected };
   return {

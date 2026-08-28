@@ -144,26 +144,37 @@ export type EndNodeConfig = Record<string, never>;
 
 /**
  * Zontalk Delivery — presents the account's active products (optionally
- * scoped to one category) as a WhatsApp list, then walks the customer
- * through any required/optional add-on groups on the picked product one
- * group at a time. Unlike every other suspending node, a single visit
- * to this node can suspend MULTIPLE times (product pick, then one
- * suspend per add-on group) before it finally advances — the in-flight
- * picker state lives in `flow_runs.vars["__aoi_" + node_key]`, not in
- * this config. See `handleAddOrderItemReply` in engine.ts.
+ * scoped to one category) as a plain numbered text list ("1: Marmita P
+ * — R$20\n2: Marmita M — R$25..."), the customer replies with the
+ * number, then walks them through any required/optional add-on groups
+ * on the picked product one group at a time (same numbered-text style),
+ * and finally asks how many units before adding the line to the cart.
+ * Not a real WhatsApp interactive list/button message — those were
+ * removed account-wide when the channel moved to wuzapi/whatsmeow,
+ * which has no equivalent (see the comment on sendNumericMenuAndSuspend).
+ * A single visit to this node can suspend MULTIPLE times (product pick,
+ * one suspend per add-on group, then quantity) before it finally
+ * advances — the in-flight picker state lives in
+ * `flow_runs.vars["__aoi_" + node_key]`, not in this config. See
+ * `handleAddOrderItemReplyInner` in engine.ts.
  *
- * WhatsApp list rows cap at 10 total (`INTERACTIVE_LIMITS.maxListRowsTotal`
- * in meta-api.ts) — an account with more than 10 active products in a
- * category only shows the first 10. Chain multiple `add_order_item`
- * nodes (one per category) rather than trying to list everything at
- * once; not enforced by the validator in this pass.
+ * The product list is capped at 10 (leftover from the old WhatsApp list
+ * cap, kept as a UX limit even now that it's plain text — nobody wants
+ * to scroll a 14-line numbered menu). An account with more than 10
+ * active products in a category only shows the first 10. Chain
+ * multiple `add_order_item` nodes (one per category) rather than
+ * trying to list everything at once; not enforced by the validator in
+ * this pass.
  */
 export interface AddOrderItemNodeConfig {
   /** Restrict the product list to one delivery_categories.id. Omitted/empty = every active product. */
   category_id?: string;
   /** Body text shown above the product list. */
   prompt_text: string;
-  /** Label of the tap-to-expand button on the product-list message. */
+  /** Required by the node-config form/validator, but not read by the
+   *  current text-based renderer (sendAddOrderItemProductPrompt) —
+   *  leftover from when the product list was a real tap-to-expand
+   *  WhatsApp button, before that channel-level capability was removed. */
   button_label: string;
   /**
    * Key under which the accumulated cart (an array of
@@ -173,7 +184,7 @@ export interface AddOrderItemNodeConfig {
    */
   cart_var_key: string;
   /** Node to advance to once the picked product (+ its add-on groups,
-   *  if any) has been fully resolved into one cart line. */
+   *  if any, + quantity) has been fully resolved into one cart line. */
   next_node_key: string;
 }
 

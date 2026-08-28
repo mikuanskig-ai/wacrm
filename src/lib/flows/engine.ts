@@ -369,9 +369,19 @@ const AOI_PRODUCT_REPLY_PREFIX = "aoi_product:";
 const AOI_OPTION_REPLY_PREFIX = "aoi_opt:";
 const AOI_DONE_REPLY_PREFIX = "aoi_done:";
 const AOI_SKIP_REPLY_PREFIX = "aoi_skip:";
+// Not a lookup into a rendered list like the three prefixes above — the
+// "quantity" step asks an open question ("how many?"), so the reply
+// number itself IS the answer. resolveAoiNumericReply still funnels it
+// through the same reply-id shape (`aoi_qty:<n>`) so this step reuses
+// the exact same dispatch path as every other add_order_item sub-step
+// instead of needing a special case at the call site.
+const AOI_QTY_REPLY_PREFIX = "aoi_qty:";
+// Same ceiling add_to_cart's own quantity clamp uses (tools/delivery.ts)
+// — one consistent "how many of one thing is even plausible" limit.
+const AOI_MAX_QUANTITY = 20;
 
 interface AddOrderItemRuntimeState {
-  step: "product" | "addon_group";
+  step: "product" | "addon_group" | "quantity";
   product_id?: string;
   addon_group_index?: number;
   selected_addons?: CartLineItemAddon[];
@@ -602,6 +612,35 @@ async function sendAddOrderItemGroupPrompt(
 }
 
 /**
+ * Asks how many units of the already-fully-resolved product (addons
+ * decided, if it had any) the customer wants — the last step before
+ * the item is added to the cart. A plain open question, not a
+ * numbered menu: the customer's reply IS the quantity, not an index
+ * into a list of choices.
+ */
+async function sendAddOrderItemQuantityPrompt(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+  product: ProductWithAddonGroups,
+): Promise<void> {
+  const bodyText = `How many units of ${product.name} would you like?`;
+  const { whatsapp_message_id } = await engineSendText({
+    accountId: run.account_id,
+    userId: run.user_id,
+    conversationId: run.conversation_id!,
+    contactId: run.contact_id!,
+    text: bodyText,
+  });
+  await logEvent(db, run.id, "message_sent", node.node_key, {
+    node_type: "add_order_item",
+    step: "quantity",
+    whatsapp_message_id,
+  });
+  await persistLastPromptMessage(db, run, whatsapp_message_id);
+}
+
+/**
  * Reconstructs the numbered order rendered by
  * {@link sendAddOrderItemGroupPrompt} for the SAME group/selections
  * (options first, then Done/Skip in that fixed order), so a numeric
@@ -698,6 +737,11 @@ async function resolveAoiNumericReply(
     const ids = await loadAoiProductReplyIds(db, run, cfg);
     return ids[n - 1] ?? null;
   }
+  if (state.step === "quantity") {
+    // Open question, not a list — the number itself is the answer, so
+    // there's nothing to look up against a rendered prompt.
+    return `${AOI_QTY_REPLY_PREFIX}${n}`;
+  }
   const product = await loadProductWithAddonGroups(db, run.account_id, state.product_id);
   const group = product?.addon_groups[state.addon_group_index ?? 0];
   if (!group) return null;
@@ -743,13 +787,13 @@ async function handleAddOrderItemReplyInner(
     if (!product) return null;
 
     if (product.addon_groups.length === 0) {
-      return finishAddOrderItem(db, run, node, cfg, nodes, {
+      await persistAoiState(db, run, stateKey, {
+        step: "quantity",
         product_id: product.id,
-        product_name: product.name,
-        unit_price: product.price,
-        quantity: 1,
-        addons: [],
+        selected_addons: [],
       });
+      await sendAddOrderItemQuantityPrompt(db, run, node, product);
+      return { consumed: true, flow_run_id: run.id, outcome: "advanced" };
     }
     await persistAoiState(db, run, stateKey, {
       step: "addon_group",
@@ -759,6 +803,27 @@ async function handleAddOrderItemReplyInner(
     });
     await sendAddOrderItemGroupPrompt(db, run, node, product, 0);
     return { consumed: true, flow_run_id: run.id, outcome: "advanced" };
+  }
+
+  if (state.step === "quantity") {
+    if (!replyId.startsWith(AOI_QTY_REPLY_PREFIX) || !state.product_id) return null;
+    const product = await loadProductWithAddonGroups(db, run.account_id, state.product_id);
+    if (!product) return null;
+    const requested = Number(replyId.slice(AOI_QTY_REPLY_PREFIX.length));
+    // Same clamp add_to_cart applies (tools/delivery.ts) — never 0 (the
+    // customer already committed to this product by picking it; 0
+    // units isn't a real answer, it's a non-answer), never absurdly
+    // high from a typo.
+    const quantity = Number.isFinite(requested)
+      ? Math.min(Math.max(Math.trunc(requested), 1), AOI_MAX_QUANTITY)
+      : 1;
+    return finishAddOrderItem(db, run, node, cfg, nodes, {
+      product_id: product.id,
+      product_name: product.name,
+      unit_price: product.price,
+      quantity,
+      addons: state.selected_addons ?? [],
+    });
   }
 
   // step === "addon_group"
@@ -815,13 +880,13 @@ async function handleAddOrderItemReplyInner(
 
   const nextIndex = groupIndex + 1;
   if (nextIndex >= product.addon_groups.length) {
-    return finishAddOrderItem(db, run, node, cfg, nodes, {
+    await persistAoiState(db, run, stateKey, {
+      step: "quantity",
       product_id: product.id,
-      product_name: product.name,
-      unit_price: product.price,
-      quantity: 1,
-      addons: selected,
+      selected_addons: selected,
     });
+    await sendAddOrderItemQuantityPrompt(db, run, node, product);
+    return { consumed: true, flow_run_id: run.id, outcome: "advanced" };
   }
   await persistAoiState(db, run, stateKey, {
     step: "addon_group",

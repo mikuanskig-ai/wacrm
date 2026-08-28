@@ -2,6 +2,40 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.16.0] — 2026-08-28
+
+### Adicionado
+
+- **Passo de quantidade no `add_order_item` do Flow Builder** — nó
+  determinístico de pedido por menu numerado (sem IA, sem risco de
+  duplicar/perder item) até agora só sabia adicionar 1 unidade por
+  vez; pra pedir 2x era preciso escolher o mesmo produto duas vezes,
+  virando duas linhas separadas de 1x em vez de uma linha de 2x. Agora,
+  depois de escolher o produto (e resolver os adicionais, se tiver),
+  pergunta "quantas unidades?" antes de fechar a linha do carrinho.
+  Mesmo limite de 20 do `add_to_cart` da IA (`tools/delivery.ts`), pra
+  manter um teto consistente em todo o app.
+  - Implementado em `engine.ts` (motor real) e espelhado em
+    `simulate.ts` (simulador do editor de fluxo, que reimplementa a
+    mesma máquina de estado só que em memória, sem tocar o banco) —
+    os dois precisavam mudar juntos ou o simulador ficaria mostrando
+    um comportamento diferente do que realmente acontece no WhatsApp.
+  - Aproveitei pra corrigir a documentação desatualizada do tipo
+    `AddOrderItemNodeConfig` (ainda falava em "lista interativa
+    tocável" e limite de 10 da Meta — isso foi removido faz tempo
+    quando o canal migrou pra wuzapi/whatsmeow, que não tem
+    equivalente; hoje é tudo texto numerado simples, confirmado lendo
+    o código de `sendNumericMenuAndSuspend`).
+  - 3 testes novos em `simulate.test.ts` (pergunta quantidade sem
+    adicional, reflete no total com >1 unidade, clampa em 20).
+  - **Nota honesta**: o motor real (`engine.ts`) não tem teste unitário
+    dedicado pro `add_order_item` — isso já era assim antes dessa
+    mudança (nenhum teste existente cobria `handleAddOrderItemReply`/
+    `finishAddOrderItem`/`dispatchInboundToFlows`), só o simulador
+    tinha cobertura. A lógica nova no motor espelha exatamente a do
+    simulador (mesmas constantes, mesmos ramos), mas não é a mesma
+    coisa que testar o motor de verdade.
+
 ## [0.15.0] — 2026-08-28
 
 ### Adicionado

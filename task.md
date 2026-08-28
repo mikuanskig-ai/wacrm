@@ -66,6 +66,40 @@
 
 ## Feitas
 
+### 2026-08-28 — Passo de quantidade no Flow Builder (`add_order_item`)
+
+- Contexto: conversa sobre trazer um caminho de pedido determinístico
+  (menu por botão/texto numerado, sem IA) pra Concórdia, como
+  alternativa mais confiável ao chat livre — já existia praticamente
+  pronto no motor de Flows (`add_order_item`/`order_summary`), só
+  nunca foi usado (Concórdia tem zero fluxos configurados hoje).
+  Testando o desenho junto com o dono da conta, achado um gap real:
+  não dava pra pedir "2x Marmita M" — só somava 1 por vez, e pedir 2x
+  virava duas linhas separadas em vez de uma só.
+- Corrigido: novo passo "quantas unidades?" depois de escolher o
+  produto (e os adicionais, se tiver), antes de fechar a linha do
+  carrinho. Mesmo teto de 20 do `add_to_cart` da IA.
+- Confirmado que o zdelivery já resolveu o problema de "wuzapi não tem
+  botão" faz tempo — `numeric_menu`/`add_order_item`/`order_summary`
+  já mandam tudo como lista numerada em texto simples desde que os
+  botões/listas interativas da Meta foram removidos (whatsmeow não tem
+  equivalente). Documentação do tipo `AddOrderItemNodeConfig`
+  (`types.ts`) estava desatualizada falando de "lista tocável" —
+  corrigida.
+- Implementado nos dois lugares que precisam ficar em sincronia:
+  `engine.ts` (motor real) e `simulate.ts` (simulador do editor,
+  reimplementação paralela em memória) — 3 testes novos no simulador.
+  **Motor real não tem teste unitário dedicado pra `add_order_item`**
+  (gap pré-existente, não introduzido agora) — só o simulador tem
+  cobertura; a lógica nova espelha a dele constante por constante.
+- **Ainda não configurado pra Concórdia**: isso é só a peça de código
+  destravada — falta desenhar/montar o fluxo de verdade pra eles
+  (categorias no catálogo pra não estourar 10 itens por tela, e decidir
+  como modelar "sem macarrão"/"carne magra" — hoje são texto livre que
+  o `add_order_item` não captura, precisa virar grupo de adicional ou
+  um novo passo de observação livre) e decidir o gatilho (substitui a
+  IA pros pedidos, ou roda lado a lado por palavra-chave).
+
 ### 2026-08-28 — Sistema de limpeza automática de carrinho abandonado (pedido do dono da conta)
 
 - Terceiro caso do mesmo padrão no mesmo dia (Edemar de manhã,

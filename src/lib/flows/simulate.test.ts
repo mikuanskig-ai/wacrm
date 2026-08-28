@@ -186,14 +186,74 @@ describe("advance", () => {
     expect(pickedProduct.messages[0].text).toContain("Size");
 
     // Pick addon option 2 (Large, +10) — required single-select group,
-    // so this should auto-finish the item and land on order_summary.
+    // so the group is now fully resolved and it should ask quantity
+    // next, not finish the item yet.
     const pickedAddon = reply(graph, pickedProduct.state, "2", catalog, new Map());
-    expect(pickedAddon.messages.some((m) => m.text.includes("Total: R$ 40,00"))).toBe(true);
+    expect(pickedAddon.messages.some((m) => m.text.includes("How many units of Pizza"))).toBe(true);
+
+    // Answer quantity (1) — only now does the item actually land on
+    // order_summary.
+    const pickedQuantity = reply(graph, pickedAddon.state, "1", catalog, new Map());
+    expect(pickedQuantity.messages.some((m) => m.text.includes("Total: R$ 40,00"))).toBe(true);
 
     // Finish the order (option 2 on the summary prompt).
-    const finished = reply(graph, pickedAddon.state, "2", catalog, new Map());
+    const finished = reply(graph, pickedQuantity.state, "2", catalog, new Map());
     expect(finished.state.vars.last_order_id).toBe("SIMULADO");
     expect(finished.messages.some((m) => m.text.includes("Order placed"))).toBe(true);
     expect((finished.state.vars.cart as unknown[] | undefined)).toBeUndefined();
+  });
+
+  it("asks quantity for a product with no addon groups, and reflects it in the cart total", () => {
+    const catalog: SimProduct[] = [
+      { id: "p1", name: "Água", price: 6, category_id: null, addon_groups: [] },
+    ];
+    const graph = nodes([
+      {
+        node_key: "add",
+        node_type: "add_order_item",
+        config: { prompt_text: "Pick a product", button_label: "Menu", cart_var_key: "cart", next_node_key: "summary" },
+      },
+      {
+        node_key: "summary",
+        node_type: "order_summary",
+        config: { cart_var_key: "cart", add_more_next_node_key: "add", finish_next_node_key: "done" },
+      },
+      { node_key: "done", node_type: "send_message", config: { text: "Order placed", next_node_key: "end" } },
+      { node_key: "end", node_type: "end", config: {} },
+    ]);
+
+    const started = advance(graph, "add", createInitialState({}), catalog, new Map());
+    const pickedProduct = reply(graph, started.state, "1", catalog, new Map());
+    expect(pickedProduct.messages.some((m) => m.text.includes("How many units of Água"))).toBe(true);
+
+    // 3x Água — R$18,00, not 3 separate 1x lines.
+    const pickedQuantity = reply(graph, pickedProduct.state, "3", catalog, new Map());
+    expect(pickedQuantity.messages.some((m) => m.text.includes("3x Água"))).toBe(true);
+    expect(pickedQuantity.messages.some((m) => m.text.includes("Total: R$ 18,00"))).toBe(true);
+  });
+
+  it("clamps an absurd quantity reply the same way add_to_cart does (max 20)", () => {
+    const catalog: SimProduct[] = [
+      { id: "p1", name: "Água", price: 6, category_id: null, addon_groups: [] },
+    ];
+    const graph = nodes([
+      {
+        node_key: "add",
+        node_type: "add_order_item",
+        config: { prompt_text: "Pick a product", button_label: "Menu", cart_var_key: "cart", next_node_key: "summary" },
+      },
+      {
+        node_key: "summary",
+        node_type: "order_summary",
+        config: { cart_var_key: "cart", add_more_next_node_key: "add", finish_next_node_key: "done" },
+      },
+      { node_key: "done", node_type: "send_message", config: { text: "Order placed", next_node_key: "end" } },
+      { node_key: "end", node_type: "end", config: {} },
+    ]);
+
+    const started = advance(graph, "add", createInitialState({}), catalog, new Map());
+    const pickedProduct = reply(graph, started.state, "1", catalog, new Map());
+    const pickedQuantity = reply(graph, pickedProduct.state, "999", catalog, new Map());
+    expect(pickedQuantity.messages.some((m) => m.text.includes("20x Água"))).toBe(true);
   });
 });
