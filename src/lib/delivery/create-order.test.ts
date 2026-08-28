@@ -17,7 +17,14 @@ vi.mock("@/lib/whatsapp/send-message", () => ({
   sendMessageToConversation: vi.fn(async () => ({ messageId: "m1" })),
 }));
 
-import { computeCartTotal, finalizeDeliveryOrder, type CartLineItem } from "./create-order";
+import {
+  computeCartTotal,
+  finalizeDeliveryOrder,
+  isStaleCartLine,
+  isCartAbandoned,
+  STALE_CART_LINE_MS,
+  type CartLineItem,
+} from "./create-order";
 import { getPaymentConfigSecrets } from "@/lib/payments/config";
 import { createPreference } from "@/lib/payments/mercadopago-api";
 import { sendMessageToConversation } from "@/lib/whatsapp/send-message";
@@ -32,6 +39,44 @@ function line(overrides: Partial<CartLineItem> = {}): CartLineItem {
     ...overrides,
   };
 }
+
+describe("isStaleCartLine", () => {
+  const now = "2026-08-28T14:00:00.000Z";
+
+  it("is not stale just under the 6h threshold", () => {
+    const addedAt = new Date(new Date(now).getTime() - (STALE_CART_LINE_MS - 60_000)).toISOString();
+    expect(isStaleCartLine(line({ addedAt }), now)).toBe(false);
+  });
+
+  it("is stale just over the 6h threshold", () => {
+    const addedAt = new Date(new Date(now).getTime() - (STALE_CART_LINE_MS + 60_000)).toISOString();
+    expect(isStaleCartLine(line({ addedAt }), now)).toBe(true);
+  });
+
+  it("treats a missing addedAt (legacy data) as stale, not safe to merge", () => {
+    // Regression, 2026-08-28 (Ezequiel): the old gate treated a missing
+    // addedAt as an automatic "yes, merge" bypass — exactly backwards.
+    expect(isStaleCartLine(line({ addedAt: undefined }), now)).toBe(true);
+  });
+});
+
+describe("isCartAbandoned", () => {
+  const now = "2026-08-28T14:00:00.000Z";
+  const fresh = new Date(new Date(now).getTime() - 60_000).toISOString();
+  const old = new Date(new Date(now).getTime() - (STALE_CART_LINE_MS + 60_000)).toISOString();
+
+  it("is false for an empty cart — nothing to abandon", () => {
+    expect(isCartAbandoned([], now)).toBe(false);
+  });
+
+  it("is true when every line is stale — regression, 2026-08-28 (Fernanda: unrelated leftover items rode along into a new order's summary)", () => {
+    expect(isCartAbandoned([line({ addedAt: old }), line({ addedAt: old })], now)).toBe(true);
+  });
+
+  it("is false when even one line is fresh — an order actively in progress is never swept", () => {
+    expect(isCartAbandoned([line({ addedAt: old }), line({ addedAt: fresh })], now)).toBe(false);
+  });
+});
 
 describe("computeCartTotal", () => {
   it("returns zero subtotal for an empty cart", () => {

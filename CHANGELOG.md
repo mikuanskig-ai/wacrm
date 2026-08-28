@@ -2,6 +2,41 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.15.0] — 2026-08-28
+
+### Adicionado
+
+- **Carrinho abandonado é limpo automaticamente** — pedido direto do
+  dono da conta depois de um segundo caso no mesmo dia (Fernanda: pediu
+  "uma marmita P sem macarrão", a IA confirmou 3 itens — 2 deles
+  fantasmas, de uma sessão de dias atrás nunca finalizada). A trava de
+  6h já impedia a soma errada (caso do Ezequiel), mas não impedia
+  itens de dias diferentes simplesmente ficarem juntos no carrinho pra
+  sempre — essa é a correção geral por trás dos dois casos pontuais de
+  hoje.
+  - Novo `GET /api/delivery/cron` (mesmo padrão de
+    `/api/automations/cron` e `/api/flows/cron`: secret via
+    `x-cron-secret`, reaproveita `AUTOMATION_CRON_SECRET`). Rodando a
+    cada 5 minutos, zera (`ai_cart = []`) qualquer conversa cujo
+    carrinho não teve NENHUMA linha tocada nas últimas 6h — mesmo
+    limiar que a trava de merge já usa, agora exportado de
+    `create-order.ts` como fonte única (`isStaleCartLine`,
+    `isCartAbandoned`) em vez de duplicado.
+  - Só limpa carrinho de verdade abandonado — uma única linha recente
+    já é suficiente pra NÃO mexer em nada (nunca interrompe um pedido
+    em andamento). `ai_order_info` (nome, endereço, pagamento) não é
+    tocado — permanece útil pro próximo pedido.
+  - Escolhido varredura a cada 5 min em vez de "zerar à meia-noite":
+    não depende do fuso de cada conta, não corre risco de apagar um
+    pedido em andamento bem na virada do dia, e limpa o carrinho
+    abandonado muito mais rápido (minutos, não até a próxima
+    meia-noite).
+  - 8 testes novos (`isStaleCartLine`/`isCartAbandoned` em
+    `create-order.test.ts`, rota em `cron/route.test.ts`).
+  - **Requer configuração no VPS**: `*/5 * * * * curl -H
+    "x-cron-secret: ..." https://v2.zontalk.shop/api/delivery/cron` no
+    crontab do servidor (mesmo secret já usado pelos outros crons).
+
 ## [0.14.0] — 2026-08-28
 
 ### Corrigido

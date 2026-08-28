@@ -70,6 +70,26 @@
 
 ## Feitas
 
+### 2026-08-28 — Sistema de limpeza automática de carrinho abandonado (pedido do dono da conta)
+
+- Terceiro caso do mesmo padrão no mesmo dia (Edemar de manhã,
+  Ezequiel depois, agora Fernanda: "uma marmita P sem macarrão" virou
+  3 itens confirmados — 2 fantasmas de uma sessão de dias atrás).
+  Pedido direto: zerar carrinho dos contatos todo dia pra essas
+  duplicações pararem de vez.
+- Implementado como varredura (`GET /api/delivery/cron`, a cada 5 min
+  via crontab, mesmo `AUTOMATION_CRON_SECRET` dos outros crons) em vez
+  de "zerar à meia-noite": não depende de fuso por conta, nunca corta
+  um pedido em andamento bem na virada do dia, e reage em minutos, não
+  só na próxima madrugada. Limpa carrinho inteiro (`ai_cart = []`)
+  só quando NENHUMA linha foi tocada nas últimas 6h — mesmo limiar já
+  usado na trava de merge do Ezequiel, agora fonte única em
+  `create-order.ts` (`isStaleCartLine`/`isCartAbandoned`).
+- **Pendente**: adicionar a linha no crontab do VPS (não é código, é
+  infra do servidor — não mexo em crontab sem confirmar, mesmo padrão
+  dos outros crons já configurados).
+- 8 testes novos.
+
 ### 2026-08-28 — Duplicação de item entre dias diferentes (Ezequiel)
 
 - Reportado com print: cliente quase diário ("marmita média pro

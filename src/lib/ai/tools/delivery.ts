@@ -31,6 +31,7 @@ import { loadProductWithAddonGroups, type ProductWithAddonGroups } from '@/lib/f
 import {
   computeCartTotal,
   finalizeDeliveryOrder,
+  isStaleCartLine,
   type CartLineItem,
   type CartLineItemAddon,
 } from '@/lib/delivery/create-order'
@@ -75,29 +76,10 @@ async function customerMentionedProductSince(
   })
 }
 
-/** A cart line older than this never merges by sum — it always starts a
- *  fresh line instead. This account's conversations are long-lived (the
- *  same WhatsApp thread carries every order a regular customer ever
- *  places, days or weeks apart), so `customerMentionedProductSince`
- *  above is not actually a safe gate on its own: a repeat customer's
- *  very first message of a NEW day almost always re-mentions the
- *  product by name ("queria pedir uma marmita média" again), which
- *  trivially satisfies that check even though it has nothing to do
- *  with the leftover line from their last visit. Confirmed live
- *  (2026-08-28, Ezequiel, who orders "marmita média pro meio-dia"
- *  almost daily): a cart line from a previous day's abandoned session
- *  (never cleared because that session's place_order was never called)
- *  silently absorbed today's single marmita into 1 + 1 = 2, and the
- *  confirmation summary showed double what today's message actually
- *  asked for. 6 hours comfortably covers any single real order
- *  session (including slow back-and-forth) while safely catching
- *  "this is a different day's order." */
-const STALE_CART_LINE_MS = 6 * 60 * 60 * 1000
-
-function isStaleCartLine(line: CartLineItem, nowIso: string): boolean {
-  if (!line.addedAt) return true
-  return new Date(nowIso).getTime() - new Date(line.addedAt).getTime() > STALE_CART_LINE_MS
-}
+// isStaleCartLine (used just below, in add_to_cart's merge gate) now
+// lives in create-order.ts — imported above — so the sweep cron
+// (/api/delivery/cart-sweep/cron) shares the exact same definition of
+// "stale" instead of drifting apart from this tool's own guard.
 
 /** Model-facing explanation for a failed fee calculation — tells the
  *  assistant what to ask the customer for next, never a raw code. */
@@ -533,8 +515,8 @@ export const addToCartTool: ToolDefinition = {
           )
         : -1
 
-    // A stale match (see isStaleCartLine's doc above) is never treated
-    // as the same order — it always starts a fresh line, exactly like
+    // A stale match (see isStaleCartLine's doc in create-order.ts) is
+    // never treated as the same order — it always starts a fresh line, exactly like
     // exactMatchIndex being -1, regardless of confirm_quantity_increase
     // or what the customer's messages say (a repeat customer's new-day
     // message naturally re-mentions the product, which is not evidence

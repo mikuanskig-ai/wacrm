@@ -44,6 +44,39 @@ export interface CartTotal {
   subtotal: number;
 }
 
+/** A cart line older than this never merges by sum in `add_to_cart`
+ *  (tools/delivery.ts's exact-match guard), and is what the sweep cron
+ *  (`/api/delivery/cart-sweep/cron`) treats as an abandoned session
+ *  worth clearing outright. Lives here rather than in tools/delivery.ts
+ *  so both consumers share one definition of "stale" instead of
+ *  drifting apart. Confirmed live (2026-08-28, Ezequiel — a near-daily
+ *  "marmita média pro meio-dia" regular): a line left over from a
+ *  previous day's abandoned session (place_order never called, so
+ *  ai_cart never reset) silently absorbed a brand-new request into
+ *  itself — 1 + 1 = 2. Missing `addedAt` (legacy data written before
+ *  this field existed) counts as stale too — there's no way to know
+ *  its real age, and treating "unknown" as safe-to-merge is exactly
+ *  what let that incident through. 6 hours comfortably covers any
+ *  single real order session (including slow back-and-forth) while
+ *  safely catching "this is a different day's order." */
+export const STALE_CART_LINE_MS = 6 * 60 * 60 * 1000;
+
+export function isStaleCartLine(line: CartLineItem, nowIso: string): boolean {
+  if (!line.addedAt) return true;
+  return new Date(nowIso).getTime() - new Date(line.addedAt).getTime() > STALE_CART_LINE_MS;
+}
+
+/** True when EVERY line in a non-empty cart is stale — i.e. nothing in
+ *  it has been touched inside the staleness window, so the whole
+ *  session reads as abandoned rather than "an order in progress that
+ *  happens to have one older line." A single fresh line is enough to
+ *  keep the whole cart alive; only clear when nothing recent anchors
+ *  it to a real, ongoing conversation. */
+export function isCartAbandoned(cart: CartLineItem[], nowIso: string): boolean {
+  if (cart.length === 0) return false;
+  return cart.every((line) => isStaleCartLine(line, nowIso));
+}
+
 /**
  * Pure — sums (unit_price + sum of addon price_deltas) * quantity across
  * every cart line. Rounded to cents so float drift never lands a
