@@ -70,6 +70,31 @@
 
 ## Feitas
 
+### 2026-08-28 — Duplicação de item entre dias diferentes (Ezequiel)
+
+- Reportado com print: cliente quase diário ("marmita média pro
+  meio-dia") pediu 1 marmita, resumo final mostrou 2x. Achado no
+  banco/log: `[ai add_to_cart] merged into existing line ... 1 + 1 =
+  2`. Causa: uma linha de carrinho de uma sessão de dias atrás (nunca
+  resetada por falta de `place_order` — mesma causa-raiz do caso do
+  Edemar acima) ainda estava lá; a trava de 26/08
+  (`customerMentionedProductSince`) só checa se algum texto do cliente
+  desde então cita o produto de novo — e claro que cita, ele tá
+  pedindo o mesmo prato de novo hoje. Aprovou a soma sem relação
+  nenhuma com o pedido de hoje.
+- Corrigido: linha de carrinho com mais de 6h nunca funde por soma —
+  sempre vira linha nova, mesmo com confirmação explícita do modelo ou
+  menção do cliente. Linha sem `addedAt` (dado legado) também conta
+  como velha demais (antes pulava a trava). 2 testes novos + 3
+  ajustados pra timestamp relativo (senão ficariam velhos sozinhos com
+  o tempo).
+- **Confirma o padrão maior**: `ai_cart` não sendo limpo de forma
+  confiável quando um pedido não é finalizado é a causa raiz por trás
+  de pelo menos 2 incidentes no mesmo dia (Edemar + Ezequiel). A trava
+  de 6h ataca o sintoma (evita a linha fantasma contaminar um pedido
+  novo); a causa em si — carrinho nunca reseta sem `place_order` —
+  seguiria valendo a pena revisitar se continuar aparecendo.
+
 ### 2026-08-28 — Pedido do Edemar nunca virou pedido de verdade + ícone de imprimir no cabeçalho da conversa
 
 - **Investigado ao vivo**: Edemar mandou tudo numa mensagem só (2

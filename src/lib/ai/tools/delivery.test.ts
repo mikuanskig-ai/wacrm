@@ -436,6 +436,9 @@ describe('addToCartTool', () => {
     // one customer request for "uma marmita" ended up as three separate
     // 1x lines (R$60 instead of R$20) after the model re-added it on
     // later turns — and then got stuck with no way to undo it.
+    // `addedAt` is recent (well inside the staleness window — see
+    // isStaleCartLine) and a customer message mentions the product
+    // again, both required since the 2026-08-26/2026-08-28 guards.
     h.loadProductWithAddonGroups.mockResolvedValue({
       id: 'p1',
       name: 'Marmita P',
@@ -443,7 +446,18 @@ describe('addToCartTool', () => {
       addon_groups: [],
     })
     const { db, writes, getCart } = makeDb({
-      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: null }],
+      cart: [
+        {
+          product_id: 'p1',
+          product_name: 'Marmita P',
+          unit_price: 20,
+          quantity: 1,
+          addons: [],
+          notes: null,
+          addedAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ],
+      customerMessagesSince: [{ content_text: 'Quero uma marmita P' }],
     })
     const res = await addToCartTool.execute({ product_id: 'p1', quantity: 1 }, ctxFor(db))
     expect(getCart()).toHaveLength(1)
@@ -474,7 +488,10 @@ describe('addToCartTool', () => {
           quantity: 1,
           addons: [],
           notes: null,
-          addedAt: '2026-08-26T13:10:00.000Z',
+          // Recent (well inside the staleness window — see
+          // isStaleCartLine) so this exercises the mention-gating this
+          // test is actually about, not the separate staleness guard.
+          addedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
         },
       ],
       // Same shape as the real burst: address, pickup, a different item,
@@ -505,7 +522,7 @@ describe('addToCartTool', () => {
           quantity: 1,
           addons: [],
           notes: null,
-          addedAt: '2026-08-26T13:10:00.000Z',
+          addedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
         },
       ],
       customerMessagesSince: [{ content_text: 'Ah e quero mais uma marmita M também' }],
@@ -526,7 +543,7 @@ describe('addToCartTool', () => {
           quantity: 1,
           addons: [],
           notes: null,
-          addedAt: '2026-08-26T13:10:00.000Z',
+          addedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
         },
       ],
       customerMessagesSince: [], // nothing textual — the model is vouching directly
@@ -537,6 +554,58 @@ describe('addToCartTool', () => {
     )
     expect(getCart()[0]).toMatchObject({ product_id: 'p1', quantity: 2 })
     expect(res.content).toMatch(/now 2x total/i)
+  })
+
+  it('starts a new line instead of merging into a stale existing line, even when the customer re-mentions the product — regression, 2026-08-28 (Ezequiel, "marmita média pro meio-dia" near-daily order)', async () => {
+    // Live incident: a cart line from a previous day's abandoned
+    // session (place_order never called, so ai_cart never reset) sat
+    // around for days. When the same customer started a brand new
+    // order the next time and re-mentioned the product by name (as any
+    // repeat customer naturally would — they're ordering it again),
+    // the OLD gate ("did a customer message since mention the product
+    // again?") was trivially satisfied and silently summed 1 + 1 = 2 —
+    // double what today's message actually asked for. A stale line
+    // must never merge, no matter what the customer's messages say.
+    h.loadProductWithAddonGroups.mockResolvedValue({ id: 'p1', name: 'Marmita M', price: 28, addon_groups: [] })
+    const { db, getCart } = makeDb({
+      cart: [
+        {
+          product_id: 'p1',
+          product_name: 'Marmita M',
+          unit_price: 28,
+          quantity: 1,
+          addons: [],
+          notes: null,
+          addedAt: '2026-08-21T14:08:57.000Z', // days before "now"
+        },
+      ],
+      // The exact trap: a same-day message that names the product is
+      // normally enough to allow a merge (see the test above) — here it
+      // must NOT be, because the existing line is stale.
+      customerMessagesSince: [{ content_text: 'Queria pedir uma marmita média' }],
+    })
+    const res = await addToCartTool.execute({ product_id: 'p1', quantity: 1 }, ctxFor(db))
+    expect(getCart()).toHaveLength(2)
+    expect(getCart()[0]).toMatchObject({ product_id: 'p1', quantity: 1 })
+    expect(getCart()[1]).toMatchObject({ product_id: 'p1', quantity: 1 })
+    expect(res.content).toMatch(/added 1x marmita m to the cart/i)
+    expect(res.content).not.toMatch(/now 2x total/i)
+  })
+
+  it('also treats a cart line with no addedAt at all as stale — legacy data written before this field existed never merges either', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({ id: 'p1', name: 'Marmita M', price: 28, addon_groups: [] })
+    const { db, getCart } = makeDb({
+      cart: [
+        { product_id: 'p1', product_name: 'Marmita M', unit_price: 28, quantity: 1, addons: [], notes: null },
+      ],
+      customerMessagesSince: [{ content_text: 'Queria pedir uma marmita média' }],
+    })
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', quantity: 1, confirm_quantity_increase: true },
+      ctxFor(db),
+    )
+    expect(getCart()).toHaveLength(2)
+    expect(res.content).not.toMatch(/now 2x total/i)
   })
 
   it('attaches a note to the existing bare line instead of duplicating it — regression, 2026-08-07 — only when the model explicitly says attach_note_to_existing', async () => {

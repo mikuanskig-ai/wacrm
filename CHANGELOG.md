@@ -2,6 +2,29 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.14.0] — 2026-08-28
+
+### Corrigido
+
+- **`add_to_cart` fundia com linha de dias atrás e dobrava a
+  quantidade** (Ezequiel, cliente quase diário de "marmita média pro
+  meio-dia" — 28/08). O carrinho de uma sessão abandonada (sem
+  `place_order`, nunca resetado) ficava com uma linha fantasma de dias
+  atrás; na próxima visita, o cliente naturalmente menciona o produto
+  de novo ("queria pedir uma marmita média") — o que já era o
+  suficiente pra trava de 26/08 (`customerMentionedProductSince`)
+  aprovar a soma, mesmo sem ligação nenhuma com a linha antiga. 1
+  marmita pedida virou 2 no resumo.
+  - Nova trava: linha de carrinho com mais de 6h nunca funde por soma
+    — vira sempre uma linha nova, **mesmo** com `confirm_quantity_increase`
+    ou uma mensagem do cliente citando o produto. Linha sem `addedAt`
+    (dado legado, anterior a esse campo existir) também conta como
+    velha demais — antes isso pulava a trava por completo.
+  - 2 testes novos (linha velha com/sem `addedAt`); os 3 testes
+    existentes de merge/bloqueio ajustados pra usar timestamp relativo
+    (`Date.now() - Xms`) em vez de data fixa — senão eles mesmos
+    ficariam "velhos" e quebrariam sozinhos com o tempo.
+
 ## [0.13.0] — 2026-08-28
 
 ### Adicionado

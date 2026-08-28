@@ -75,6 +75,30 @@ async function customerMentionedProductSince(
   })
 }
 
+/** A cart line older than this never merges by sum — it always starts a
+ *  fresh line instead. This account's conversations are long-lived (the
+ *  same WhatsApp thread carries every order a regular customer ever
+ *  places, days or weeks apart), so `customerMentionedProductSince`
+ *  above is not actually a safe gate on its own: a repeat customer's
+ *  very first message of a NEW day almost always re-mentions the
+ *  product by name ("queria pedir uma marmita média" again), which
+ *  trivially satisfies that check even though it has nothing to do
+ *  with the leftover line from their last visit. Confirmed live
+ *  (2026-08-28, Ezequiel, who orders "marmita média pro meio-dia"
+ *  almost daily): a cart line from a previous day's abandoned session
+ *  (never cleared because that session's place_order was never called)
+ *  silently absorbed today's single marmita into 1 + 1 = 2, and the
+ *  confirmation summary showed double what today's message actually
+ *  asked for. 6 hours comfortably covers any single real order
+ *  session (including slow back-and-forth) while safely catching
+ *  "this is a different day's order." */
+const STALE_CART_LINE_MS = 6 * 60 * 60 * 1000
+
+function isStaleCartLine(line: CartLineItem, nowIso: string): boolean {
+  if (!line.addedAt) return true
+  return new Date(nowIso).getTime() - new Date(line.addedAt).getTime() > STALE_CART_LINE_MS
+}
+
 /** Model-facing explanation for a failed fee calculation — tells the
  *  assistant what to ask the customer for next, never a raw code. */
 function describeFeeFailure(reason: DeliveryFeeFailureReason, suggestions?: string[]): string {
@@ -509,11 +533,20 @@ export const addToCartTool: ToolDefinition = {
           )
         : -1
 
+    // A stale match (see isStaleCartLine's doc above) is never treated
+    // as the same order — it always starts a fresh line, exactly like
+    // exactMatchIndex being -1, regardless of confirm_quantity_increase
+    // or what the customer's messages say (a repeat customer's new-day
+    // message naturally re-mentions the product, which is not evidence
+    // about a line from days ago).
+    const matchIsStale = exactMatchIndex >= 0 && isStaleCartLine(cartBefore[exactMatchIndex]!, nowIso)
+
     let cart: CartLineItem[]
     let mergedQuantity = quantity
     let noteUpdated = false
     let blockedDuplicate = false
-    if (exactMatchIndex >= 0) {
+    let staleMatchSplit = false
+    if (exactMatchIndex >= 0 && !matchIsStale) {
       const existingLine = cartBefore[exactMatchIndex]!
       const previousQuantity = existingLine.quantity
       // This merge is the confirmed mechanism behind FIVE live
@@ -534,8 +567,7 @@ export const addToCartTool: ToolDefinition = {
       const confirmed = args.confirm_quantity_increase === true
       const mentionedAgain =
         confirmed ||
-        !existingLine.addedAt ||
-        (await customerMentionedProductSince(ctx.db, ctx.conversationId, product.name, existingLine.addedAt))
+        (await customerMentionedProductSince(ctx.db, ctx.conversationId, product.name, existingLine.addedAt!))
       if (mentionedAgain) {
         cart = [...cartBefore]
         mergedQuantity = previousQuantity + quantity
@@ -551,6 +583,12 @@ export const addToCartTool: ToolDefinition = {
           `[ai add_to_cart] blocked a silent re-add — conversation ${ctx.conversationId}, product ${item.product_id} (${item.product_name}) already at ${previousQuantity}x, no customer message since referenced it again`,
         )
       }
+    } else if (matchIsStale) {
+      cart = [...cartBefore, item]
+      staleMatchSplit = true
+      console.warn(
+        `[ai add_to_cart] existing line for ${item.product_id} (${item.product_name}) is stale (added ${cartBefore[exactMatchIndex]!.addedAt ?? 'unknown'}, conversation ${ctx.conversationId}) — added as a new line instead of merging, likely a different day's order`,
+      )
     } else if (refinementMatchIndex >= 0) {
       cart = [...cartBefore]
       mergedQuantity = cart[refinementMatchIndex]!.quantity
@@ -576,7 +614,7 @@ export const addToCartTool: ToolDefinition = {
     return {
       content: blockedDuplicate
         ? `${product.name} is already in the cart at ${mergedQuantity}x — quantity NOT changed. Nothing in the customer's messages since it was added asks for another one, so this looks like a redundant re-add rather than a real request for more. If the customer explicitly confirmed wanting an additional unit, call add_to_cart again with confirm_quantity_increase: true. Otherwise just continue — this item's quantity is already correct at ${mergedQuantity}x.`
-        : exactMatchIndex >= 0
+        : exactMatchIndex >= 0 && !staleMatchSplit
           ? `Added ${quantity}x ${product.name} — now ${mergedQuantity}x total in the cart. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
           : noteUpdated
             ? `Noted for the ${mergedQuantity}x ${product.name} already in the cart — no new line added, quantity unchanged. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
