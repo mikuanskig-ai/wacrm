@@ -2,6 +2,49 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.17.0] — 2026-08-30
+
+### Adicionado
+
+- **Landing page em v2.zontalk.shop ("/")** — antes a raiz do domínio
+  do app só redirecionava direto pro login, sem nenhuma explicação da
+  plataforma. Agora visitante anônimo vê uma landing de verdade
+  (hero, "como funciona", recursos, chamada pra plano, CTA final);
+  visitante já logado continua indo direto pro `/dashboard` como
+  antes. Não substitui a LP que já existe em zontalk.shop (projeto
+  separado, outro domínio) — essa é a landing do próprio domínio do
+  app.
+  - Ângulo: lidera com a IA que atende no WhatsApp e monta o pedido
+    sozinho (o que o dia inteiro de hoje foi construir/blindar), CRM
+    completo (inbox compartilhada, funil, disparo em massa,
+    automações) aparece como a plataforma por trás. Menciona também o
+    fluxo determinístico por botão do Flow Builder como alternativa
+    pra quem não quer depender de IA.
+  - Sem depoimento/prova social — decisão consciente, sem citação real
+    autorizada ainda pra usar.
+  - `src/middleware.ts` ganhou um novo bloco: usuário autenticado em
+    `/` → redireciona pro `/dashboard` (igual antes); anônimo → passa
+    direto, sem redirect nenhum (`/` nunca esteve em `protectedPaths`).
+  - `src/app/page.tsx` virou a landing de verdade — Server Component,
+    `generateMetadata` com `title`/`description`/`robots:
+    {index:true, follow:true}` (mesmo padrão de override que
+    `/pricing/layout.tsx` já usa contra o `{index:false, follow:false}`
+    global do layout raiz).
+  - 7 componentes novos em `src/components/landing/` (header, hero,
+    como-funciona, recursos, chamada de preço, CTA final, rodapé) —
+    todos Server Component com `getTranslations` (não `useTranslations`
+    client-side, diferente do resto do app) pra HTML já pronto sem JS
+    extra, melhor pra SEO/compartilhamento.
+  - Novo namespace `Landing` em `messages/{pt,en,ko}.json`.
+  - 2 testes novos em `middleware.test.ts` (autenticado redireciona,
+    anônimo passa direto).
+  - **Fora de escopo, sinalizado conscientemente**: sem Open
+    Graph/imagem de compartilhamento (não existe em nenhuma página do
+    app hoje — vai aparecer "quebrado" ao compartilhar em redes/
+    WhatsApp, mas não bloqueia essa entrega); sem sitemap.ts/robots.ts
+    dinâmico (não existe hoje, único sinal de SEO por rota é o
+    `metadata.robots` de cada página).
+
 ## [0.16.0] — 2026-08-28
 
 ### Adicionado

@@ -273,6 +273,77 @@
       "publicBadge": "Público"
     }
   },
+  "Landing": {
+    "meta": {
+      "title": "ZonTalk — Atenda e venda pelo WhatsApp com IA",
+      "description": "IA que conversa no WhatsApp, monta o pedido certo e manda direto pra cozinha imprimir. CRM completo com caixa de entrada compartilhada, funil de vendas e automações."
+    },
+    "header": {
+      "navHowItWorks": "Como funciona",
+      "navFeatures": "Recursos",
+      "navPricing": "Preços",
+      "login": "Entrar",
+      "cta": "Criar conta"
+    },
+    "hero": {
+      "eyebrow": "IA para pedidos no WhatsApp",
+      "headline": "Seu WhatsApp atende, monta o pedido e manda pra cozinha — sozinho",
+      "subheadline": "A IA da ZonTalk conversa com o cliente, monta o carrinho certo e envia direto pra impressão na cozinha. Sem sua equipe digitar pedido nenhum.",
+      "ctaPrimary": "Criar minha conta",
+      "ctaSecondary": "Ver como funciona"
+    },
+    "howItWorks": {
+      "title": "Como funciona",
+      "step1": {
+        "title": "O cliente manda mensagem",
+        "description": "Ele escreve no WhatsApp como sempre fez — sem aplicativo novo, sem cadastro, sem aprender nada."
+      },
+      "step2": {
+        "title": "A IA monta o pedido",
+        "description": "Entende o que foi pedido, monta o carrinho certo e confirma com o cliente antes de fechar."
+      },
+      "step3": {
+        "title": "A cozinha recebe pronto pra imprimir",
+        "description": "O pedido cai direto na impressora — e se algo sair diferente do esperado, sua equipe sempre pode revisar e forçar a impressão na mão."
+      },
+      "flowNote": "Prefere não depender de IA? O construtor de fluxo monta um pedido por menu numerado, passo a passo — sem nenhuma inteligência artificial no meio."
+    },
+    "features": {
+      "title": "Um CRM completo por trás da IA",
+      "inbox": {
+        "title": "Caixa de entrada compartilhada",
+        "description": "Toda a equipe atende pelo mesmo número, sem perder o fio da conversa."
+      },
+      "pipeline": {
+        "title": "Funil de vendas",
+        "description": "Acompanhe cada negociação do primeiro contato até o fechamento."
+      },
+      "broadcast": {
+        "title": "Disparo em massa",
+        "description": "Avise sua base inteira sobre promoções e novidades em poucos cliques."
+      },
+      "automations": {
+        "title": "Automações sem código",
+        "description": "Monte fluxos de atendimento por botão, sem depender de nenhuma IA."
+      }
+    },
+    "pricingTeaser": {
+      "title": "Um plano, sem letra miúda",
+      "description": "Preço fechado, com o módulo de Delivery incluso desde o primeiro dia.",
+      "cta": "Ver plano e preço"
+    },
+    "finalCta": {
+      "title": "Pronto pra deixar a IA atender por você?",
+      "description": "Crie sua conta e comece a atender pelo WhatsApp em minutos.",
+      "cta": "Criar minha conta"
+    },
+    "footer": {
+      "tagline": "CRM de WhatsApp com IA para pedidos.",
+      "linkPricing": "Preços",
+      "linkLogin": "Entrar",
+      "copyright": "© {year} ZonTalk"
+    }
+  },
   "Pricing": {
     "title": "Planos",
     "subtitle": "Escolha o plano ideal para o seu negócio.",

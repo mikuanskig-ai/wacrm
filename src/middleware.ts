@@ -69,6 +69,18 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
+  // Root page — an already-authenticated visitor goes straight into the
+  // app instead of seeing the marketing landing again. An anonymous
+  // visitor gets NO redirect here (unlike protectedPaths below, there is
+  // no "logged out ⇒ redirect" rule for `/`) — the request just falls
+  // through and src/app/page.tsx renders the landing page directly.
+  if (user && request.nextUrl.pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    url.search = ''
+    return withRefreshedCookies(NextResponse.redirect(url))
+  }
+
   // Protected pages - redirect to login if not authenticated
   const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/delivery', '/admin']
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {

@@ -273,6 +273,77 @@
       "publicBadge": "공개"
     }
   },
+  "Landing": {
+    "meta": {
+      "title": "ZonTalk — AI로 왓츠앱에서 응대하고 판매하세요",
+      "description": "AI가 왓츠앱에서 대화하고, 정확한 장바구니를 구성해서 주방 프린터로 바로 전송합니다. 공유 받은편지함, 영업 파이프라인, 자동화까지 포함된 완전한 CRM."
+    },
+    "header": {
+      "navHowItWorks": "작동 방식",
+      "navFeatures": "기능",
+      "navPricing": "요금제",
+      "login": "로그인",
+      "cta": "계정 만들기"
+    },
+    "hero": {
+      "eyebrow": "왓츠앱 주문을 위한 AI",
+      "headline": "왓츠앱이 스스로 응대하고, 주문을 구성해서 주방으로 보냅니다",
+      "subheadline": "ZonTalk의 AI가 고객과 대화하며 정확한 장바구니를 구성하고 주방 프린터로 바로 전송합니다. 직원이 직접 주문을 입력할 필요가 없습니다.",
+      "ctaPrimary": "내 계정 만들기",
+      "ctaSecondary": "작동 방식 보기"
+    },
+    "howItWorks": {
+      "title": "작동 방식",
+      "step1": {
+        "title": "고객이 메시지를 보냅니다",
+        "description": "새로운 앱도, 가입도, 배울 것도 없이 늘 하던 대로 왓츠앱에 씁니다."
+      },
+      "step2": {
+        "title": "AI가 주문을 구성합니다",
+        "description": "요청한 내용을 이해하고 정확한 장바구니를 구성한 뒤, 마감 전에 고객에게 확인합니다."
+      },
+      "step3": {
+        "title": "주방은 인쇄 준비가 끝난 주문을 받습니다",
+        "description": "주문이 바로 프린터로 전송됩니다 — 뭔가 예상과 다르면 직원이 언제든 확인하고 직접 인쇄를 강제할 수 있습니다."
+      },
+      "flowNote": "AI에 의존하고 싶지 않으신가요? 플로우 빌더는 번호가 매겨진 메뉴로 단계별로 주문을 진행합니다 — AI가 전혀 개입하지 않습니다."
+    },
+    "features": {
+      "title": "AI 뒤에 있는 완전한 CRM",
+      "inbox": {
+        "title": "공유 받은편지함",
+        "description": "팀 전체가 같은 번호로 응대하면서도 대화 맥락을 놓치지 않습니다."
+      },
+      "pipeline": {
+        "title": "영업 파이프라인",
+        "description": "첫 접촉부터 계약 성사까지 모든 거래를 추적하세요."
+      },
+      "broadcast": {
+        "title": "대량 발송",
+        "description": "몇 번의 클릭으로 전체 연락처에 프로모션과 소식을 알리세요."
+      },
+      "automations": {
+        "title": "노코드 자동화",
+        "description": "AI 없이도 버튼 기반 응대 흐름을 구성할 수 있습니다."
+      }
+    },
+    "pricingTeaser": {
+      "title": "하나의 플랜, 숨겨진 조건 없음",
+      "description": "Delivery 모듈이 처음부터 포함된 고정 가격입니다.",
+      "cta": "플랜과 가격 보기"
+    },
+    "finalCta": {
+      "title": "AI가 대신 응대하게 할 준비가 되셨나요?",
+      "description": "계정을 만들고 몇 분 안에 왓츠앱 응대를 시작하세요.",
+      "cta": "내 계정 만들기"
+    },
+    "footer": {
+      "tagline": "주문을 위한 AI 왓츠앱 CRM.",
+      "linkPricing": "요금제",
+      "linkLogin": "로그인",
+      "copyright": "© {year} ZonTalk"
+    }
+  },
   "Pricing": {
     "title": "요금제",
     "subtitle": "비즈니스에 맞는 플랜을 선택하세요.",

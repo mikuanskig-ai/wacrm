@@ -99,6 +99,41 @@
 
 ## Feitas
 
+### 2026-08-30 — Landing page em v2.zontalk.shop ("/")
+
+- Pedido: raiz do domínio do app hoje só redirecionava direto pro
+  login, sem explicar nada da plataforma. Construída uma landing de
+  verdade — hero, "como funciona" (3 passos), recursos do CRM,
+  chamada pra `/pricing`, CTA final — com botão no cabeçalho levando
+  pra dentro do sistema (`/login`). Não é a mesma coisa que a LP em
+  zontalk.shop (projeto separado, outro domínio/stack) — essa é a do
+  próprio domínio do app.
+- Ângulo definido com o dono da conta: lidera com a IA que atende no
+  WhatsApp e monta o pedido sozinho (o que o dia inteiro anterior foi
+  construir/blindar), CRM completo aparece como a plataforma por
+  trás. Sem depoimento/prova social (nenhum autorizado ainda). Visual
+  com identidade própria, não o estilo comedido de `/pricing`, mas
+  reaproveitando os mesmos tokens de design (OKLCH em `globals.css`,
+  `Button`/`Card`) em vez de paleta desconectada.
+- `src/middleware.ts` ganhou o bloco de redirect pra `/` (autenticado
+  → `/dashboard`, anônimo → passa direto pra landing). `src/app/page.tsx`
+  virou a landing (Server Component, `generateMetadata`). 7
+  componentes novos em `src/components/landing/`, todos Server
+  Component com `getTranslations` (diferente do resto do app, que é
+  100% client) — melhor HTML inicial pra SEO, já que essa é
+  literalmente a página pensada pra ser indexada/compartilhada.
+- Novo namespace `Landing` em `messages/{pt,en,ko}.json`. 2 testes
+  novos em `middleware.test.ts`.
+- **Fora de escopo, sinalizado**: sem Open Graph/imagem de
+  compartilhamento (não existe em nenhuma página do app — vai
+  compartilhar "quebrado" em redes/WhatsApp por enquanto); sem
+  sitemap.ts/robots.ts dinâmico.
+- **Não verificado visualmente** — sem Playwright/screenshot
+  disponível neste ambiente pra conferir o resultado renderizado.
+  Testado via curl (200, robots, título, CTAs, links) e leitura
+  cuidadosa do CSS/tokens, mas vale o dono da conta abrir e olhar de
+  verdade depois do deploy.
+
 ### 2026-08-28 — Plano pago de verdade ativado (avaliação do `/admin` pro lado comercial)
 
 - Achado avaliando o que falta pra vender a solução: só existia 1

@@ -273,6 +273,77 @@
       "publicBadge": "Public"
     }
   },
+  "Landing": {
+    "meta": {
+      "title": "ZonTalk — Sell and support on WhatsApp with AI",
+      "description": "AI that chats on WhatsApp, builds the right cart, and sends it straight to the kitchen printer. A full CRM behind it — shared inbox, sales pipeline, automations."
+    },
+    "header": {
+      "navHowItWorks": "How it works",
+      "navFeatures": "Features",
+      "navPricing": "Pricing",
+      "login": "Sign in",
+      "cta": "Create account"
+    },
+    "hero": {
+      "eyebrow": "AI for WhatsApp ordering",
+      "headline": "Your WhatsApp answers, builds the order, and sends it to the kitchen — on its own",
+      "subheadline": "ZonTalk's AI talks to the customer, builds the right cart, and sends it straight to the kitchen printer. Nobody on your team types an order.",
+      "ctaPrimary": "Create my account",
+      "ctaSecondary": "See how it works"
+    },
+    "howItWorks": {
+      "title": "How it works",
+      "step1": {
+        "title": "The customer sends a message",
+        "description": "They write on WhatsApp like they always have — no new app, no sign-up, nothing to learn."
+      },
+      "step2": {
+        "title": "The AI builds the order",
+        "description": "It understands what was asked, builds the right cart, and confirms with the customer before closing it."
+      },
+      "step3": {
+        "title": "The kitchen gets it ready to print",
+        "description": "The order goes straight to the printer — and if anything looks off, your team can always review and force the print by hand."
+      },
+      "flowNote": "Prefer not to rely on AI? The flow builder walks the order through a numbered menu, step by step — no AI involved at all."
+    },
+    "features": {
+      "title": "A full CRM behind the AI",
+      "inbox": {
+        "title": "Shared team inbox",
+        "description": "Your whole team answers from the same number without losing the thread."
+      },
+      "pipeline": {
+        "title": "Sales pipeline",
+        "description": "Track every deal from first contact to close."
+      },
+      "broadcast": {
+        "title": "Mass broadcast",
+        "description": "Reach your whole contact list about a promo or news in a few clicks."
+      },
+      "automations": {
+        "title": "No-code automations",
+        "description": "Build button-driven service flows without relying on any AI."
+      }
+    },
+    "pricingTeaser": {
+      "title": "One plan, no fine print",
+      "description": "A flat price, with the Delivery module included from day one.",
+      "cta": "See plan and pricing"
+    },
+    "finalCta": {
+      "title": "Ready to let the AI answer for you?",
+      "description": "Create your account and start answering on WhatsApp in minutes.",
+      "cta": "Create my account"
+    },
+    "footer": {
+      "tagline": "WhatsApp CRM with AI for orders.",
+      "linkPricing": "Pricing",
+      "linkLogin": "Sign in",
+      "copyright": "© {year} ZonTalk"
+    }
+  },
   "Pricing": {
     "title": "Pricing",
     "subtitle": "Choose the right plan for your business.",
