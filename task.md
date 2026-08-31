@@ -6,6 +6,39 @@
 
 ## Pendentes
 
+- [ ] **Painel "Saúde da IA" — zero visibilidade de saúde da IA por
+  conta** (achado avaliando o `/admin` pro lado comercial, 28/08).
+  Conferi o `/api/admin/stats` que alimenta o dashboard — tem métricas
+  de infra (contas, conexões, mensagens, CPU/disco do servidor), mas
+  nada específico de pedido por IA. Todo bug que corrigi hoje (Edemar,
+  Ezequiel, Fernanda) só foi descoberto porque o cliente mandou print
+  reclamando — o admin não tem nenhum sinal de handoff por
+  alucinação, carrinho parado, pedido sem impressão. Isso funcionou
+  hoje porque é 1 cliente e eu investigo na mão via SSH. Com 15-20
+  clientes pagantes, isso não escala — vocês vão descobrir problema
+  por reclamação, sempre atrasado, sempre reativo.
+  Os dados já existem no banco (motivo do handoff, `print_jobs`,
+  `ai_cart` parado) — só falta juntar numa tela. Proposta: painel
+  "Saúde da IA" (por conta ou feed geral): handoffs por motivo na
+  semana, carrinhos abandonados recorrentes, falha de impressão. Antes
+  de vender "IA que atende sozinha" pra terceiros, dá pra saber se
+  está funcionando sem depender do cliente avisar.
+- [ ] **Sem trial, sem onboarding guiado** (mesma avaliação, 28/08).
+  Não existe conceito de trial no schema nem no billing (procurei, não
+  achei nada) — cadastro vai direto pra escolha de plano pago. Pro
+  perfil real de cliente (dono de restaurante, não-técnico, como a
+  Concórdia), cair numa tela de CRM vazia sem WhatsApp conectado e sem
+  cardápio é um abismo de ativação. Vale pelo menos um período de
+  trial + um checklist pós-cadastro (conectar WhatsApp → cadastrar
+  cardápio → testar um pedido).
+- [ ] **Delivery não está embalado como diferencial de preço** (mesma
+  avaliação, 28/08). Só existe o módulo "delivery" e ele já vem
+  incluso nos dois planos que existem — não há hoje um nível "CRM
+  básico" vs "CRM + Delivery com IA", mesmo a estrutura
+  (`enabled_modules` por plano) já suportando isso. Dado que o
+  produto inteiro de hoje foi provar que esse pedaço funciona bem, é o
+  gancho de venda mais forte que vocês têm — vale precificar em cima
+  disso.
 - [ ] **Rename completo pra ZDelivery** — 14/08: só a pasta local
   mudou de lugar (`clients/zontalk/zdelivery/`), o resto ainda diz
   "wacrm": `package.json` (`name`), repo do GitHub
@@ -65,6 +98,30 @@
   não é sintoma de algo pior.
 
 ## Feitas
+
+### 2026-08-28 — Plano pago de verdade ativado (avaliação do `/admin` pro lado comercial)
+
+- Achado avaliando o que falta pra vender a solução: só existia 1
+  plano público e ele cobrava R$0 (Legacy) — o "Prime" (pensado como o
+  plano pago) estava desativado, oculto, com preço placeholder (R$2).
+  Ou seja, era literalmente impossível cobrar de alguém que se
+  cadastrasse.
+- Confirmado que a parte técnica de cobrança já estava pronta e
+  correta, no mesmo padrão dos outros SaaS do dono da conta
+  (`INFINITEPAY_HANDLE=zontalk`, sem `$`, igual ao gym-progress;
+  `NEXT_PUBLIC_SITE_URL` certo; já tinha até 1 fatura de teste real
+  gerada com link de checkout funcional). Não precisou mudar código.
+- Dono da conta ajustou direto no admin: **Prime** agora R$35,99/mês,
+  5 usuários, módulo Delivery incluso, público e ativo. **Legacy**
+  ficou oculto e inativo pra assinatura nova (contas já nele, como a
+  Concórdia, continuam funcionando normal — `is_active=false` só
+  bloqueia atribuição nova/renovação).
+  Verificado ponta a ponta: `/api/public/plans` retorna só o Prime
+  agora; cron de fatura roda a cada 1 minuto, então quem assinar
+  recebe link de pagamento quase na hora.
+- **Pendente**: uma fatura de teste antiga (R$2, "Prime", conta de
+  teste) ficou "overdue" no Financeiro — cosmético, não afeta nada,
+  perguntei se o dono da conta quer cancelar.
 
 ### 2026-08-28 — Passo de quantidade no Flow Builder (`add_order_item`)
 
