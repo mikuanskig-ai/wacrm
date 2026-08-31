@@ -82,7 +82,7 @@ function SignupPageInner() {
       ? `${window.location.origin}/join/${encodeURIComponent(inviteToken)}`
       : undefined;
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -100,6 +100,27 @@ function SignupPageInner() {
       return;
     }
 
+    // This deployment has email auto-confirm enabled
+    // (GOTRUE_MAILER_AUTOCONFIRM=true) — signUp() already returns an
+    // active session, so there's no real confirmation pending and
+    // showing "check your email" would be a dead end (confirmed live,
+    // 2026-08-30: the account owner's own test account sat there with
+    // no email ever needed). Skip straight into the app instead, the
+    // same way /login does after a successful sign-in — a full-page
+    // navigation (not router.push), so the middleware sees the
+    // just-written auth cookies on the very next request.
+    if (data.session) {
+      const destination = inviteToken
+        ? `/join/${encodeURIComponent(inviteToken)}`
+        : "/dashboard";
+      window.location.href = destination;
+      return;
+    }
+
+    // Defensive fallback — if auto-confirm is ever turned off for this
+    // deployment, signUp() goes back to returning no session and a
+    // real confirmation email was actually sent; this screen is
+    // accurate again in that case.
     setSuccess(true);
     setLoading(false);
   };

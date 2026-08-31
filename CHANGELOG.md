@@ -2,6 +2,32 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.17.1] — 2026-08-30
+
+### Corrigido
+
+- **Tela de "confirme seu e-mail" travava conta nova sem necessidade**
+  — testado ao vivo pelo dono da conta no `/signup`. Investigado antes
+  de mexer: o Supabase self-hosted desse VPS já está com
+  `GOTRUE_MAILER_AUTOCONFIRM=true` (confirmado no `.env` de
+  `/opt/supabase-selfhost`) — ou seja, **nenhum e-mail de confirmação
+  é enviado**, a conta já vem confirmada e com sessão ativa direto do
+  `signUp()`. O bug era só no front: `signup/page.tsx` sempre mostrava
+  a tela "Confira seu e-mail" depois de qualquer `signUp()` bem
+  sucedido, sem checar se já veio uma sessão ativa — ninguém precisava
+  clicar em nada, mas a tela dizia que precisava.
+  - Corrigido: quando `signUp()` já devolve `session` (o caso de
+    verdade nesse deploy), pula direto pro app — mesma navegação de
+    página inteira que o `/login` já usa depois de autenticar (não
+    `router.push`, pra garantir que o middleware veja o cookie novo já
+    na próxima requisição). Só mostra "Confira seu e-mail" no caso
+    (hoje inativo) de `GOTRUE_MAILER_AUTOCONFIRM` vir a ser desligado.
+  - **Não mexi na configuração do Supabase** — essa instância é
+    compartilhada com outros produtos do dono da conta no mesmo VPS
+    (pelo menos o Zontalk CRM também roda em cima dela); mudar
+    `GOTRUE_MAILER_AUTOCONFIRM` ali afetaria todos eles, não só o
+    zdelivery. O fix ficou 100% no app.
+
 ## [0.17.0] — 2026-08-30
 
 ### Adicionado

@@ -99,6 +99,25 @@
 
 ## Feitas
 
+### 2026-08-30 — Tela de confirmação de e-mail desnecessária no signup
+
+- Testado ao vivo: dono da conta criou uma conta no `/signup` e caiu
+  na tela "Confira seu e-mail" pedindo pra clicar num link. Investigado
+  antes de mexer: `GOTRUE_MAILER_AUTOCONFIRM=true` já está ligado no
+  Supabase self-hosted desse VPS — nenhum e-mail é enviado de verdade,
+  a conta já nasce confirmada com sessão ativa. Bug era só na tela:
+  `signup/page.tsx` sempre mostrava "Confira seu e-mail" depois de
+  qualquer `signUp()` sem erro, sem checar se já veio sessão.
+- Corrigido: com sessão já ativa (o caso real hoje), pula direto pro
+  app (mesma navegação de página inteira do `/login`). Continua
+  mostrando a tela de confirmação só se `GOTRUE_MAILER_AUTOCONFIRM`
+  for desligado no futuro — não é código morto, é o fallback certo pro
+  outro estado possível dessa mesma config.
+- **Não mexi na configuração do Supabase em si** — instância
+  compartilhada com outros produtos (pelo menos o Zontalk CRM também
+  roda nela) no mesmo VPS; mudar lá afetaria todo mundo. Fix ficou
+  100% no app.
+
 ### 2026-08-30 — Landing page em v2.zontalk.shop ("/")
 
 - Pedido: raiz do domínio do app hoje só redirecionava direto pro
