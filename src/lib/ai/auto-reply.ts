@@ -6,7 +6,7 @@ import { generateReply, generateReplyWithTools } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
-import { latestUserMessage } from './query'
+import { retrievalQueryText } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { getAccountCurrency } from '@/lib/flows/engine'
 import { getEnabledModules, hasModule } from '@/lib/accounts/modules'
@@ -240,7 +240,7 @@ export async function dispatchInboundToAiReply(
       db,
       accountId,
       config,
-      latestUserMessage(messages),
+      retrievalQueryText(messages),
     )
 
     const modules = await getEnabledModules(db, accountId)

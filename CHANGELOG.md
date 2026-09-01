@@ -2,6 +2,37 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.18.0] — 2026-09-01
+
+### Corrigido
+
+- **IA inventou horário de funcionamento (e preço de rodízio) que não
+  existem** — reportado ao vivo pelo Eder (Concórdia): cliente
+  perguntou sobre rodízio no fim de semana, a IA ofereceu passar valor
+  e horário, cliente respondeu só "Pode ser" e depois só "Sim" — e a
+  IA respondeu com um valor de rodízio (R$55) e um horário (almoço +
+  jantar 18h-23h todos os dias) que não batem com **nada**: nem com a
+  base de conhecimento (preços reais variam por dia, R$54,90 a
+  R$84,90; horário real é só 11h-14h, todos os dias, sem jantar — um
+  bar de terceiros usa o espaço à noite), nem com a config de horário
+  da IA. Um atendente humano teve que entrar na conversa e corrigir na
+  hora.
+  - Causa raiz: a busca na base de conhecimento (`retrieveKnowledge`)
+    usava só a última mensagem do cliente como texto de busca — e
+    "sim"/"pode ser" não tem nenhuma palavra em comum com "HORÁRIOS"
+    ou os documentos de preço, então a busca não achava nada relevante
+    pra nenhuma das duas perguntas. Sem nenhum trecho da base injetado
+    no prompt, a IA inventou uma resposta plausível em vez de admitir
+    que não tinha a informação — mesmo já existindo instrução no prompt
+    pra nunca inventar fato sem base.
+  - Corrigido: nova `retrievalQueryText()` (`src/lib/ai/query.ts`) —
+    busca agora usa a mensagem do cliente **junto com** a mensagem
+    anterior da própria IA (é ela que carrega o assunto real quando o
+    cliente só confirma). Aplicado nos 3 lugares que buscam a base de
+    conhecimento (resposta automática, rascunho, playground) —
+    fonte única, não duplicada.
+  - 3 testes novos, incluindo o caso exato do incidente.
+
 ## [0.17.1] — 2026-08-30
 
 ### Corrigido

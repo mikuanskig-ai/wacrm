@@ -6,7 +6,7 @@ import { buildConversationContext } from '@/lib/ai/context'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
 import { generateReply, generateReplyWithTools } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
-import { latestUserMessage } from '@/lib/ai/query'
+import { retrievalQueryText } from '@/lib/ai/query'
 import { logAiUsage } from '@/lib/ai/usage'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError } from '@/lib/ai/types'
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
       supabase,
       accountId,
       config,
-      latestUserMessage(messages),
+      retrievalQueryText(messages),
     )
 
     const modules = await getEnabledModules(supabase, accountId)

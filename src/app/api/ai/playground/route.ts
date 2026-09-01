@@ -6,7 +6,7 @@ import { loadAiConfig } from '@/lib/ai/config'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
 import { generateReply, generateReplyWithTools } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
-import { latestUserMessage } from '@/lib/ai/query'
+import { retrievalQueryText } from '@/lib/ai/query'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
 import { getAccountCurrency } from '@/lib/flows/engine'
 import { getEnabledModules, hasModule } from '@/lib/accounts/modules'
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       supabase,
       accountId,
       config,
-      latestUserMessage(messages),
+      retrievalQueryText(messages),
     )
 
     const modules = await getEnabledModules(supabase, accountId)

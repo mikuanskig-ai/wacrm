@@ -99,6 +99,37 @@
 
 ## Feitas
 
+### 2026-09-01 — IA inventou horário e preço quando cliente só confirmou ("sim"/"pode ser")
+
+- Reportado ao vivo pelo Eder: cliente perguntou sobre rodízio de fim
+  de semana, respondeu "Pode ser" e depois "Sim" pras duas ofertas de
+  detalhe da IA (valor e horário) — a IA respondeu com um preço
+  (R$55) e um horário (almoço + jantar 18h-23h) que não existem em
+  lugar nenhum: nem na base de conhecimento (preços reais R$54,90 a
+  R$84,90 por dia; horário real 11h-14h todos os dias, sem jantar —
+  outro negócio usa o espaço à noite), nem na config de horário da
+  IA. Atendente teve que corrigir na hora, ao vivo, na conversa.
+- Causa raiz: `retrieveKnowledge` buscava só com a última mensagem do
+  cliente — "sim"/"pode ser" não tem nenhuma palavra em comum com os
+  documentos reais, busca voltava vazia, e a IA inventou em vez de
+  admitir que não sabia (apesar de já ter instrução no prompt contra
+  isso — reforço de prompt sozinho não segura, mesmo padrão de outros
+  casos já documentados aqui).
+- Corrigido: nova `retrievalQueryText()` — busca agora inclui a
+  mensagem anterior da própria IA junto com a do cliente (é ela que
+  carrega o assunto de verdade quando o cliente só confirma). Um lugar
+  só (`src/lib/ai/query.ts`), usado pelos 3 pontos que buscam a base
+  de conhecimento (resposta automática, rascunho, playground). 3
+  testes novos.
+- **Vale observar**: quando a busca volta vazia (`knowledge.length ===
+  0`), o prompt hoje simplesmente omite a seção da base de
+  conhecimento inteira — a IA não recebe nem um aviso de "você tem
+  base de conhecimento configurada, mas nada bateu pra essa pergunta,
+  não invente". Essa correção ataca a causa mais provável (busca sem
+  contexto), mas se algum caso de busca vazia por outro motivo
+  aparecer de novo, vale reforçar esse aviso também — não implementado
+  agora por não ter incidente concreto que justifique.
+
 ### 2026-08-30 — Tela de confirmação de e-mail desnecessária no signup
 
 - Testado ao vivo: dono da conta criou uma conta no `/signup` e caiu
