@@ -101,6 +101,12 @@ export default function PrintReceiptPage({
       </div>
 
       <div className="space-y-3 text-base font-mono">
+        {order.status === "cancelled" && (
+          <p className="border-2 border-foreground bg-foreground py-1 text-center text-lg font-bold text-background">
+            {t("cancelledBanner")}
+          </p>
+        )}
+
         <div className="text-center">
           <h1 className="text-lg font-semibold">{order.account?.name}</h1>
           <p className="text-muted-foreground">{t("orderNumber", { id: order.id.slice(0, 8) })}</p>

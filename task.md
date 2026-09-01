@@ -6,6 +6,17 @@
 
 ## Pendentes
 
+- [ ] **Causa raiz de por que a IA recriou o pedido do Rogério (31/08)
+  não foi resolvida** — o pedido já tinha sido confirmado e "enviado
+  pra cozinha" quando o cliente mandou uma mensagem de acompanhamento
+  sem relação nenhuma ("Minha esposa tá fazendo o pix" / "E Silvana
+  Mendes" — só informando quem ia pagar) e a IA, mesmo assim, criou um
+  SEGUNDO pedido idêntico. Já existe instrução no prompt desde 14/08
+  pra sempre cancelar antes de recriar — não seguiu aqui. Corrigido só
+  a consequência (impressão dupla, ver Feitas 01/09) — a causa da
+  duplicação em si continua em aberto, sem padrão claro o suficiente
+  ainda pra uma trava de código específica (diferente dos outros casos
+  de duplicação já corrigidos, que tinham gatilho identificável).
 - [ ] **Painel "Saúde da IA" — zero visibilidade de saúde da IA por
   conta** (achado avaliando o `/admin` pro lado comercial, 28/08).
   Conferi o `/api/admin/stats` que alimenta o dashboard — tem métricas
@@ -98,6 +109,26 @@
   não é sintoma de algo pior.
 
 ## Feitas
+
+### 2026-09-01 — Pedido duplicado cancelado saía impresso duas vezes mesmo assim
+
+- Reportado ao vivo com print do painel (Concórdia): dois pedidos do
+  Rogério, mesmo valor, um cancelado no sistema — mas confirmado no
+  banco que os dois já tinham notinha `printed` antes do
+  cancelamento. A cozinha recebeu as duas, sem marcação de qual era a
+  válida, e preparou ambas.
+- Corrigido: cancelar um pedido que já imprimiu agora enfileira uma
+  notinha nova pro mesmo pedido, com faixa "PEDIDO CANCELADO" bem no
+  topo — tanto na notinha do navegador quanto no agente de impressão
+  térmica (`.exe` republicado, mas cada loja precisa trocar o
+  executável na mão pra ganhar a faixa). Pedido que nunca chegou a
+  imprimir não precisa disso — a rota de impressão já tinha auto-cura
+  pra esse caso, achado conferindo o código antes de escrever
+  qualquer coisa nova.
+- 5 testes novos no total (3 no zdelivery, 2 no
+  zdelivery-print-agent).
+- **Não resolvido**: por que a IA recriou o pedido em primeiro lugar
+  — ver Pendentes acima.
 
 ### 2026-09-01 — IA inventou horário e preço quando cliente só confirmou ("sim"/"pode ser")
 

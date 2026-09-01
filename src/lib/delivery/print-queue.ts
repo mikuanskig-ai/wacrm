@@ -56,6 +56,48 @@ export async function enqueuePrintJob(accountId: string, orderId: string): Promi
   }
 }
 
+/**
+ * Call right after an order is cancelled. If the kitchen already has
+ * a physical ticket for it (a print_jobs row reached `printed` before
+ * the cancel), enqueue a fresh job so a follow-up ticket — clearly
+ * marked CANCELADO by both the print-agent's receipt renderer and the
+ * browser reprint page, which check `receipt.status`/`order.status`
+ * — goes out too. Paper already in the kitchen's hands can't be
+ * recalled; a corrected ticket is the only way to reach it.
+ *
+ * A job that never printed (still `pending` when cancelled) does NOT
+ * need this: GET /api/v1/print-jobs already self-heals that case —
+ * it marks a pending job whose order is now cancelled as `skipped`
+ * instead of serving it to the agent (see that route's own comment).
+ * Nothing was ever physically printed for it, so there's nothing to
+ * correct. Same for `failed`.
+ *
+ * Confirmed live (2026-08-31, Churrascaria Concórdia): the AI
+ * duplicated an order (a customer's unrelated follow-up message
+ * triggered a second place_order for the same items). Whichever one
+ * got cancelled afterward — via cancel_order or a staff member's
+ * manual PATCH — had already printed by then, and the kitchen had no
+ * way to tell the two identical tickets apart. They prepared food for
+ * both.
+ */
+export async function notifyOrderCancellation(accountId: string, orderId: string): Promise<void> {
+  try {
+    const db = supabaseAdmin();
+    const { data: printedJob } = await db
+      .from('print_jobs')
+      .select('id')
+      .eq('order_id', orderId)
+      .eq('status', 'printed')
+      .limit(1)
+      .maybeSingle();
+    if (!printedJob) return;
+
+    await enqueuePrintJob(accountId, orderId);
+  } catch (err) {
+    console.error('[print-queue] failed to enqueue cancellation notice:', err);
+  }
+}
+
 /** Fire-and-forget — mirrors touchLastUsed (src/lib/api-keys/store.ts). */
 export function touchPrintAgentPoll(accountId: string): void {
   void supabaseAdmin()

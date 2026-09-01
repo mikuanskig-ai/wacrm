@@ -1185,7 +1185,8 @@
       "packedLabel": "포장됨",
       "subtotal": "소계",
       "deliveryFee": "배달료",
-      "total": "총액"
+      "total": "총액",
+      "cancelledBanner": "❌ 주문 취소됨 ❌"
     },
     "weekdays": {
       "mon": "월요일",

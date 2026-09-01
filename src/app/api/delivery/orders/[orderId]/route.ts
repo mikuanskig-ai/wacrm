@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
+import { notifyOrderCancellation } from '@/lib/delivery/print-queue';
 import type { DeliveryOrderStatus, DeliveryPaymentStatus } from '@/types';
 
 const VALID_STATUSES: DeliveryOrderStatus[] = [
@@ -109,6 +110,14 @@ export async function PATCH(request: Request, { params }: Params) {
     }
 
     if (statusChanged) {
+      // If a staff member is cancelling an order the kitchen already
+      // has a printed ticket for, they need a corrected one — paper
+      // already printed can't be recalled. See notifyOrderCancellation's
+      // own doc (print-queue.ts).
+      if (updated.status === 'cancelled') {
+        await notifyOrderCancellation(accountId, updated.id);
+      }
+
       await dispatchWebhookEvent(supabase, accountId, 'order.status_changed', {
         order_id: updated.id,
         previous_status: existing.status,

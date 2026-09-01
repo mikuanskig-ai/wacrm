@@ -40,6 +40,7 @@ import { getBusinessHours, isWithinBusinessHours, closedMessage } from '@/lib/de
 import { effectivePrice, type DayPriceOverrides } from '@/lib/delivery/day-price'
 import { calculateDeliveryFeeForAccount, type DeliveryFeeFailureReason } from '@/lib/delivery/fee-engine'
 import { readOrderInfo, writeOrderInfo, clearStaleFeeQuote, type OrderInfo } from '@/lib/ai/order-state'
+import { notifyOrderCancellation } from '@/lib/delivery/print-queue'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import type { ToolDefinition } from './types'
@@ -1069,6 +1070,11 @@ export const cancelOrderTool: ToolDefinition = {
     if (error) {
       return { content: `Failed to cancel order ${order.id}: ${error.message}` }
     }
+
+    // If the kitchen already has a ticket for this order, they need a
+    // corrected one — paper already printed can't be recalled. See
+    // notifyOrderCancellation's own doc (print-queue.ts).
+    await notifyOrderCancellation(ctx.accountId, order.id)
 
     await writeOrderInfo(ctx.db, ctx.conversationId, { lastPlacedOrderId: null, lastPlacedOrderTotal: null })
 

@@ -1186,7 +1186,8 @@
       "packedLabel": "Embalado",
       "subtotal": "Subtotal",
       "deliveryFee": "Taxa de entrega",
-      "total": "Total"
+      "total": "Total",
+      "cancelledBanner": "❌ PEDIDO CANCELADO ❌"
     },
     "weekdays": {
       "mon": "Segunda",

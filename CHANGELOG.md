@@ -2,6 +2,50 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.19.0] — 2026-09-01
+
+### Corrigido
+
+- **Pedido duplicado cancelado ainda saía impresso duas vezes na
+  cozinha** — reportado ao vivo (Concórdia, print do painel): a IA
+  duplicou um pedido (mesmo cliente, mesmo valor), um foi cancelado no
+  sistema — mas o painel mostrar "cancelado" não desfaz o que já saiu
+  na impressora. Confirmado no banco: os dois pedidos já tinham
+  `print_jobs` com status `printed` antes do cancelamento — a cozinha
+  recebeu duas notinhas idênticas, sem nenhuma marcação de qual era a
+  válida, e preparou os dois.
+  - Nova `notifyOrderCancellation()` (`src/lib/delivery/print-queue.ts`):
+    ao cancelar um pedido, se ele já tinha uma notinha `printed`,
+    enfileira uma nova impressão pra esse mesmo pedido — a notinha já
+    impressa não tem como ser "desimprimir", só uma nova avisando.
+    Pedido que ainda estava `pending` (nunca chegou a imprimir) não
+    precisa disso — a rota `GET /api/v1/print-jobs` já tinha
+    auto-cura pra esse caso (marca `skipped` em vez de servir),
+    achado conferindo o código antes de escrever a correção.
+  - Aplicado nos dois lugares que cancelam pedido: a tool `cancel_order`
+    da IA e o PATCH manual (`/api/delivery/orders/[orderId]`, o botão
+    "Cancelar pedido" do painel).
+  - **Notinha do navegador** (`/delivery/pedidos/[id]/imprimir`) e **o
+    agente de impressão térmica** (projeto separado,
+    `zdelivery-print-agent`) ganharam faixa "❌ PEDIDO CANCELADO ❌" /
+    "NAO PREPARAR ESTE PEDIDO" bem no topo da notinha, antes até do
+    nome da conta, quando o pedido está cancelado.
+  - **`.exe` do agente de impressão republicado**
+    (`v2.zontalk.shop/downloads/zontalk-print-agent.exe`, backup do
+    anterior salvo como de praxe) — mas **cada loja com o agente já
+    instalado precisa baixar e trocar o `.exe` na mão** pra ganhar essa
+    faixa (sem auto-update, limitação já conhecida). Até lá, a notinha
+    de reimpressão vai imprimir sem a faixa nova.
+  - 3 testes novos em `print-queue.test.ts`, 2 no repositório do
+    agente de impressão (`receipt.test.ts`).
+- Causa raiz da duplicação em si (por que a IA criou um segundo
+  pedido) **não foi resolvida aqui** — investigação aponta uma
+  mensagem de acompanhamento do cliente ("E Silvana Mendes", só
+  informando quem ia fazer o Pix) sendo mal interpretada como pedido
+  de um segundo pedido, apesar do prompt já instruir cancelar antes de
+  recriar. Anotado em `task.md` como gap em aberto — esse fix cobre a
+  consequência (impressão dupla), não a causa.
+
 ## [0.18.0] — 2026-09-01
 
 ### Corrigido

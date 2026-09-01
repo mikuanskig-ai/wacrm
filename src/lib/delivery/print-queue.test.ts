@@ -8,9 +8,17 @@ vi.mock('@/lib/payments/admin-client', () => ({
   supabaseAdmin: mocks.supabaseAdmin,
 }));
 
-import { enqueuePrintJob, touchPrintAgentPoll, nextFailureState } from './print-queue';
+import { enqueuePrintJob, notifyOrderCancellation, touchPrintAgentPoll, nextFailureState } from './print-queue';
 
-function makeDb(opts: { enabled?: boolean; noConfigRow?: boolean; insertError?: string } = {}) {
+function makeDb(
+  opts: {
+    enabled?: boolean;
+    noConfigRow?: boolean;
+    insertError?: string;
+    /** notifyOrderCancellation's own lookup — does a `printed` print_jobs row already exist for this order? */
+    hasPrintedJob?: boolean;
+  } = {},
+) {
   const inserted: Record<string, unknown>[] = [];
   const db = {
     from: (table: string) => {
@@ -32,6 +40,19 @@ function makeDb(opts: { enabled?: boolean; noConfigRow?: boolean; insertError?: 
       }
       if (table === 'print_jobs') {
         return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                limit: () => ({
+                  maybeSingle: () =>
+                    Promise.resolve({
+                      data: opts.hasPrintedJob ? { id: 'job-printed' } : null,
+                      error: null,
+                    }),
+                }),
+              }),
+            }),
+          }),
           insert: (row: Record<string, unknown>) => {
             inserted.push(row);
             return Promise.resolve({
@@ -91,6 +112,34 @@ describe('enqueuePrintJob', () => {
     });
 
     await expect(enqueuePrintJob('acct-1', 'order-1')).resolves.toBeUndefined();
+  });
+});
+
+describe('notifyOrderCancellation', () => {
+  it('enqueues a fresh print job when the order already has a printed one — regression, 2026-08-31 (Churrascaria Concórdia)', async () => {
+    const { db, inserted } = makeDb({ enabled: true, hasPrintedJob: true });
+    mocks.supabaseAdmin.mockReturnValue(db);
+
+    await notifyOrderCancellation('acct-1', 'order-1');
+
+    expect(inserted).toEqual([{ account_id: 'acct-1', order_id: 'order-1' }]);
+  });
+
+  it('does nothing when the order never actually printed — GET /api/v1/print-jobs already self-heals a still-pending job', async () => {
+    const { db, inserted } = makeDb({ enabled: true, hasPrintedJob: false });
+    mocks.supabaseAdmin.mockReturnValue(db);
+
+    await notifyOrderCancellation('acct-1', 'order-1');
+
+    expect(inserted).toHaveLength(0);
+  });
+
+  it('never throws, even when supabaseAdmin() itself throws', async () => {
+    mocks.supabaseAdmin.mockImplementation(() => {
+      throw new Error('no service role key configured');
+    });
+
+    await expect(notifyOrderCancellation('acct-1', 'order-1')).resolves.toBeUndefined();
   });
 });
 
