@@ -1,29 +1,58 @@
 # ZonTalk
 
-A Zontalk é uma plataforma completa de atendimento, vendas e automação que centraliza todos os canais de comunicação da empresa em um único lugar.
+Plataforma completa de atendimento, vendas e automação que centraliza
+todos os canais de comunicação da empresa em um único lugar — com um
+diferencial: uma IA que **atende pelo WhatsApp e monta o pedido
+sozinha**, do primeiro "oi" até a impressão na cozinha.
 
-Com a Zontalk, sua equipe pode atender clientes pelo WhatsApp, Instagram, Facebook e outros canais através de uma caixa de entrada compartilhada, organizando conversas, distribuindo atendimentos entre operadores e acompanhando todo o histórico de cada cliente.
+## IA que tira pedido (módulo Delivery)
 
-A plataforma conta com CRM integrado em formato Kanban, permitindo gerenciar oportunidades de vendas, acompanhar negociações e visualizar o funil comercial de forma simples e eficiente.
+O carro-chefe da plataforma. A IA conversa com o cliente em linguagem
+natural, monta o carrinho certo, calcula frete por bairro/distância,
+confirma forma de pagamento e envia o pedido direto pra impressão na
+cozinha — sem um atendente digitar nada. Quando algo foge do script
+(um pedido mais complexo, uma dúvida fora do previsto), a IA passa o
+atendimento pra um humano com o contexto já resumido, e a equipe tem
+uma tela de revisão pra forçar a impressão manualmente se precisar.
 
-Além do atendimento humano, a Zontalk oferece automações inteligentes para reduzir tarefas repetitivas, incluindo chatbot visual, mensagens automáticas, distribuição de atendimentos, respostas rápidas e fluxos personalizados para captação e qualificação de leads.
+Pra operações que preferem não depender de IA, existe também um fluxo
+de pedido 100% determinístico — menu por número, sem interpretação de
+texto livre — como alternativa de baixo risco.
 
-A Inteligência Artificial da plataforma auxilia operadores durante o atendimento, gera respostas automaticamente, consulta bases de conhecimento e ajuda empresas a oferecerem um suporte mais rápido e eficiente.
+## O CRM por trás
 
-Entre os principais recursos da Zontalk estão:
+- Caixa de entrada compartilhada, com distribuição de atendimento
+  entre operadores e histórico completo por cliente.
+- CRM em Kanban para gestão comercial — funil de vendas, oportunidades,
+  negociações.
+- Construtor de fluxo visual (chatbot sem código) para atendimento,
+  qualificação de leads e — no módulo Delivery — pedidos por menu.
+- Automações: distribuição de atendimento, mensagens automáticas e
+  agendadas, respostas rápidas.
+- Disparo de mensagens em massa (campanhas).
+- Base de conhecimento com busca semântica, pra IA responder dúvidas
+  com a informação real do negócio.
+- Gestão de contatos, etiquetas, usuários e permissões.
+- API pública para integrações externas ([docs/public-api.md](./docs/public-api.md)).
+- Dashboard com métricas em tempo real.
+- PWA — acesso de qualquer dispositivo, sem instalar nada.
 
-* Caixa de entrada compartilhada para equipes.
-* Integração com WhatsApp, Instagram e Facebook.
-* CRM Kanban para gestão comercial.
-* Chatbot visual com criação de fluxos sem programação.
-* Recepção Inteligente com IA.
-* Mensagens automáticas e agendadas.
-* Gestão de contatos e etiquetas.
-* Distribuição automática de atendimentos.
-* Dashboard com métricas e indicadores em tempo real.
-* Campanhas e disparos de mensagens.
-* API para integrações externas.
-* Gestão de usuários e permissões.
-* Aplicativo PWA para acesso em qualquer dispositivo.
+## Stack
 
-A Zontalk foi desenvolvida para empresas que desejam centralizar o atendimento, aumentar a produtividade da equipe, automatizar processos e transformar conversas em oportunidades de venda.
+Next.js (App Router) + Supabase (Postgres, Auth, Storage) + Tailwind.
+Self-hostável — roda na sua própria infraestrutura, sem depender de
+nenhum serviço da ZonTalk.
+
+## Para desenvolvedores
+
+Este repositório é um fork ativo de um template self-hostável. Pra
+rodar localmente, fazer deploy ou entender a estrutura do projeto, veja
+[CONTRIBUTING.md](./CONTRIBUTING.md) — inclui o passo a passo de
+setup, as migrations do Supabase e os scripts do dia a dia
+(`npm run dev`, `npm test`, etc.).
+
+Documentação adicional em [`docs/`](./docs).
+
+## Licença
+
+MIT — ver [LICENSE](./LICENSE).
