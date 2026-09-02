@@ -2274,6 +2274,7 @@
       "delivery-fee": "Taxa de entrega",
       "public-menu": "Cardápio público",
       "printing": "Impressão automática",
+      "order-tag": "Etiqueta de pedido",
       "members": "Membros da equipe",
       "api": "Chaves de API"
     },
@@ -2590,6 +2591,19 @@
       "step3Desc": "Assim que o agente rodar pela primeira vez, ele aparece aqui — sem precisar recarregar a página.",
       "step3DescConnected": "Impressora pronta — os pedidos vão imprimir sozinhos a partir de agora.",
       "waitingForAgent": "Aguardando o agente se conectar..."
+    },
+    "orderTag": {
+      "title": "Etiqueta de pedido",
+      "description": "Aplica uma etiqueta automaticamente em todo contato que fizer um pedido — pelo WhatsApp com IA, manual, fluxo ou cardápio público. Útil pra depois filtrar ou disparar mensagem só pra quem já pediu.",
+      "adminOnlyConfig": "Só administradores e donos podem alterar a etiqueta de pedido.",
+      "loading": "Carregando...",
+      "loadFailed": "Falha ao carregar a configuração",
+      "fieldDesc": "Escolha a etiqueta, ou deixe em \"Nenhuma\" pra desativar.",
+      "placeholder": "Escolha uma etiqueta",
+      "none": "Nenhuma (desativado)",
+      "noTags": "Você ainda não tem nenhuma etiqueta cadastrada. Crie uma em Campos e tags primeiro.",
+      "saveSuccess": "Configuração salva",
+      "saveFailed": "Falha ao salvar a configuração"
     },
     "aiConfig": {
       "title": "Configuração do agente",

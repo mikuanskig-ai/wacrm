@@ -17,6 +17,7 @@ import { createPreference } from '@/lib/payments/mercadopago-api';
 import { sendMessageToConversation } from '@/lib/whatsapp/send-message';
 import { formatCurrency } from '@/lib/currency';
 import { enqueuePrintJob } from '@/lib/delivery/print-queue';
+import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 
 export interface CartLineItemAddon {
   group_id: string;
@@ -255,6 +256,35 @@ export async function finalizeDeliveryOrder(
   }
 
   await enqueuePrintJob(args.accountId, order.id);
+
+  // Auto-tag the contact when the account opted into it (Settings →
+  // Delivery → Order tag, accounts.order_placed_tag_id). Deterministic
+  // side effect of order creation itself, not something the AI has to
+  // remember to call — every order source (AI chat, manual, Flow
+  // builder, public checkout) already funnels through this one
+  // function, so this applies regardless of source with no dependency
+  // on model behavior. Never blocks the sale, same reasoning as the
+  // Mercado Pago block above.
+  if (order.contact_id) {
+    try {
+      const { data: account } = await db
+        .from('accounts')
+        .select('order_placed_tag_id')
+        .eq('id', args.accountId)
+        .maybeSingle();
+      if (account?.order_placed_tag_id) {
+        await addContactTagAndDispatch({
+          db,
+          accountId: args.accountId,
+          contactId: order.contact_id,
+          tagId: account.order_placed_tag_id,
+          context: { conversation_id: order.conversation_id ?? undefined },
+        });
+      }
+    } catch (tagErr) {
+      console.error('[delivery] failed to tag contact on order creation:', tagErr);
+    }
+  }
 
   await dispatchWebhookEvent(db, args.accountId, 'order.created', {
     order_id: order.id,

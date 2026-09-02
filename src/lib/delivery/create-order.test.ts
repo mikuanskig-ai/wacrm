@@ -16,6 +16,9 @@ vi.mock("@/lib/payments/mercadopago-api", () => ({
 vi.mock("@/lib/whatsapp/send-message", () => ({
   sendMessageToConversation: vi.fn(async () => ({ messageId: "m1" })),
 }));
+vi.mock("@/lib/contacts/tag-events", () => ({
+  addContactTagAndDispatch: vi.fn(async () => ({ added: true, dispatched: true })),
+}));
 
 import {
   computeCartTotal,
@@ -28,6 +31,7 @@ import {
 import { getPaymentConfigSecrets } from "@/lib/payments/config";
 import { createPreference } from "@/lib/payments/mercadopago-api";
 import { sendMessageToConversation } from "@/lib/whatsapp/send-message";
+import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 
 function line(overrides: Partial<CartLineItem> = {}): CartLineItem {
   return {
@@ -138,6 +142,8 @@ describe("computeCartTotal", () => {
 function makeOrdersDb(args: {
   baseOrder: Record<string, unknown>;
   updatePayload?: Record<string, unknown>;
+  /** accounts.order_placed_tag_id — defaults to null (feature off), same as every existing test that doesn't care about tagging. */
+  orderPlacedTagId?: string | null;
 }) {
   const updateCalls: Record<string, unknown>[] = [];
   const insertCalls: Record<string, unknown>[] = [];
@@ -169,6 +175,19 @@ function makeOrdersDb(args: {
       }
       if (table === "delivery_order_items") {
         return { insert: () => Promise.resolve({ error: null }) };
+      }
+      if (table === "accounts") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: { order_placed_tag_id: args.orderPlacedTagId ?? null },
+                  error: null,
+                }),
+            }),
+          }),
+        };
       }
       throw new Error(`unexpected table in test fake db: ${table}`);
     },
@@ -363,5 +382,86 @@ describe("finalizeDeliveryOrder — payment method", () => {
     expect(insertCalls[0]).toEqual(
       expect.objectContaining({ payment_method: null, payment_notes: null }),
     );
+  });
+});
+
+describe("finalizeDeliveryOrder — order-placed tag (2026-09-01)", () => {
+  beforeEach(() => {
+    vi.mocked(getPaymentConfigSecrets).mockReset();
+    vi.mocked(getPaymentConfigSecrets).mockResolvedValue(null);
+    vi.mocked(addContactTagAndDispatch).mockClear();
+  });
+
+  it("tags the contact when the account has a tag configured", async () => {
+    const { db } = makeOrdersDb({
+      baseOrder: { ...BASE_ORDER, conversation_id: "conv-1" },
+      orderPlacedTagId: "tag-1",
+    });
+
+    await finalizeDeliveryOrder(db, {
+      accountId: "acct-1",
+      contactId: "contact-1",
+      conversationId: "conv-1",
+      source: "ai_chat",
+      cart: CART,
+      currency: "BRL",
+    });
+
+    expect(addContactTagAndDispatch).toHaveBeenCalledWith({
+      db,
+      accountId: "acct-1",
+      contactId: "contact-1",
+      tagId: "tag-1",
+      context: { conversation_id: "conv-1" },
+    });
+  });
+
+  it("does not tag when the account has no tag configured", async () => {
+    const { db } = makeOrdersDb({ baseOrder: BASE_ORDER, orderPlacedTagId: null });
+
+    await finalizeDeliveryOrder(db, {
+      accountId: "acct-1",
+      contactId: "contact-1",
+      conversationId: null,
+      source: "manual",
+      cart: CART,
+      currency: "BRL",
+    });
+
+    expect(addContactTagAndDispatch).not.toHaveBeenCalled();
+  });
+
+  it("does not tag (or even look up the config) when the order has no contact", async () => {
+    const { db } = makeOrdersDb({
+      baseOrder: { ...BASE_ORDER, contact_id: null },
+      orderPlacedTagId: "tag-1",
+    });
+
+    await finalizeDeliveryOrder(db, {
+      accountId: "acct-1",
+      contactId: null,
+      conversationId: null,
+      source: "public_web",
+      cart: CART,
+      currency: "BRL",
+    });
+
+    expect(addContactTagAndDispatch).not.toHaveBeenCalled();
+  });
+
+  it("never blocks order creation when tagging fails", async () => {
+    vi.mocked(addContactTagAndDispatch).mockRejectedValueOnce(new Error("boom"));
+    const { db } = makeOrdersDb({ baseOrder: BASE_ORDER, orderPlacedTagId: "tag-1" });
+
+    const order = await finalizeDeliveryOrder(db, {
+      accountId: "acct-1",
+      contactId: "contact-1",
+      conversationId: null,
+      source: "manual",
+      cart: CART,
+      currency: "BRL",
+    });
+
+    expect(order.id).toBe("order-1");
   });
 });

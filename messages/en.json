@@ -2274,6 +2274,7 @@
       "delivery-fee": "Delivery fee",
       "public-menu": "Public menu",
       "printing": "Auto-print",
+      "order-tag": "Order tag",
       "members": "Team members",
       "api": "API keys"
     },
@@ -2590,6 +2591,19 @@
       "step3Desc": "As soon as the agent runs for the first time, it shows up here — no page reload needed.",
       "step3DescConnected": "Printer ready — orders will print on their own from now on.",
       "waitingForAgent": "Waiting for the agent to connect..."
+    },
+    "orderTag": {
+      "title": "Order tag",
+      "description": "Automatically applies a tag to any contact who places an order — via AI chat, manual entry, a flow, or the public menu. Useful later for filtering or broadcasting to customers who already ordered.",
+      "adminOnlyConfig": "Only admins and owners can change the order tag.",
+      "loading": "Loading...",
+      "loadFailed": "Failed to load the configuration",
+      "fieldDesc": "Choose the tag, or leave it on \"None\" to turn this off.",
+      "placeholder": "Choose a tag",
+      "none": "None (off)",
+      "noTags": "You don't have any tags yet. Create one under Fields & tags first.",
+      "saveSuccess": "Configuration saved",
+      "saveFailed": "Failed to save the configuration"
     },
     "aiConfig": {
       "title": "Agent setup",

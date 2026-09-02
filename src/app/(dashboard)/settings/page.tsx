@@ -22,6 +22,7 @@ import { BusinessHoursConfig } from '@/components/settings/business-hours-config
 import { DeliveryFeeConfig } from '@/components/settings/delivery-fee-config';
 import { PublicMenuConfig } from '@/components/settings/public-menu-config';
 import { PrintConfig } from '@/components/settings/print-config';
+import { OrderTagConfig } from '@/components/settings/order-tag-config';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
@@ -91,6 +92,7 @@ function SettingsPageInner() {
     'delivery-fee': <DeliveryFeeConfig />,
     'public-menu': <PublicMenuConfig />,
     printing: <PrintConfig />,
+    'order-tag': <OrderTagConfig />,
     members: <MembersTab />,
     api: <ApiKeysSettings />,
   };

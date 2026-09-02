@@ -1,0 +1,32 @@
+-- ============================================================
+-- 075_order_placed_tag.sql — auto-tag a contact when a delivery
+--                             order is created.
+--
+-- Requested by the account owner (2026-09-01): give an account a way
+-- to have every contact who places a delivery order automatically
+-- tagged, so they can be filtered/targeted later (e.g. a broadcast to
+-- past-order customers).
+--
+-- Deliberately deterministic, not an AI-decided tool call — same
+-- reasoning already applied to place_order/cancel_order this week:
+-- something the AI has to remember to do is something it can forget
+-- to do. finalizeDeliveryOrder (src/lib/delivery/create-order.ts) is
+-- the single choke point every order-creation path already goes
+-- through (AI chat, manual form, Flow builder, public checkout) —
+-- tagging there means it's applied regardless of source, with zero
+-- dependency on model behavior.
+--
+-- One column on `accounts`, not a new one-row-per-account config
+-- table — this is a single nullable setting, the same shape as
+-- `default_currency`/`plan_id` already sitting directly on `accounts`
+-- rather than spun into their own tables.
+--
+-- ON DELETE SET NULL: deleting the tag itself (Settings → Fields &
+-- tags) must not fail or cascade-delete the account row — it just
+-- turns the feature back off silently, same as never having set it.
+--
+-- Idempotent — safe to re-run.
+-- ============================================================
+
+ALTER TABLE accounts
+  ADD COLUMN IF NOT EXISTS order_placed_tag_id UUID REFERENCES tags(id) ON DELETE SET NULL;

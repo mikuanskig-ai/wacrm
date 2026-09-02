@@ -110,6 +110,19 @@
 
 ## Feitas
 
+### 2026-09-01 — Etiqueta automática pra contato que fez pedido
+
+- Pedido do dono da conta: IA (ou o sistema, no geral) adicionar uma
+  tag em quem faz pedido. Confirmado com ele: mecanismo determinístico
+  (sempre que um pedido é criado, não uma ferramenta que a IA decide
+  usar) e um campo em Configurações pra escolher qual etiqueta já
+  cadastrada usar.
+- Implementado dentro de `finalizeDeliveryOrder` — único ponto por
+  onde todo pedido passa (IA, manual, Flow builder, cardápio público),
+  então a etiqueta é aplicada não importa a origem. Nova seção
+  "Etiqueta de pedido" em Configurações (só com Delivery ativo).
+- Migration 075 já aplicada em produção. 9 testes novos.
+
 ### 2026-09-01 — Pedido duplicado cancelado saía impresso duas vezes mesmo assim
 
 - Reportado ao vivo com print do painel (Concórdia): dois pedidos do

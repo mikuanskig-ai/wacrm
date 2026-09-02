@@ -2,6 +2,34 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.20.0] — 2026-09-01
+
+### Adicionado
+
+- **Etiqueta automática pra quem faz pedido** — pedido do dono da
+  conta: "adicionar a opção da IA adicionar uma tag nos contatos que
+  fizeram os pedidos". Implementado como efeito colateral
+  **determinístico** da criação do pedido (`finalizeDeliveryOrder`),
+  não como uma ferramenta que a IA decide quando chamar — mesmo
+  raciocínio já aplicado essa semana em `place_order`/`cancel_order`:
+  algo que a IA precisa lembrar de fazer é algo que ela pode esquecer
+  de fazer. Como todo pedido (IA no WhatsApp, manual, Flow builder,
+  cardápio público) já passa por essa mesma função, a etiqueta é
+  aplicada não importa a origem, sem depender do comportamento do
+  modelo.
+  - Nova configuração em **Configurações → Etiqueta de pedido**
+    (só aparece com o módulo Delivery ativo): escolhe qual etiqueta já
+    cadastrada usar, ou deixa "Nenhuma" pra desativar — não cria
+    etiqueta nova sozinho, usa as que a conta já tem em Campos e tags.
+  - Reaproveita o escritor central de tag já usado pelo Flow builder
+    (`addContactTagAndDispatch`) — mesmo efeito colateral de automação
+    (`tag_added`) que uma tag colocada por fluxo já dispara.
+  - Nunca bloqueia a venda: falha ao aplicar a etiqueta é só logada,
+    o pedido é criado normalmente mesmo assim.
+  - Migration 075 (`accounts.order_placed_tag_id`, já aplicada em
+    produção) + novo endpoint `GET/POST /api/delivery/order-tag-config`.
+  - 9 testes novos (4 em `create-order.test.ts`, 5 na rota).
+
 ## [0.19.0] — 2026-09-01
 
 ### Corrigido
