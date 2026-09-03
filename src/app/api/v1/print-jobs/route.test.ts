@@ -197,7 +197,7 @@ describe('GET /api/v1/print-jobs', () => {
     expect(body.data.jobs[0].receipt.customer_phone).toBe('5511999999999');
   });
 
-  it('skips and excludes a job whose order was cancelled', async () => {
+  it('skips and excludes a job that predates the order\'s cancellation — never printed, nothing to correct', async () => {
     const printJobs = [
       { id: 'job-1', order_id: 'order-1', account_id: 'acct-1', status: 'pending', attempts: 0, created_at: '2026-01-01T00:00:00Z', next_attempt_at: null },
     ];
@@ -206,7 +206,7 @@ describe('GET /api/v1/print-jobs', () => {
       print_jobs: printJobs,
       delivery_orders: [
         {
-          id: 'order-1', status: 'cancelled', source: 'manual', customer_name: 'Maria',
+          id: 'order-1', status: 'cancelled', status_changed_at: '2026-01-01T00:05:00Z', source: 'manual', customer_name: 'Maria',
           delivery_address: null, notes: null, subtotal: 10, delivery_fee: null, total: 10,
           currency: 'BRL', created_at: '2026-01-01T00:00:00Z', contact: null,
         },
@@ -220,6 +220,59 @@ describe('GET /api/v1/print-jobs', () => {
     expect(body.data.jobs).toHaveLength(0);
     expect(body.data.pending_count).toBe(0);
     expect(printJobs[0].status).toBe('skipped');
+  });
+
+  it('serves (does NOT skip) a job created at/after the cancellation — the deliberate CANCELADO corrective notice — regression, 2026-09-03 (Concórdia: this exact self-heal swallowed its own corrective job before the agent ever saw it)', async () => {
+    const printJobs = [
+      // Original job, already printed before the cancel — untouched by this route (not 'pending').
+      { id: 'job-1', order_id: 'order-1', account_id: 'acct-1', status: 'printed', attempts: 1, created_at: '2026-01-01T00:00:00Z', next_attempt_at: null },
+      // notifyOrderCancellation's follow-up, enqueued AFTER the cancel — must be served.
+      { id: 'job-2', order_id: 'order-1', account_id: 'acct-1', status: 'pending', attempts: 0, created_at: '2026-01-01T00:10:00Z', next_attempt_at: null },
+    ];
+    const db = makeDb({
+      accounts: [{ id: 'acct-1', name: 'Pizzaria' }],
+      print_jobs: printJobs,
+      delivery_orders: [
+        {
+          id: 'order-1', status: 'cancelled', status_changed_at: '2026-01-01T00:05:00Z', source: 'manual', customer_name: 'Maria',
+          delivery_address: null, notes: null, subtotal: 10, delivery_fee: null, total: 10,
+          currency: 'BRL', created_at: '2026-01-01T00:00:00Z', contact: null,
+        },
+      ],
+      delivery_order_items: [],
+    });
+    mocks.requireApiKey.mockResolvedValue({ supabase: db, accountId: 'acct-1' });
+
+    const res = await GET(request());
+    const body = await res.json();
+    expect(body.data.jobs).toHaveLength(1);
+    expect(body.data.jobs[0].id).toBe('job-2');
+    expect(body.data.jobs[0].receipt.status).toBe('cancelled');
+    expect(printJobs.find((j) => j.id === 'job-2')?.status).not.toBe('skipped');
+  });
+
+  it('serves a still-pending job when the order\'s cancellation timing is unknown (no status_changed_at) — safer to print an extra CANCELADO ticket than risk silently dropping a real one', async () => {
+    const printJobs = [
+      { id: 'job-1', order_id: 'order-1', account_id: 'acct-1', status: 'pending', attempts: 0, created_at: '2026-01-01T00:00:00Z', next_attempt_at: null },
+    ];
+    const db = makeDb({
+      accounts: [{ id: 'acct-1', name: 'Pizzaria' }],
+      print_jobs: printJobs,
+      delivery_orders: [
+        {
+          id: 'order-1', status: 'cancelled', status_changed_at: null, source: 'manual', customer_name: 'Maria',
+          delivery_address: null, notes: null, subtotal: 10, delivery_fee: null, total: 10,
+          currency: 'BRL', created_at: '2026-01-01T00:00:00Z', contact: null,
+        },
+      ],
+      delivery_order_items: [],
+    });
+    mocks.requireApiKey.mockResolvedValue({ supabase: db, accountId: 'acct-1' });
+
+    const res = await GET(request());
+    const body = await res.json();
+    expect(body.data.jobs).toHaveLength(1);
+    expect(printJobs[0].status).not.toBe('skipped');
   });
 
   it('never hands the same job to two concurrent pollers (the real double-print bug)', async () => {

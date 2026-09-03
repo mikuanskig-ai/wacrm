@@ -110,6 +110,32 @@
 
 ## Feitas
 
+### 2026-09-03 — Trava de código no `place_order` (causa raiz da duplicação, finalmente) + bug na própria correção de impressão
+
+- Reportado ao vivo pelo Eder com prints: dois pedidos duplicados no
+  mesmo dia (Rafael/Matheus, Iliane), mesmo padrão do caso do Rogério
+  em 31/08 — segundo pedido criado minutos depois do primeiro já
+  confirmado, sempre disparado por uma mensagem solta do cliente
+  depois do pedido pronto ("Ok", uma resposta tardia). Investigado a
+  fundo dessa vez: nunca foi corrida de milissegundos, é a IA mesmo
+  decidindo chamar `place_order` de novo apesar do aviso no prompt
+  (existente desde 14/08) dizendo pra cancelar antes.
+- **Corrigido a causa raiz de verdade**: `place_order` agora tem trava
+  de código — recusa criar pedido novo se já existe
+  `lastPlacedOrderId` nessa conversa, a menos que o modelo confirme
+  explicitamente que é um pedido separado de verdade
+  (`confirm_separate_order: true`). Reforço de prompt sozinho não
+  segurou em 4 ocorrências — trava de código sim.
+- **Achado no processo, bug na minha própria correção de 01/09**: a
+  auto-cura da fila de impressão pulava a NOTINHA DE CORREÇÃO também
+  (não só a notinha original de um pedido nunca impresso) — os dois
+  casos de hoje ficaram sem a correção chegar na cozinha por causa
+  disso. Corrigido: só pula notinha que foi criada antes do
+  cancelamento; notinha criada depois (a correção) sempre é servida.
+- Reenfileiradas manualmente as notinhas de correção que ficaram
+  perdidas hoje (pedidos do Rafael/Matheus e da Iliane).
+- 4 testes novos no total.
+
 ### 2026-09-01 — Etiqueta automática pra contato que fez pedido
 
 - Pedido do dono da conta: IA (ou o sistema, no geral) adicionar uma

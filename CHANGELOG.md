@@ -2,6 +2,43 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.21.0] — 2026-09-03
+
+### Corrigido
+
+- **`place_order` agora recusa criar um segundo pedido na mesma
+  conversa** — terceira e quarta ocorrência ao vivo da duplicação
+  (Rogério 31/08, e hoje Rafael/Matheus + Iliane, dois casos no mesmo
+  dia). Sempre minutos depois do primeiro pedido já confirmado e
+  "enviado pra cozinha" — nunca uma corrida de milissegundos: um "Ok"
+  solto, uma resposta tardia a uma pergunta que a IA já tinha
+  avançado. Já existia aviso no prompt desde 14/08 ("cancele antes de
+  recriar") — não segurou nas 4 vezes. Corrigido com trava de código
+  de verdade: `place_order` agora recusa quando já existe
+  `lastPlacedOrderId` nessa conversa, a menos que o modelo confirme
+  explicitamente (`confirm_separate_order: true`) que é um pedido
+  novo e separado de verdade, não uma correção — mesmo padrão já
+  usado em `confirm_quantity_increase`/`attach_note_to_existing`.
+  - 2 testes novos.
+- **A própria correção de impressão de pedido cancelado (0.19.0)
+  tinha um bug que anulava ela mesma** — achado investigando o caso
+  de hoje: quando um pedido já impresso é cancelado, o sistema
+  enfileira uma notinha nova avisando "PEDIDO CANCELADO". Só que a
+  auto-cura da fila de impressão (que pula notinha de pedido já
+  cancelado antes de nunca ter impresso) não distinguia isso da
+  notinha de correção — e acabava pulando a própria notinha de
+  correção antes do agente de impressão nunca vê-la. Os dois casos de
+  hoje (Rafael/Matheus, Iliane) ficaram sem a correção chegar na
+  cozinha por causa disso.
+  - Corrigido: só pula a notinha se ela foi criada **antes** do
+    pedido ser cancelado (`status_changed_at`) — notinha criada
+    depois (a de correção) sempre é servida. Timing desconhecido
+    (sem `status_changed_at`) também nunca pula — prefere imprimir
+    uma notinha a mais a arriscar sumir com uma correção de verdade.
+  - Reenfileiradas manualmente as notinhas de correção dos dois
+    pedidos afetados hoje (Rafael/Matheus, Iliane) — ver task.md.
+  - 2 testes novos.
+
 ## [0.20.0] — 2026-09-01
 
 ### Adicionado

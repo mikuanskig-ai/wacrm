@@ -212,7 +212,12 @@ export async function buildOrderStateSummary(
         (info.lastPlacedOrderTotal != null ? `, total ${formatCurrency(info.lastPlacedOrderTotal, currency)}` : '') +
         '. If the customer is now correcting or changing that order (a different quantity, item, or address), you MUST call ' +
         'cancel_order first, THEN build the corrected cart and call place_order again — never place a second order without ' +
-        'cancelling the first one, that sends the kitchen two separate tickets for what should be a single corrected order.',
+        'cancelling the first one, that sends the kitchen two separate tickets for what should be a single corrected order. ' +
+        'place_order itself will refuse and tell you this again if you try anyway. A plain acknowledgment from the customer ' +
+        '("ok", "obrigado", a late "sim" answering something you already moved past) is NOT a request for anything — do not ' +
+        'call place_order again just because they said something after the order was already confirmed; just reply naturally. ' +
+        'Only call place_order again (with confirm_separate_order: true) if the customer explicitly asks for a genuinely ' +
+        'separate additional order, not a correction.',
     )
   }
 

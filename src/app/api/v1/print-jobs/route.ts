@@ -34,6 +34,7 @@ const PRINT_JOB_LIMIT = 20;
 interface OrderRow {
   id: string;
   status: string;
+  status_changed_at: string | null;
   source: string;
   customer_name: string | null;
   delivery_address: string | null;
@@ -103,7 +104,7 @@ export async function GET(request: Request) {
         ctx.supabase
           .from('delivery_orders')
           .select(
-            'id, status, source, customer_name, delivery_address, notes, payment_method, payment_notes, subtotal, delivery_fee, total, currency, created_at, contact:contacts(name, phone)',
+            'id, status, status_changed_at, source, customer_name, delivery_address, notes, payment_method, payment_notes, subtotal, delivery_fee, total, currency, created_at, contact:contacts(name, phone)',
           )
           .in('id', orderIds),
         ctx.supabase
@@ -118,9 +119,28 @@ export async function GET(request: Request) {
 
     // A job whose order was cancelled after enqueue is skipped rather
     // than served — self-healing, no need to touch the order-cancel
-    // route.
+    // route. BUT only when the job predates the cancellation (an order
+    // voided before its original ticket ever printed) — a job created
+    // AT OR AFTER the cancellation is a deliberate corrective re-print
+    // (notifyOrderCancellation, print-queue.ts, fires when the kitchen
+    // already had a printed ticket for the order) and must always be
+    // served, never skipped, or the kitchen never gets the corrected
+    // "CANCELADO" ticket at all. Confirmed live (2026-09-03,
+    // Concórdia): this exact blanket rule swallowed that corrective job
+    // itself before the agent ever saw it — two orders stayed
+    // uncorrected in the kitchen's hands despite the fix from two days
+    // earlier. Unknown timing (no status_changed_at) falls back to
+    // serving the job rather than skipping it — worst case that prints
+    // one harmless already-marked-CANCELADO ticket for an order that
+    // never had a real one; the alternative (skip) risks silently
+    // dropping a real corrective notice again.
     const cancelledJobIds = jobs
-      .filter((j) => orderById.get(j.order_id)?.status === 'cancelled')
+      .filter((j) => {
+        const order = orderById.get(j.order_id);
+        if (order?.status !== 'cancelled') return false;
+        if (!order.status_changed_at) return false;
+        return new Date(j.created_at).getTime() < new Date(order.status_changed_at).getTime();
+      })
       .map((j) => j.id);
     if (cancelledJobIds.length > 0) {
       await ctx.supabase.from('print_jobs').update({ status: 'skipped' }).in('id', cancelledJobIds);

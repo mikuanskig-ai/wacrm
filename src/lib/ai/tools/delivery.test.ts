@@ -910,6 +910,32 @@ describe('placeOrderTool', () => {
     expect(getOrderInfo()).toMatchObject({ lastPlacedOrderId: 'order-12', lastPlacedOrderTotal: 95 })
   })
 
+  it('refuses a second place_order when an order was already placed this conversation — regression, 2026-08-31/2026-09-03 (Rogério, Rafael/Matheus, Iliane — three live duplicate-order incidents, always minutes apart, never a race)', async () => {
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [] }],
+      orderInfo: { lastPlacedOrderId: 'order-1', lastPlacedOrderTotal: 20 },
+    })
+    const res = await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).not.toHaveBeenCalled()
+    expect(res.content).toContain('order-1')
+    expect(res.content).toContain('cancel_order')
+    expect(res.content).toContain('confirm_separate_order')
+  })
+
+  it('allows a genuinely separate second order when the model explicitly confirms it', async () => {
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-2', total: 20, currency: 'BRL' })
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [] }],
+      orderInfo: { lastPlacedOrderId: 'order-1', lastPlacedOrderTotal: 20 },
+    })
+    const res = await placeOrderTool.execute(
+      { delivery_address: 'Rua X, 123', confirm_separate_order: true },
+      ctxFor(db),
+    )
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalled()
+    expect(res.data).toMatchObject({ id: 'order-2' })
+  })
+
   const cart: CartLineItem[] = [
     { product_id: 'p1', product_name: 'Pizza', unit_price: 30, quantity: 1, addons: [] },
   ]

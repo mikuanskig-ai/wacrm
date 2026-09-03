@@ -834,6 +834,11 @@ export const placeOrderTool: ToolDefinition = {
         description:
           'True when the customer said they will pick the order up (retirada) instead of having it delivered. Skips the delivery fee entirely.',
       },
+      confirm_separate_order: {
+        type: 'boolean',
+        description:
+          "Set to true ONLY when an order was already placed earlier THIS conversation (you will be told so, and blocked, if you try to place_order without this) AND the customer explicitly wants a genuinely SEPARATE, additional order — not a correction to the one already placed. If the customer is correcting/changing the existing order (different item, quantity, address...), call cancel_order first instead and do NOT set this.",
+      },
     },
     additionalProperties: false,
   },
@@ -841,6 +846,43 @@ export const placeOrderTool: ToolDefinition = {
     const cart = await readCart(ctx.db, ctx.conversationId)
     if (cart.length === 0) {
       return { content: 'The cart is empty — there is nothing to order yet. Use add_to_cart first.' }
+    }
+
+    // Falls back to whatever update_order_info/calculate_delivery_fee
+    // already captured this conversation — the model doesn't always
+    // re-pass something it already told the customer earlier, and
+    // without this fallback that info was silently lost right at the
+    // one step that most needed it. Explicit args always win when given
+    // (the customer may have changed their mind since).
+    const orderInfo = await readOrderInfo(ctx.db, ctx.conversationId)
+
+    // Confirmed live THREE times now (2026-08-31 Rogério, 2026-09-03
+    // Rafael/Matheus + Iliane, all same day) — a customer's message
+    // well after an order was already confirmed and "sent to the
+    // kitchen" (a bare "Ok", an unrelated remark, a late "pode sim"
+    // answering a question the model had already moved past) made the
+    // model call place_order AGAIN for the exact same cart, minutes
+    // apart — never a millisecond-scale race, plainly the model
+    // re-deciding to (re-)place an order the conversation had already
+    // shown as done. The prompt has told the model since 2026-08-14 to
+    // cancel before recreating (see the order-state summary and
+    // cancel_order's own description) — that alone hasn't been enough,
+    // same lesson as every other hallucination fixed this week: a
+    // prompt instruction is not a substitute for a code-level gate.
+    // Blocks unconditionally unless the model explicitly flags a
+    // genuinely separate, additional order (confirm_separate_order) —
+    // mirrors the confirm_quantity_increase/attach_note_to_existing
+    // precedent: default to the safe path, require an explicit signal
+    // for the rarer legitimate exception.
+    if (orderInfo.lastPlacedOrderId && args.confirm_separate_order !== true) {
+      return {
+        content:
+          `An order (id ${orderInfo.lastPlacedOrderId}${
+            orderInfo.lastPlacedOrderTotal != null
+              ? `, total ${formatCurrency(orderInfo.lastPlacedOrderTotal, ctx.currency)}`
+              : ''
+          }) was ALREADY placed earlier in this conversation and has not been cancelled. Do not place a second order for the same request. If the customer is correcting or changing anything about it, call cancel_order first, then call place_order again. If — and only if — the customer explicitly wants a genuinely separate, additional order (not a correction), call place_order again with confirm_separate_order: true.`,
+      }
     }
 
     // Fase 5 (Operação): self-service channels respect business hours;
@@ -851,13 +893,6 @@ export const placeOrderTool: ToolDefinition = {
       return { content: closedMessage(businessHours.hours) }
     }
 
-    // Falls back to whatever update_order_info/calculate_delivery_fee
-    // already captured this conversation — the model doesn't always
-    // re-pass something it already told the customer earlier, and
-    // without this fallback that info was silently lost right at the
-    // one step that most needed it. Explicit args always win when given
-    // (the customer may have changed their mind since).
-    const orderInfo = await readOrderInfo(ctx.db, ctx.conversationId)
     const isPickup = typeof args.is_pickup === 'boolean' ? args.is_pickup : orderInfo.isPickup === true
     const deliveryAddress =
       typeof args.delivery_address === 'string' && args.delivery_address.trim()
