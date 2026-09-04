@@ -8,6 +8,37 @@ interface DbMessage {
   content_type: 'text' | 'location' | 'audio'
 }
 
+/**
+ * Content types `buildConversationContext` can actually surface to the
+ * model — image/document/video/template/interactive carry no text and
+ * are silently dropped by the query below. Exported so a caller
+ * deciding whether to fire the AI auto-reply pipeline AT ALL (the
+ * inbound webhook handler, `src/lib/whatsapp/inbound-message.ts`) can
+ * gate on this same set.
+ *
+ * Root-caused a live incident (2026-09-04, Concórdia, Alzira Y. de
+ * Oliveira): a payment-receipt PDF has a real, non-empty `content_text`
+ * (its filename) — the webhook's own dispatch trigger only checked
+ * "the message has text", so it fired a full AI reply. But because
+ * `content_type` was `document`, that same message never showed up
+ * here — the model got invoked with the conversation UNCHANGED from
+ * the turn it had already answered (ending on its own last assistant
+ * message, nothing new to respond to). With no anchor for what was
+ * actually new, it replayed the entire order-confirmation flow from
+ * scratch, cancelling the already-placed (and already-paid) order and
+ * recreating an identical one — a spurious cancellation ticket to the
+ * kitchen and a fully duplicated order, despite the model correctly
+ * calling cancel_order before place_order (the 2026-09-03 guard
+ * against a second order worked exactly as designed; the cart/order
+ * state itself was never at fault). Two independently-reasonable
+ * filters — "does this message have text" (the dispatch trigger) and
+ * "can the model see this message" (this function) — silently
+ * disagreed on the one case that matters: a document whose caption or
+ * filename happens to be non-empty. This constant makes the two
+ * impossible to drift apart again.
+ */
+export const AI_VISIBLE_CONTENT_TYPES = new Set(['text', 'location', 'audio'])
+
 // A location message's content_text is built by the wuzapi webhook
 // route (`[name, address, "lat,lng"].filter(Boolean).join(' - ')`) —
 // the coordinate pair is always the last segment when present. Kept
@@ -78,7 +109,7 @@ export async function buildConversationContext(
     .from('messages')
     .select('sender_type, content_text, content_type')
     .eq('conversation_id', conversationId)
-    .in('content_type', ['text', 'location', 'audio'])
+    .in('content_type', [...AI_VISIBLE_CONTENT_TYPES])
     .order('created_at', { ascending: false })
     .limit(limit)
 

@@ -2,6 +2,40 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.22.1] — 2026-09-04
+
+### Corrigido
+
+- **Nova causa raiz de duplicação de pedido: comprovante de pagamento
+  (PDF) disparava a IA sem ela conseguir ver o próprio comprovante** —
+  reportado ao vivo (Eder, print do painel de Pedidos): pedido da
+  Alzira Y. de Oliveira cancelado e recriado idêntico, 1 minuto depois.
+  Investigado a fundo: **diferente das 4 ocorrências anteriores**, a
+  trava de código do `place_order` (0.21.0) funcionou certinho — o
+  modelo chamou `cancel_order` antes de `place_order`, exatamente como
+  deveria. O problema é anterior a isso: a cliente mandou o comprovante
+  de pagamento em PDF logo depois do pedido confirmado. O nome do
+  arquivo ("comprovante...pdf") conta como "texto" pro gatilho que
+  decide se dispara a IA — então disparou uma resposta completa. Só
+  que `buildConversationContext` (o que de fato vira contexto pro
+  modelo) **descarta silenciosamente qualquer mensagem tipo documento/
+  imagem/vídeo** — o modelo foi invocado sem enxergar NADA de novo
+  (a conversa "parada" na sua própria última resposta) e, sem âncora
+  nenhuma, reencenou o fluxo de pedido inteiro do zero: cancelou o
+  pedido correto (e já pago) e recriou um idêntico. Gerou uma notinha
+  de cancelamento indevida na cozinha (essa sim, impressa corretamente
+  — a correção de impressão de ontem funcionou).
+  - Corrigido: o gatilho de disparo da IA agora usa o MESMO conjunto de
+    tipos que `buildConversationContext` realmente enxerga
+    (`AI_VISIBLE_CONTENT_TYPES`, compartilhado entre os dois lugares) —
+    nunca mais dispara a IA pra um tipo de mensagem que ela não
+    consegue ver. Fecha essa classe inteira de bug (documento, imagem,
+    vídeo, não só comprovante de pagamento), não só o caso de hoje.
+  - Sem impacto na experiência: a cliente já tinha recebido a
+    confirmação do pedido e a chave Pix antes de mandar o comprovante —
+    o comprovante em si não precisava de resposta.
+  - 8 testes novos.
+
 ## [0.22.0] — 2026-09-04
 
 ### Adicionado

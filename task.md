@@ -110,6 +110,33 @@
 
 ## Feitas
 
+### 2026-09-04 — Comprovante de pagamento (PDF) disparava a IA sem ela ver o próprio comprovante → cancelava e recriava o pedido
+
+- Reportado ao vivo pelo Eder com print do painel de Pedidos: pedido da
+  Alzira Y. de Oliveira aparecendo cancelado + recriado idêntico,
+  1 minuto depois. 5ª ocorrência de "pedido duplicado" reportada, mas
+  **causa raiz diferente das 4 anteriores** — investigado a fundo antes
+  de mexer em qualquer coisa (mesma disciplina de sempre confirmar com
+  dado real antes de decidir o que corrigir).
+- A trava de código do `place_order` (0.21.0, ontem) funcionou
+  perfeitamente aqui — o modelo cancelou antes de recriar, como devia.
+  O bug real é anterior: a cliente mandou o comprovante de pagamento em
+  PDF; o nome do arquivo conta como "texto", então o gatilho que decide
+  se chama a IA disparou uma resposta completa — só que
+  `buildConversationContext` descarta silenciosamente mensagem tipo
+  documento/imagem/vídeo, então o modelo foi chamado sem ver nada de
+  novo e reencenou o fluxo de pedido do zero, cancelando o pedido
+  correto (já pago) e recriando um idêntico.
+- Corrigido: unificado num só conjunto (`AI_VISIBLE_CONTENT_TYPES`,
+  `src/lib/ai/context.ts`) o que conta como "a IA consegue ver essa
+  mensagem" — usado tanto pra montar o contexto quanto pra decidir se
+  dispara a IA. Fecha a classe inteira (documento/imagem/vídeo), não só
+  comprovante de pagamento.
+- A notinha de cancelamento indevida que isso gerou na cozinha saiu
+  impressa corretamente — confirma que a correção de impressão de
+  ontem (0.21.0) está funcionando de verdade num segundo caso real.
+- 8 testes novos.
+
 ### 2026-09-04 — Funil de clientes (Delivery) no Dashboard
 
 - Pedido do dono da conta: ver com clareza quantos novos contatos

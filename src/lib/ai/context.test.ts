@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { buildConversationContext } from './context'
+import { AI_VISIBLE_CONTENT_TYPES, buildConversationContext } from './context'
 
 /** Minimal fake matching the query chain in buildConversationContext:
  *  from().select().eq().in().order().limit() → { data, error }. */
@@ -15,6 +15,12 @@ function fakeDb(rows: unknown[]): SupabaseClient {
   }
   return chain as unknown as SupabaseClient
 }
+
+describe('AI_VISIBLE_CONTENT_TYPES', () => {
+  it('is exactly the set of content types this file surfaces to the model — regression, 2026-09-04 (a document\'s non-blank filename let it slip past the webhook\'s dispatch gate even though it never showed up here; both checks must share this one set)', () => {
+    expect([...AI_VISIBLE_CONTENT_TYPES].sort()).toEqual(['audio', 'location', 'text'])
+  })
+})
 
 describe('buildConversationContext', () => {
   it('maps sender_type to role and returns chronological order', async () => {

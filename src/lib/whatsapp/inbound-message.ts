@@ -16,6 +16,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { AI_VISIBLE_CONTENT_TYPES } from '@/lib/ai/context'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { autoAddContactsToPipelines } from '@/lib/pipelines/auto-add'
 
@@ -87,6 +88,37 @@ export function isValidStatusTransition(current: string, incoming: string): bool
   if (ii < 0) return false
   if (ci < 0) return true
   return ii > ci
+}
+
+/**
+ * Should this inbound message trigger the AI auto-reply pipeline at
+ * all? Pulled out as its own pure function — regression, 2026-09-04
+ * (Concórdia, Alzira Y. de Oliveira): a payment-receipt PDF has real,
+ * non-blank `inboundText` (a document's `contentText` falls back to
+ * its filename), so this used to fire a full AI dispatch anyway — but
+ * `buildConversationContext` silently drops any `document`/`image`/
+ * `video`/etc. message, so the model got invoked seeing nothing new at
+ * all and improvised: it cancelled and recreated a perfectly good,
+ * already-paid order, generating a spurious cancellation ticket for
+ * the kitchen. Two independently-reasonable checks — "does this
+ * message have text" (here) and "can the model see this message"
+ * (`AI_VISIBLE_CONTENT_TYPES`, context.ts) — silently disagreed on the
+ * one case that matters. Gating on the same set here closes that gap
+ * for good, for every currently-excluded content type, not just
+ * documents.
+ */
+export function shouldDispatchAiReply(args: {
+  flowConsumed: boolean
+  interactiveReplyId: string | null
+  inboundText: string
+  contentType: string
+}): boolean {
+  return (
+    !args.flowConsumed &&
+    !args.interactiveReplyId &&
+    args.inboundText.trim().length > 0 &&
+    AI_VISIBLE_CONTENT_TYPES.has(args.contentType)
+  )
 }
 
 export async function handleStatusUpdate(status: {
@@ -630,7 +662,7 @@ export async function processMessage(
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
 
-  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+  if (shouldDispatchAiReply({ flowConsumed, interactiveReplyId, inboundText, contentType })) {
     // Assigns this inbound message a monotonic per-conversation
     // sequence number — dispatchInboundToAiReply uses it to detect a
     // newer message arriving during its debounce/generation window and
