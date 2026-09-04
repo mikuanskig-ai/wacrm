@@ -32,6 +32,7 @@ import { MetricCard } from '@/components/dashboard/metric-card'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
 import { QuickActions } from '@/components/dashboard/quick-actions'
+import { DeliveryFunnelSection } from '@/components/dashboard/delivery-funnel-section'
 import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
@@ -255,6 +256,11 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <QuickActions />
+
+      {/* Delivery: funil de conversão/recorrência de clientes. Renderiza
+          null internamente se o módulo delivery estiver desligado ou o
+          perfil ainda estiver carregando — nenhuma condicional aqui. */}
+      <DeliveryFunnelSection />
 
       {/* Charts row */}
       {/* items-stretch (the grid default) stretches the two columns to

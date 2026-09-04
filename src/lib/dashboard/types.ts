@@ -48,6 +48,14 @@ export interface ResponseTimeSummary {
   lastWeekAvg: number | null
 }
 
+export interface DeliveryFunnelData {
+  newContacts: number
+  orderingCustomers: number
+  returningCustomers: number
+  loyalCustomers: number
+  unattributedOrders: number
+}
+
 export type ActivityKind =
   | 'message'
   | 'deal'

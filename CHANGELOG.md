@@ -2,6 +2,34 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.22.0] — 2026-09-04
+
+### Adicionado
+
+- **Funil de clientes (Delivery) no Dashboard** — pedido do gestor: ver
+  com clareza quantos novos contatos entraram, quantos fizeram pedido
+  com sucesso e, desses, quantos são recorrentes/fiéis. Novo widget
+  (só aparece pra conta com o módulo `delivery` ligado) com o mesmo
+  seletor de período já usado em Pedidos e 4 cards:
+  - **Novos contatos** — `contacts.created_at` no período.
+  - **Converteram** — desses, quantos fizeram 1+ pedido não cancelado
+    na mesma janela (funil estritamente ligado ao período escolhido).
+  - **Recorrentes (2+ pedidos)** / **Clientes fiéis (3+ pedidos)** —
+    olhando o **histórico completo** do cliente (não só o período
+    filtrado), decisão confirmada com o dono da conta: "recorrente" é
+    um traço do cliente, não um recorte arbitrário de data.
+  - Pedidos feitos pelo **Cardápio Público** ficam de fora do funil na
+    v1 (hoje nascem sem contato vinculado, por design do checkout
+    público) — aparecem como uma contagem à parte ("X pedidos não
+    identificados no período"), visível mas não contada como
+    recorrência.
+  - Agregação nova via RPC (`delivery_customer_funnel`, migration 076)
+    em vez de client-side como o resto do dashboard — precisa da
+    contagem lifetime de pedidos por contato, cruzando toda a tabela;
+    2 índices novos (`idx_contacts_account_created`,
+    `idx_delivery_orders_account_created`).
+  - 3 testes novos.
+
 ## [0.21.0] — 2026-09-03
 
 ### Corrigido

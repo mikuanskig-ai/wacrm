@@ -455,6 +455,17 @@
       "noReplies": "아직 기록된 응답이 없습니다",
       "noRepliesHint": "고객 메시지에 답변하면 이 차트가 채워집니다."
     },
+    "deliveryFunnel": {
+      "title": "고객 퍼널 — 딜리버리",
+      "description": "선택한 기간의 신규 연락처, 주문 전환, 재구매 현황",
+      "newContacts": "신규 연락처",
+      "orderingCustomers": "전환됨 (주문 1건 이상)",
+      "returningCustomers": "재구매 고객 (2건 이상)",
+      "loyalCustomers": "단골 고객 (3건 이상)",
+      "ofNewContacts": "신규 연락처 대비",
+      "ofOrderingCustomers": "전환 고객 대비",
+      "unattributedOrders": "이 기간 연락처가 연결되지 않은 주문 {count}건 (퍼블릭 메뉴, 연결된 연락처 없음)"
+    },
     "emptyState": {
       "title": "아직 데이터가 충분하지 않습니다"
     },

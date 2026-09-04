@@ -455,6 +455,17 @@
       "noReplies": "No replies recorded yet",
       "noRepliesHint": "This chart fills in as you reply to customer messages."
     },
+    "deliveryFunnel": {
+      "title": "Customer funnel — Delivery",
+      "description": "New contacts, conversion into an order, and repeat purchases in the selected period",
+      "newContacts": "New contacts",
+      "orderingCustomers": "Converted (1+ order)",
+      "returningCustomers": "Returning (2+ orders)",
+      "loyalCustomers": "Loyal customers (3+ orders)",
+      "ofNewContacts": "of new contacts",
+      "ofOrderingCustomers": "of converted customers",
+      "unattributedOrders": "{count} {count, plural, =1 {unattributed order} other {unattributed orders}} in this period (Public Menu, no linked contact)"
+    },
     "emptyState": {
       "title": "Not enough data yet"
     },

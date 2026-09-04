@@ -455,6 +455,17 @@
       "noReplies": "Nenhuma resposta registrada ainda",
       "noRepliesHint": "Este gráfico é preenchido conforme você responde às mensagens dos clientes."
     },
+    "deliveryFunnel": {
+      "title": "Funil de clientes — Delivery",
+      "description": "Novos contatos, conversão em pedido e recorrência no período selecionado",
+      "newContacts": "Novos contatos",
+      "orderingCustomers": "Converteram (1+ pedido)",
+      "returningCustomers": "Recorrentes (2+ pedidos)",
+      "loyalCustomers": "Clientes fiéis (3+ pedidos)",
+      "ofNewContacts": "dos novos contatos",
+      "ofOrderingCustomers": "dos que converteram",
+      "unattributedOrders": "{count} {count, plural, =1 {pedido não identificado} other {pedidos não identificados}} no período (Cardápio Público, sem contato vinculado)"
+    },
     "emptyState": {
       "title": "Ainda não há dados suficientes"
     },

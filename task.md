@@ -110,6 +110,29 @@
 
 ## Feitas
 
+### 2026-09-04 — Funil de clientes (Delivery) no Dashboard
+
+- Pedido do dono da conta: ver com clareza quantos novos contatos
+  entraram, quantos fizeram pedido com sucesso e, desses, quantos são
+  recorrentes/fiéis.
+- Decisões confirmadas antes de implementar: (1) recorrência é
+  cumulativa e olha o **histórico completo** do cliente — recorrente =
+  2+ pedidos na vida, fiel = 3+ na vida, não só dentro do período
+  filtrado na tela; (2) pedidos do **Cardápio Público** ficam de fora
+  do funil na v1 (hoje nascem sem `contact_id` vinculado, por design
+  do checkout público) — entram como contagem à parte ("X pedidos não
+  identificados"), sem mexer nesse checkout agora.
+- Novo widget no Dashboard, só visível pra conta com módulo `delivery`
+  ligado: mesmo seletor de período já usado em Pedidos +
+  4 cards (Novos contatos → Converteram → Recorrentes → Fiéis), cada
+  um com o % do estágio anterior.
+- Nova RPC `delivery_customer_funnel` (migration 076) — agregação
+  server-side (não client-side como o resto do dashboard) porque
+  precisa da contagem lifetime de pedidos por contato, cruzando toda a
+  tabela de uma vez. 2 índices novos (`idx_contacts_account_created`,
+  `idx_delivery_orders_account_created`).
+- 3 testes novos.
+
 ### 2026-09-03 — Trava de código no `place_order` (causa raiz da duplicação, finalmente) + bug na própria correção de impressão
 
 - Reportado ao vivo pelo Eder com prints: dois pedidos duplicados no
