@@ -6,23 +6,12 @@
 
 ## Pendentes
 
-- [ ] **Print-agent não tem auto-update — causou uma falsa alarme de
-  "pedido duplicado" hoje (04/09, Concórdia)** — investigado a fundo:
-  não era bug. Pedido A81888F6 (R$28) foi cancelado 7s depois de criado
-  (cliente pediu mais um item), pedido 9A6D38F5 (R$48, os dois itens)
-  criado 32s depois — correção legítima, sistema funcionou certinho
-  (trava do place_order + notinha de correção, ambos de ontem). O que
-  pareceu duplicata foi a notinha original + a notinha de correção — só
-  que a correção deveria vir com o aviso "*** PEDIDO CANCELADO ***"
-  (adicionado 01/09) e não veio, porque o `.exe` do agente de impressão
-  rodando na Concórdia é de ANTES dessa atualização (publicado em
-  01/09, sem nenhum mecanismo de auto-update — cada loja baixa manual).
-  Pro time da cozinha, sem o aviso, os dois papéis são indistinguíveis.
-  Ação: pedir pra Concórdia baixar o `.exe` de novo em
-  Configurações → Impressão. Structural: enquanto não tiver auto-update
-  (ou pelo menos um jeito do servidor saber a versão rodando e avisar
-  "atualização disponível"), esse mesmo mal-entendido pode se repetir
-  em qualquer loja que nunca atualizou.
+- [ ] **Pedir pra Concórdia baixar o `.exe` do agente de impressão de
+  novo** (Configurações → Impressão) — mesmo com o auto-update
+  implementado hoje (ver Feitas), isso NÃO retroage: quem já está numa
+  versão anterior à 1.1.0 (é o caso da Concórdia agora) precisa de um
+  último download manual pra ganhar a capacidade de se atualizar
+  sozinho daqui pra frente.
 
 - [ ] **Causa raiz de por que a IA recriou o pedido do Rogério (31/08)
   não foi resolvida** — o pedido já tinha sido confirmado e "enviado
@@ -127,6 +116,40 @@
   não é sintoma de algo pior.
 
 ## Feitas
+
+### 2026-09-04 — Agente de impressão passa a se auto-atualizar (zontalk-print-agent v1.1.0)
+
+- Motivado pela investigação do falso alarme de "pedido duplicado" da
+  Concórdia (mesmo dia, ver entrada abaixo): a causa real foi um `.exe`
+  desatualizado que nunca recebeu o aviso "PEDIDO CANCELADO" (01/09)
+  porque não existia nenhum jeito de atualizar sem baixar manual.
+  Pedido do dono da conta: resolver isso de vez.
+- A partir da v1.1.0, o agente checa sozinho (na inicialização e depois
+  de hora em hora) um manifesto público
+  (`downloads/print-agent-version.json`) com a versão mais recente.
+  Achando uma mais nova: baixa, confere tamanho E sha256 contra o
+  manifesto (download incompleto/corrompido NUNCA substitui um `.exe`
+  que já funciona), só então troca o arquivo (guardando um `.previous`
+  pra rollback) e reinicia sozinho — mesmo caminho, mesmo
+  `config.json` do lado, nada pra loja fazer. Qualquer falha em
+  qualquer etapa só loga e mantém rodando a versão atual — a fila de
+  impressão nunca para por causa disso.
+- **Não retroage** — quem já está numa versão anterior à 1.1.0 ainda
+  precisa de um último download manual pra ganhar isso (ver Pendentes).
+- 15 testes novos + testado de ponta a ponta contra o `.exe` real
+  (servidor HTTPS local fake, certificado self-signed): 7 ciclos de
+  auto-update em sequência, sem travar, sem corromper, sem processo
+  órfão.
+- Deploy: publicado `zontalk-print-agent.exe` (v1.1.0) +
+  `print-agent-version.json` em `/opt/wacrm/public/downloads/`.
+  Achado no processo: um nome de arquivo NOVO em `public/` (o
+  `print-agent-version.json` nunca tinha existido) precisou de restart
+  do `wacrm.service` pra parar de dar 404 — sobrescrever um arquivo já
+  conhecido não precisa, só nome novo. Documentado no README do
+  `zdelivery-print-agent` pra não cair nessa de novo.
+- Repositório separado (`clients/zontalk/zdelivery-print-agent`, sem
+  remote configurado) — sem entrada de versão/CHANGELOG aqui no
+  zdelivery porque nenhum código deste repo mudou.
 
 ### 2026-09-04 — Comprovante de pagamento (PDF) disparava a IA sem ela ver o próprio comprovante → cancelava e recriava o pedido
 
