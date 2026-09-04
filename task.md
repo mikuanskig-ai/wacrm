@@ -6,6 +6,24 @@
 
 ## Pendentes
 
+- [ ] **Print-agent não tem auto-update — causou uma falsa alarme de
+  "pedido duplicado" hoje (04/09, Concórdia)** — investigado a fundo:
+  não era bug. Pedido A81888F6 (R$28) foi cancelado 7s depois de criado
+  (cliente pediu mais um item), pedido 9A6D38F5 (R$48, os dois itens)
+  criado 32s depois — correção legítima, sistema funcionou certinho
+  (trava do place_order + notinha de correção, ambos de ontem). O que
+  pareceu duplicata foi a notinha original + a notinha de correção — só
+  que a correção deveria vir com o aviso "*** PEDIDO CANCELADO ***"
+  (adicionado 01/09) e não veio, porque o `.exe` do agente de impressão
+  rodando na Concórdia é de ANTES dessa atualização (publicado em
+  01/09, sem nenhum mecanismo de auto-update — cada loja baixa manual).
+  Pro time da cozinha, sem o aviso, os dois papéis são indistinguíveis.
+  Ação: pedir pra Concórdia baixar o `.exe` de novo em
+  Configurações → Impressão. Structural: enquanto não tiver auto-update
+  (ou pelo menos um jeito do servidor saber a versão rodando e avisar
+  "atualização disponível"), esse mesmo mal-entendido pode se repetir
+  em qualquer loja que nunca atualizou.
+
 - [ ] **Causa raiz de por que a IA recriou o pedido do Rogério (31/08)
   não foi resolvida** — o pedido já tinha sido confirmado e "enviado
   pra cozinha" quando o cliente mandou uma mensagem de acompanhamento
