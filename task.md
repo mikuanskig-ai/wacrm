@@ -110,6 +110,28 @@
 
 ## Feitas
 
+### 2026-09-05 — IA cancelava sozinha um pedido de dias/semanas atrás sem o cliente pedir (Davi Santos, Concórdia)
+
+- Reportado ao vivo (Eder, 2 notinhas: uma "CANCELADO" de um pedido de
+  29/08, outra de um pedido novo de hoje) como "impresso 2 vezes" — na
+  investigação, eram pedidos DIFERENTES (ids e itens diferentes), não
+  duplicação de impressão.
+- Causa raiz: a conversa de WhatsApp nunca ganha `conversation_id` novo
+  só por ter passado tempo, então `lastPlacedOrderId` (o "já tem pedido
+  aberto nessa conversa" que evita duplicar pedido — 0.21.0) de 29/08
+  continuava valendo pra sempre. Quando o cliente pediu de novo hoje, a
+  trava obrigou o modelo a cancelar o pedido de uma semana atrás
+  (quase certamente já entregue) sem o cliente ter mencionado ele —
+  tudo invisível, sem aviso nenhum na conversa.
+- Corrigido: `lastPlacedOrderId` expira depois de 6h (mesma janela já
+  usada pro carrinho). Passado isso, deixa de forçar cancel_order —
+  vira como se não houvesse pedido aberto, e o novo simplesmente
+  substitui o ponteiro.
+- Migration `077`: backfill de `lastPlacedOrderAt` pros registros já
+  gravados antes desse campo existir, usando a data real do pedido
+  (evita destravar por engano proteção de pedidos recém-colocados).
+- 8 testes novos.
+
 ### 2026-09-05 — `add_to_cart` duplicava item quando o sabor/opção vinha numa mensagem separada
 
 - Reportado ao vivo pelo Eder com print (Ezequiel): "E um refrigerante

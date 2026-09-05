@@ -83,6 +83,12 @@ export interface OrderInfo {
    *  the model doesn't need a tool call just to remind itself what the
    *  order it might need to cancel actually totalled. */
   lastPlacedOrderTotal: number | null
+  /** ISO timestamp of when `lastPlacedOrderId` was actually placed —
+   *  set alongside it by place_order (and the staff-side force-order
+   *  route), cleared alongside it by cancel_order. See
+   *  isLastPlacedOrderStale's doc for why this field has to exist at
+   *  all: without it, `lastPlacedOrderId` never expires. */
+  lastPlacedOrderAt: string | null
 }
 
 const EMPTY_ORDER_INFO: OrderInfo = {
@@ -96,6 +102,37 @@ const EMPTY_ORDER_INFO: OrderInfo = {
   lastFeeQuote: null,
   lastPlacedOrderId: null,
   lastPlacedOrderTotal: null,
+  lastPlacedOrderAt: null,
+}
+
+/** How old `lastPlacedOrderId` can be before it stops counting as
+ *  "still open this conversation". Confirmed live (2026-09-05, Davi
+ *  Santos, Concórdia): this app never spins up a fresh conversation_id
+ *  just because time passed — the same WhatsApp thread stays live
+ *  indefinitely — so an order placed 2026-08-29 was STILL sitting in
+ *  `lastPlacedOrderId` a week later. When the same customer ordered
+ *  again on 2026-09-05, the model — correctly following the prompt's
+ *  own "cancel before recreating" instruction — silently cancelled
+ *  that week-old order (almost certainly already delivered and eaten
+ *  days earlier; nothing in the transcript even mentioned it, the
+ *  customer just said "3 G" wanting new marmitas) before placing the
+ *  new one. Same "stale state masquerading as the current session"
+ *  shape as STALE_CART_LINE_MS (create-order.ts) — this reuses that
+ *  exact window for the same reason: comfortably covers one real
+ *  ordering session (including a slow back-and-forth, or a customer
+ *  stepping away and coming back later the same afternoon) while
+ *  safely catching "this is a different day's — or week's — order". */
+export const STALE_LAST_PLACED_ORDER_MS = 6 * 60 * 60 * 1000
+
+/** Missing `lastPlacedOrderAt` (every row written before this field
+ *  existed — including the exact row that caused the incident above)
+ *  counts as stale too, same defensive default as `isStaleCartLine`'s
+ *  missing `addedAt`: treating an unknown age as "safe, still open" is
+ *  exactly what let that incident through in the first place. */
+export function isLastPlacedOrderStale(info: OrderInfo, nowIso: string): boolean {
+  if (!info.lastPlacedOrderId) return false
+  if (!info.lastPlacedOrderAt) return true
+  return new Date(nowIso).getTime() - new Date(info.lastPlacedOrderAt).getTime() > STALE_LAST_PLACED_ORDER_MS
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -206,7 +243,15 @@ export async function buildOrderStateSummary(
   // Root-caused a real duplicate-order incident (2026-08-13, see
   // lastPlacedOrderId's doc) — surfaced here as loudly as the STALE
   // fee-quote flag above so the model can't miss it.
-  if (info.lastPlacedOrderId) {
+  //
+  // Gated on NOT stale (see isLastPlacedOrderStale's doc, 2026-09-05
+  // incident) — without this, the model was being told every turn "you
+  // MUST call cancel_order first" about an order from days/weeks ago
+  // the customer never even mentioned, and it did exactly that: cancelled
+  // a stale, almost-certainly-already-delivered order the customer had
+  // no idea was still "open" as far as this conversation's state was
+  // concerned.
+  if (info.lastPlacedOrderId && !isLastPlacedOrderStale(info, new Date().toISOString())) {
     lines.push(
       `An order was ALREADY PLACED in this conversation: id ${info.lastPlacedOrderId}` +
         (info.lastPlacedOrderTotal != null ? `, total ${formatCurrency(info.lastPlacedOrderTotal, currency)}` : '') +

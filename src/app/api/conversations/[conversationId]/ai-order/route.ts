@@ -120,6 +120,7 @@ export async function POST(request: Request, { params }: Params) {
       lastFeeQuote: null,
       lastPlacedOrderId: order.id,
       lastPlacedOrderTotal: order.total,
+      lastPlacedOrderAt: new Date().toISOString(),
     });
 
     return NextResponse.json({ order }, { status: 201 });

@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CartLineItem } from '@/lib/delivery/create-order'
-import { readOrderInfo, writeOrderInfo, clearStaleFeeQuote, buildOrderStateSummary, type OrderInfo } from './order-state'
+import {
+  readOrderInfo,
+  writeOrderInfo,
+  clearStaleFeeQuote,
+  buildOrderStateSummary,
+  isLastPlacedOrderStale,
+  STALE_LAST_PLACED_ORDER_MS,
+  type OrderInfo,
+} from './order-state'
 
 function fakeDb(row: { ai_cart?: unknown; ai_order_info?: unknown }) {
   let current = { ai_cart: row.ai_cart, ai_order_info: row.ai_order_info }
@@ -37,6 +45,7 @@ describe('readOrderInfo', () => {
       lastFeeQuote: null,
       lastPlacedOrderId: null,
       lastPlacedOrderTotal: null,
+      lastPlacedOrderAt: null,
     })
   })
 
@@ -185,7 +194,11 @@ describe('buildOrderStateSummary', () => {
   it('surfaces an already-placed order with an explicit cancel-before-reordering instruction', async () => {
     const { db } = fakeDb({
       ai_cart: [],
-      ai_order_info: { lastPlacedOrderId: 'order-1', lastPlacedOrderTotal: 95 },
+      ai_order_info: {
+        lastPlacedOrderId: 'order-1',
+        lastPlacedOrderTotal: 95,
+        lastPlacedOrderAt: new Date().toISOString(), // fresh — well inside the staleness window
+      },
     })
     const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
     expect(summary).toContain('ALREADY PLACED')
@@ -201,5 +214,76 @@ describe('buildOrderStateSummary', () => {
     })
     const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
     expect(summary).not.toContain('ALREADY PLACED')
+  })
+
+  it('omits the already-placed-order line when it is stale — regression, 2026-09-05 (Davi Santos, Concórdia: an order placed 2026-08-29 was still "ALREADY PLACED" a week later, and the model dutifully cancelled it before the customer\'s brand new order, even though nothing in the transcript ever mentioned it)', async () => {
+    const { db } = fakeDb({
+      ai_cart: [],
+      ai_order_info: {
+        lastPlacedOrderId: 'order-old',
+        lastPlacedOrderTotal: 58,
+        lastPlacedOrderAt: '2026-08-29T15:46:09.799Z', // days before "now"
+      },
+    })
+    const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
+    // Empty cart + no other durable fact + a suppressed stale line means
+    // there is genuinely nothing left to show — same "nothing yet" null
+    // as the very first test in this describe block.
+    expect(summary).toBeNull()
+  })
+
+  it('treats a missing lastPlacedOrderAt (rows written before this field existed) as stale too — same defensive default as isStaleCartLine\'s missing addedAt', async () => {
+    const { db } = fakeDb({
+      ai_cart: [],
+      ai_order_info: { lastPlacedOrderId: 'order-legacy', lastPlacedOrderTotal: 58 }, // no lastPlacedOrderAt at all
+    })
+    const summary = await buildOrderStateSummary(db, 'conv-1', 'BRL')
+    expect(summary).toBeNull()
+  })
+})
+
+describe('isLastPlacedOrderStale', () => {
+  const EMPTY_INFO: OrderInfo = {
+    customerName: null,
+    isPickup: null,
+    deliveryAddress: null,
+    neighborhood: null,
+    location: null,
+    paymentMethod: null,
+    paymentNotes: null,
+    lastFeeQuote: null,
+    lastPlacedOrderId: null,
+    lastPlacedOrderTotal: null,
+    lastPlacedOrderAt: null,
+  }
+
+  it('is false when there is no lastPlacedOrderId at all — nothing to be stale about', () => {
+    const info: OrderInfo = { ...EMPTY_INFO }
+    expect(isLastPlacedOrderStale(info, new Date().toISOString())).toBe(false)
+  })
+
+  it('is false for a fresh lastPlacedOrderAt, well inside the staleness window', () => {
+    const now = Date.now()
+    const info: OrderInfo = {
+      ...EMPTY_INFO,
+      lastPlacedOrderId: 'order-1',
+      lastPlacedOrderAt: new Date(now - 60_000).toISOString(),
+    }
+    expect(isLastPlacedOrderStale(info, new Date(now).toISOString())).toBe(false)
+  })
+
+  it('is true once lastPlacedOrderAt is older than STALE_LAST_PLACED_ORDER_MS', () => {
+    const now = Date.now()
+    const info: OrderInfo = {
+      ...EMPTY_INFO,
+      lastPlacedOrderId: 'order-1',
+      lastPlacedOrderAt: new Date(now - STALE_LAST_PLACED_ORDER_MS - 1000).toISOString(),
+    }
+    expect(isLastPlacedOrderStale(info, new Date(now).toISOString())).toBe(true)
+  })
+
+  it('is true when lastPlacedOrderAt is missing — unknown age is never treated as safe', () => {
+    const info: OrderInfo = { ...EMPTY_INFO, lastPlacedOrderId: 'order-1', lastPlacedOrderAt: null }
+    expect(isLastPlacedOrderStale(info, new Date().toISOString())).toBe(true)
   })
 })

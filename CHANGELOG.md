@@ -2,6 +2,37 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.23.0] — 2026-09-05
+
+### Corrigido
+
+- **IA cancelava sozinha um pedido de dias/semanas atrás, sem o cliente
+  pedir** — reportado ao vivo (Eder, fotos de 2 notinhas: uma
+  "CANCELADO" de um pedido de 29/08, outra de um pedido novo de hoje).
+  Investigado a fundo: eram pedidos DIFERENTES (ids diferentes, itens
+  diferentes) — não era duplicação de impressão. A causa real: essa
+  conversa de WhatsApp nunca ganha um `conversation_id` novo só porque
+  passou tempo, então o "pedido já foi colocado nessa conversa"
+  (`lastPlacedOrderId`) de 29/08 continuava valendo pra sempre. Quando o
+  cliente (Davi Santos) pediu de novo hoje, a trava de "não recriar
+  pedido duplicado" (0.21.0) — que funciona certinho pra evitar
+  duplicação minutos depois — obrigou o modelo a cancelar o pedido
+  antigo primeiro, mesmo sem o cliente ter mencionado ele em nada. Um
+  pedido de uma semana atrás, quase certamente já entregue e comido,
+  virou "CANCELADO" nos registros sem ninguém pedir isso.
+  - Corrigido: `lastPlacedOrderId` agora expira depois de 6h (mesma
+    janela já usada pro carrinho — `STALE_CART_LINE_MS`). Um pedido
+    "já colocado" mais velho que isso deixa de forçar cancel_order — o
+    sistema trata como se não houvesse pedido aberto nessa conversa, e
+    o pedido novo simplesmente substitui o ponteiro antigo.
+  - Migration de backfill (`077`): registros já gravados antes desse
+    campo existir (`lastPlacedOrderAt`) ganham a data real do pedido
+    (via `delivery_orders.created_at`) em vez de cair só no padrão
+    "sem data = considera antigo" — evita destravar por engano a
+    proteção contra duplicação de pedidos colocados minutos antes do
+    deploy.
+  - 8 testes novos (order-state.ts + delivery.ts).
+
 ## [0.22.3] — 2026-09-05
 
 ### Corrigido

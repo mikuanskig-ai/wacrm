@@ -39,7 +39,7 @@ import { formatCurrency } from '@/lib/currency'
 import { getBusinessHours, isWithinBusinessHours, closedMessage } from '@/lib/delivery/business-hours'
 import { effectivePrice, type DayPriceOverrides } from '@/lib/delivery/day-price'
 import { calculateDeliveryFeeForAccount, type DeliveryFeeFailureReason } from '@/lib/delivery/fee-engine'
-import { readOrderInfo, writeOrderInfo, clearStaleFeeQuote, type OrderInfo } from '@/lib/ai/order-state'
+import { readOrderInfo, writeOrderInfo, clearStaleFeeQuote, isLastPlacedOrderStale, type OrderInfo } from '@/lib/ai/order-state'
 import { notifyOrderCancellation } from '@/lib/delivery/print-queue'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
@@ -884,6 +884,7 @@ export const placeOrderTool: ToolDefinition = {
     // one step that most needed it. Explicit args always win when given
     // (the customer may have changed their mind since).
     const orderInfo = await readOrderInfo(ctx.db, ctx.conversationId)
+    const nowIso = new Date().toISOString()
 
     // Confirmed live THREE times now (2026-08-31 Rogério, 2026-09-03
     // Rafael/Matheus + Iliane, all same day) — a customer's message
@@ -903,7 +904,18 @@ export const placeOrderTool: ToolDefinition = {
     // mirrors the confirm_quantity_increase/attach_note_to_existing
     // precedent: default to the safe path, require an explicit signal
     // for the rarer legitimate exception.
-    if (orderInfo.lastPlacedOrderId && args.confirm_separate_order !== true) {
+    //
+    // A STALE lastPlacedOrderId is the exact opposite failure mode and
+    // never blocks (see isLastPlacedOrderStale's doc, order-state.ts,
+    // 2026-09-05 incident): this app never gives a WhatsApp thread a
+    // fresh conversation_id just because time passed, so without this,
+    // an order from days or weeks ago would keep forcing every future
+    // order through cancel_order first — and the model, following the
+    // very instruction above, would silently cancel what is almost
+    // certainly an already-delivered order the customer never even
+    // mentioned. A stale pointer is treated as if no order were open at
+    // all — the fresh order below simply overwrites it.
+    if (orderInfo.lastPlacedOrderId && !isLastPlacedOrderStale(orderInfo, nowIso) && args.confirm_separate_order !== true) {
       return {
         content:
           `An order (id ${orderInfo.lastPlacedOrderId}${
@@ -1023,6 +1035,7 @@ export const placeOrderTool: ToolDefinition = {
     await writeOrderInfo(ctx.db, ctx.conversationId, {
       lastPlacedOrderId: order.id,
       lastPlacedOrderTotal: order.total,
+      lastPlacedOrderAt: nowIso,
     })
 
     const payload: PlacedOrderPayload = {
@@ -1109,7 +1122,7 @@ export const cancelOrderTool: ToolDefinition = {
       // Row's gone (rare — a staff member could have deleted it) —
       // still clear the stale pointer so a future turn doesn't keep
       // trying to cancel a ghost.
-      await writeOrderInfo(ctx.db, ctx.conversationId, { lastPlacedOrderId: null, lastPlacedOrderTotal: null })
+      await writeOrderInfo(ctx.db, ctx.conversationId, { lastPlacedOrderId: null, lastPlacedOrderTotal: null, lastPlacedOrderAt: null })
       return { content: 'That order no longer exists — nothing to cancel.' }
     }
     if (order.status === 'cancelled') {

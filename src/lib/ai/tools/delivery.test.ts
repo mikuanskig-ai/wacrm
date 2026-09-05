@@ -1051,12 +1051,19 @@ describe('placeOrderTool', () => {
     })
     await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
     expect(getOrderInfo()).toMatchObject({ lastPlacedOrderId: 'order-12', lastPlacedOrderTotal: 95 })
+    // Recorded so a future turn (days/weeks later, same conversation)
+    // can tell this is stale instead of forcing a cancel_order forever —
+    // see isLastPlacedOrderStale (order-state.ts).
+    expect((getOrderInfo() as { lastPlacedOrderAt?: string }).lastPlacedOrderAt).toEqual(expect.any(String))
   })
 
   it('refuses a second place_order when an order was already placed this conversation — regression, 2026-08-31/2026-09-03 (Rogério, Rafael/Matheus, Iliane — three live duplicate-order incidents, always minutes apart, never a race)', async () => {
     const { db } = makeDb({
       cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [] }],
-      orderInfo: { lastPlacedOrderId: 'order-1', lastPlacedOrderTotal: 20 },
+      // Fresh (well inside the staleness window) — see the stale-order
+      // tests below for the OTHER end of this: an old lastPlacedOrderId
+      // must NOT trigger this same block.
+      orderInfo: { lastPlacedOrderId: 'order-1', lastPlacedOrderTotal: 20, lastPlacedOrderAt: new Date().toISOString() },
     })
     const res = await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
     expect(h.finalizeDeliveryOrder).not.toHaveBeenCalled()
@@ -1069,7 +1076,7 @@ describe('placeOrderTool', () => {
     h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-2', total: 20, currency: 'BRL' })
     const { db } = makeDb({
       cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [] }],
-      orderInfo: { lastPlacedOrderId: 'order-1', lastPlacedOrderTotal: 20 },
+      orderInfo: { lastPlacedOrderId: 'order-1', lastPlacedOrderTotal: 20, lastPlacedOrderAt: new Date().toISOString() },
     })
     const res = await placeOrderTool.execute(
       { delivery_address: 'Rua X, 123', confirm_separate_order: true },
@@ -1077,6 +1084,34 @@ describe('placeOrderTool', () => {
     )
     expect(h.finalizeDeliveryOrder).toHaveBeenCalled()
     expect(res.data).toMatchObject({ id: 'order-2' })
+  })
+
+  it('does NOT block a fresh place_order when the previous lastPlacedOrderId is stale — regression, 2026-09-05 (Davi Santos, Concórdia: an order placed 2026-08-29 was still "ALREADY PLACED" a week later, and the model dutifully cancelled that likely-already-delivered order before the customer\'s brand new one, even though nothing in the transcript ever mentioned it)', async () => {
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-new', total: 20, currency: 'BRL' })
+    const { db, getOrderInfo } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [] }],
+      orderInfo: {
+        lastPlacedOrderId: 'order-old',
+        lastPlacedOrderTotal: 58,
+        lastPlacedOrderAt: '2026-08-29T15:46:09.799Z', // days before "now"
+      },
+    })
+    const res = await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalled()
+    expect(res.data).toMatchObject({ id: 'order-new' })
+    // The stale pointer is overwritten by the fresh order, not left behind.
+    expect(getOrderInfo()).toMatchObject({ lastPlacedOrderId: 'order-new', lastPlacedOrderTotal: 20 })
+  })
+
+  it('does NOT block a fresh place_order when lastPlacedOrderAt is missing entirely — every row written before this field existed defaults to stale, same as a missing addedAt on a cart line', async () => {
+    h.finalizeDeliveryOrder.mockResolvedValue({ id: 'order-new', total: 20, currency: 'BRL' })
+    const { db } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [] }],
+      orderInfo: { lastPlacedOrderId: 'order-legacy', lastPlacedOrderTotal: 58 }, // no lastPlacedOrderAt at all
+    })
+    const res = await placeOrderTool.execute({ delivery_address: 'Rua X, 123' }, ctxFor(db))
+    expect(h.finalizeDeliveryOrder).toHaveBeenCalled()
+    expect(res.data).toMatchObject({ id: 'order-new' })
   })
 
   const cart: CartLineItem[] = [
@@ -1554,7 +1589,7 @@ describe('cancelOrderTool', () => {
     expect(res.content).toContain('order-1')
     expect(res.content).toContain('cancelled')
     expect(deliveryOrderUpdates).toEqual([expect.objectContaining({ id: 'order-1', status: 'cancelled' })])
-    expect(getOrderInfo()).toMatchObject({ lastPlacedOrderId: null, lastPlacedOrderTotal: null })
+    expect(getOrderInfo()).toMatchObject({ lastPlacedOrderId: null, lastPlacedOrderTotal: null, lastPlacedOrderAt: null })
   })
 
   it('dispatches the same webhook/automation a staff-initiated cancel fires', async () => {
