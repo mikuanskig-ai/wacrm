@@ -2,6 +2,27 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.22.2] — 2026-09-05
+
+### Corrigido
+
+- **`add_to_cart` duplicava o item quando o cliente dizia o sabor/opção
+  numa mensagem separada** — reportado ao vivo (Eder, print do
+  Ezequiel): "E um refrigerante lata" seguido, alguns segundos depois,
+  de "Coca cola" virou DUAS linhas no carrinho ("1x Refrigerante Lata"
+  + "1x Refrigerante Lata [Coca cola]") em vez de uma só com o sabor.
+  Mesma causa/formato de dois bugs já corrigidos antes (07/08 e 27/08)
+  para o campo `notes` — só que aquele mecanismo (`attach_note_to_existing`)
+  só olhava pra `notes`, nunca para `addon_option_ids`, então uma
+  clarificação de sabor numa mensagem separada sempre virava uma linha
+  nova, nunca era anexada à linha já existente.
+  - Corrigido: o mesmo mecanismo (opt-in explícito do modelo via
+    `attach_note_to_existing: true`, contra uma linha "em branco" —
+    sem nota e sem addon) agora funciona tanto pra nota quanto pra
+    addon. Um merge nunca apaga o outro campo (anexar addon não some
+    com a nota já anotada antes, e vice-versa).
+  - 2 testes novos.
+
 ## [0.22.1] — 2026-09-04
 
 ### Corrigido

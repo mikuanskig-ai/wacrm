@@ -634,10 +634,74 @@ describe('addToCartTool', () => {
       product_id: 'p1',
       quantity: 1,
       notes: 'Sem carne, com ovo frito, sem macarrão',
+      addons: [], // untouched by this merge — must not be corrupted by it
     })
     expect(writes[0]).toHaveLength(1)
-    expect(res.content).toMatch(/noted for the 1x marmita p/i)
+    expect(res.content).toMatch(/updated the existing 1x marmita p/i)
     expect(res.content).not.toMatch(/added 1x marmita p to the cart/i)
+  })
+
+  it('attaches an addon choice to the existing bare line instead of duplicating it — regression, 2026-09-05 (Ezequiel: "E um refrigerante lata" added bare, then "Coca cola" a few seconds later became a SECOND "Refrigerante Lata" line instead of setting the flavor on the first one — same shape as the 2026-08-07 notes case above, just addon_option_ids instead of notes, which the original refinement match never looked at)', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'Refrigerante Lata',
+      price: 6,
+      addon_groups: [
+        {
+          id: 'g1',
+          name: 'Sabor',
+          selection_type: 'single',
+          is_required: false,
+          position: 0,
+          options: [{ id: 'o-coca', name: 'Coca cola', price_delta: 0, group_id: 'g1' }],
+        },
+      ],
+    })
+    const { db, writes, getCart } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Refrigerante Lata', unit_price: 6, quantity: 1, addons: [], notes: null }],
+    })
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', quantity: 1, addon_option_ids: ['o-coca'], attach_note_to_existing: true },
+      ctxFor(db),
+    )
+    expect(getCart()).toHaveLength(1)
+    expect(getCart()[0]).toMatchObject({
+      product_id: 'p1',
+      quantity: 1,
+      addons: [{ group_id: 'g1', group_name: 'Sabor', option_id: 'o-coca', option_name: 'Coca cola', price_delta: 0 }],
+      notes: null, // untouched by this merge — must not be corrupted by it
+    })
+    expect(writes[0]).toHaveLength(1)
+    expect(res.content).toMatch(/updated the existing 1x refrigerante lata/i)
+    expect(res.content).not.toMatch(/added 1x refrigerante lata to the cart/i)
+  })
+
+  it('does NOT auto-merge an addon into a bare line without attach_note_to_existing', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'Refrigerante Lata',
+      price: 6,
+      addon_groups: [
+        {
+          id: 'g1',
+          name: 'Sabor',
+          selection_type: 'single',
+          is_required: false,
+          position: 0,
+          options: [{ id: 'o-coca', name: 'Coca cola', price_delta: 0, group_id: 'g1' }],
+        },
+      ],
+    })
+    const { db, writes, getCart } = makeDb({
+      cart: [{ product_id: 'p1', product_name: 'Refrigerante Lata', unit_price: 6, quantity: 1, addons: [], notes: null }],
+    })
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', quantity: 1, addon_option_ids: ['o-coca'] },
+      ctxFor(db),
+    )
+    expect(getCart()).toHaveLength(2)
+    expect(writes[0]).toHaveLength(2)
+    expect(res.content).toMatch(/added 1x refrigerante lata to the cart/i)
   })
 
   it('does NOT auto-merge into a bare line without attach_note_to_existing — regression, 2026-08-27 (Fernanda Mendonça: 3 marmitas listed at once — plain, "sem macarrão", and a large — silently became only 2 lines because the "sem macarrão" call got merged into the plain one instead of becoming its own line)', async () => {

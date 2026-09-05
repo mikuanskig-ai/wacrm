@@ -370,7 +370,7 @@ export const addToCartTool: ToolDefinition = {
       attach_note_to_existing: {
         type: 'boolean',
         description:
-          "Set to true ONLY when this call is adding a preparation/customization detail — in a separate, LATER message — to a single item the customer already ordered bare (no notes yet), e.g. they said '1 marmita P' earlier and just now said 'sem cebola'. Leave false/omitted whenever this is really a distinct additional unit, even of the exact same product with different customization — especially when the customer listed multiple quantities together in one message (e.g. '1 marmita P, 1 marmita P sem cebola' is always 2 separate lines, never merge them into one, even though the second one would otherwise look like a bare-line match). Confirmed live (2026-08-27): a customer listed 3 marmitas at once this way and the wrong guess here silently dropped one — the customer paid for 3, only 2 reached the kitchen.",
+          "Set to true ONLY when this call is adding a preparation/customization detail — in a separate, LATER message — to a single item the customer already ordered bare (no notes or addon choices yet), e.g. they said '1 marmita P' earlier and just now said 'sem cebola'; or they said '1 refrigerante lata' earlier with no flavor and just now said 'coca cola' to specify it (pass that flavor as addon_option_ids on this same call). Leave false/omitted whenever this is really a distinct additional unit, even of the exact same product with different customization — especially when the customer listed multiple quantities together in one message (e.g. '1 marmita P, 1 marmita P sem cebola' is always 2 separate lines, never merge them into one, even though the second one would otherwise look like a bare-line match). Confirmed live (2026-08-27): a customer listed 3 marmitas at once this way and the wrong guess here silently dropped one — the customer paid for 3, only 2 reached the kitchen.",
       },
       confirm_quantity_increase: {
         type: 'boolean',
@@ -470,16 +470,22 @@ export const addToCartTool: ToolDefinition = {
     )
 
     // A second, narrower match for when the exact one above misses:
-    // same product + addons, but the existing line has no notes yet
-    // and this call is quantity 1 with some. Confirmed live
-    // (2026-08-07): a customer said "1 marmita P" (added bare, no
-    // notes), then in the next message described how they wanted it
-    // prepared ("sem carne, com ovo frito, sem macarrão") — the model,
-    // with no memory of the first call, re-called add_to_cart with
-    // that as `notes`. Without this, the two calls (notes "" vs notes
-    // "sem carne...") don't match the exact check above, so they
-    // became two separate 1x lines — R$20 x 2 shown as R$40 for what
-    // was really one R$20 marmita.
+    // same product, but the existing line was added bare (no notes,
+    // no addon choices) and this call is quantity 1 with some detail
+    // to attach. Confirmed live (2026-08-07): a customer said "1
+    // marmita P" (added bare, no notes), then in the next message
+    // described how they wanted it prepared ("sem carne, com ovo
+    // frito, sem macarrão") — the model, with no memory of the first
+    // call, re-called add_to_cart with that as `notes`. Without this,
+    // the two calls (notes "" vs notes "sem carne...") don't match the
+    // exact check above, so they became two separate 1x lines — R$20
+    // x 2 shown as R$40 for what was really one R$20 marmita.
+    // Confirmed live again (2026-09-05, Ezequiel), this time with an
+    // addon instead of notes: "E um refrigerante lata" (added bare, no
+    // flavor), then "Coca cola" a few seconds later — same shape, just
+    // addon_option_ids instead of notes, and the original version of
+    // this match (keyed only on `item.notes`) never even looked at
+    // that case, so it fell straight to a second line every time.
     //
     // This ONLY fires when the model explicitly says so
     // (attach_note_to_existing: true) — it used to auto-detect this
@@ -492,8 +498,8 @@ export const addToCartTool: ToolDefinition = {
     // into the first (plain) line's notes instead of becoming its own
     // line. The customer paid for 3 marmitas; only 2 reached the
     // kitchen. Both incidents look identical from inside this
-    // function (same product+addons, an empty-notes line sitting
-    // there, a quantity-1 call with notes arriving) — there is no
+    // function (same product, an empty-notes/empty-addons line sitting
+    // there, a quantity-1 call with a detail arriving) — there is no
     // way to tell "customer is describing the one item they already
     // ordered" from "customer just listed a second, differently-
     // customized unit of the same product" without the model's own
@@ -502,16 +508,13 @@ export const addToCartTool: ToolDefinition = {
     // is visible and fixable in review (update_cart_item, or the
     // staff-side AI-order confirmation dialog); a silently eaten item
     // is invisible until the customer notices it's missing, or never.
+    const hasNewDetail = (item.notes && item.notes.trim().length > 0) || item.addons.length > 0
     const refinementMatchIndex =
-      args.attach_note_to_existing === true &&
-      exactMatchIndex === -1 &&
-      quantity === 1 &&
-      item.notes &&
-      item.notes.trim()
+      args.attach_note_to_existing === true && exactMatchIndex === -1 && quantity === 1 && hasNewDetail
         ? cartBefore.findIndex(
             (line) =>
               line.product_id === item.product_id &&
-              addonsKey(line.addons ?? []) === addonsKey(item.addons) &&
+              (line.addons ?? []).length === 0 &&
               !(line.notes ?? '').trim(),
           )
         : -1
@@ -574,8 +577,16 @@ export const addToCartTool: ToolDefinition = {
       )
     } else if (refinementMatchIndex >= 0) {
       cart = [...cartBefore]
-      mergedQuantity = cart[refinementMatchIndex]!.quantity
-      cart[refinementMatchIndex] = { ...cart[refinementMatchIndex]!, notes: item.notes }
+      const existingLine = cart[refinementMatchIndex]!
+      mergedQuantity = existingLine.quantity
+      // Only overwrite whichever detail this call actually brought —
+      // a call attaching just an addon choice must not blank out
+      // `notes` (and vice versa) on the existing line.
+      cart[refinementMatchIndex] = {
+        ...existingLine,
+        notes: item.notes && item.notes.trim() ? item.notes : existingLine.notes,
+        addons: item.addons.length > 0 ? item.addons : existingLine.addons,
+      }
       noteUpdated = true
     } else {
       cart = [...cartBefore, item]
@@ -600,7 +611,7 @@ export const addToCartTool: ToolDefinition = {
         : exactMatchIndex >= 0 && !staleMatchSplit
           ? `Added ${quantity}x ${product.name} — now ${mergedQuantity}x total in the cart. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
           : noteUpdated
-            ? `Noted for the ${mergedQuantity}x ${product.name} already in the cart — no new line added, quantity unchanged. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
+            ? `Updated the existing ${mergedQuantity}x ${product.name} in the cart with that detail — no new line added, quantity unchanged. Cart has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`
             : `Added ${quantity}x ${product.name} to the cart. Cart now has ${cart.length} item(s), running subtotal ${formatCurrency(subtotal, ctx.currency)}.`,
     }
   },

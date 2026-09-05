@@ -117,6 +117,22 @@
 
 ## Feitas
 
+### 2026-09-05 — `add_to_cart` duplicava item quando o sabor/opção vinha numa mensagem separada
+
+- Reportado ao vivo pelo Eder com print (Ezequiel): "E um refrigerante
+  lata" seguido, segundos depois, de "Coca cola" virou DUAS linhas no
+  carrinho em vez de uma com o sabor anotado.
+- Mesmo formato de dois bugs já corrigidos antes (07/08 e 27/08) pra
+  `notes` — o mecanismo que já existia (`attach_note_to_existing`,
+  merge numa linha "em branco" só quando o modelo confirma
+  explicitamente) só olhava pro campo `notes`, nunca pra
+  `addon_option_ids` — uma clarificação de sabor numa mensagem
+  separada sempre criava linha nova.
+- Corrigido: o mesmo mecanismo agora cobre addon também. Um merge
+  nunca apaga o outro campo (addon anexado depois não apaga nota já
+  anotada, e vice-versa).
+- 2 testes novos.
+
 ### 2026-09-04 — Agente de impressão passa a se auto-atualizar (zontalk-print-agent v1.1.0)
 
 - Motivado pela investigação do falso alarme de "pedido duplicado" da
