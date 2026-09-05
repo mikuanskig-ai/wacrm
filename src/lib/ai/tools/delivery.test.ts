@@ -676,6 +676,85 @@ describe('addToCartTool', () => {
     expect(res.content).not.toMatch(/added 1x refrigerante lata to the cart/i)
   })
 
+  it('merges a SECOND, later clarification onto the same line after the first one already attached — regression, closes a gap left by the 2026-09-05 fix above (a line could only ever receive ONE such clarification: after the addon attach it is no longer "bare", so a follow-up note would have fallen through to a fresh duplicate line again)', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'Refrigerante Lata',
+      price: 6,
+      addon_groups: [
+        {
+          id: 'g1',
+          name: 'Sabor',
+          selection_type: 'single',
+          is_required: false,
+          position: 0,
+          options: [{ id: 'o-coca', name: 'Coca cola', price_delta: 0, group_id: 'g1' }],
+        },
+      ],
+    })
+    const { db, getCart } = makeDb({
+      // Already went through the FIRST attach (the flavor) — no longer bare.
+      cart: [
+        {
+          product_id: 'p1',
+          product_name: 'Refrigerante Lata',
+          unit_price: 6,
+          quantity: 1,
+          addons: [{ group_id: 'g1', group_name: 'Sabor', option_id: 'o-coca', option_name: 'Coca cola', price_delta: 0 }],
+          notes: null,
+        },
+      ],
+    })
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', quantity: 1, notes: 'sem gelo', attach_note_to_existing: true },
+      ctxFor(db),
+    )
+    expect(getCart()).toHaveLength(1)
+    expect(getCart()[0]).toMatchObject({
+      product_id: 'p1',
+      quantity: 1,
+      notes: 'sem gelo',
+      addons: [{ group_id: 'g1', group_name: 'Sabor', option_id: 'o-coca', option_name: 'Coca cola', price_delta: 0 }], // preserved from the earlier merge, not corrupted
+    })
+    expect(res.content).toMatch(/updated the existing 1x refrigerante lata/i)
+    expect(res.content).not.toMatch(/added 1x refrigerante lata to the cart/i)
+  })
+
+  it('merges a SECOND, later clarification in the other order too — notes attached first, then an addon in a separate message', async () => {
+    h.loadProductWithAddonGroups.mockResolvedValue({
+      id: 'p1',
+      name: 'Marmita P',
+      price: 20,
+      addon_groups: [
+        {
+          id: 'g1',
+          name: 'Tamanho',
+          selection_type: 'single',
+          is_required: false,
+          position: 0,
+          options: [{ id: 'o-p', name: 'P', price_delta: 0, group_id: 'g1' }],
+        },
+      ],
+    })
+    const { db, getCart } = makeDb({
+      // Already went through the FIRST attach (notes) — no longer bare.
+      cart: [{ product_id: 'p1', product_name: 'Marmita P', unit_price: 20, quantity: 1, addons: [], notes: 'sem cebola' }],
+    })
+    const res = await addToCartTool.execute(
+      { product_id: 'p1', quantity: 1, addon_option_ids: ['o-p'], attach_note_to_existing: true },
+      ctxFor(db),
+    )
+    expect(getCart()).toHaveLength(1)
+    expect(getCart()[0]).toMatchObject({
+      product_id: 'p1',
+      quantity: 1,
+      notes: 'sem cebola', // preserved from the earlier merge, not corrupted
+      addons: [{ group_id: 'g1', group_name: 'Tamanho', option_id: 'o-p', option_name: 'P', price_delta: 0 }],
+    })
+    expect(res.content).toMatch(/updated the existing 1x marmita p/i)
+    expect(res.content).not.toMatch(/added 1x marmita p to the cart/i)
+  })
+
   it('does NOT auto-merge an addon into a bare line without attach_note_to_existing', async () => {
     h.loadProductWithAddonGroups.mockResolvedValue({
       id: 'p1',

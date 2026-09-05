@@ -2,6 +2,28 @@
 
 > Este arquivo é sempre escrito em português.
 
+## [0.22.3] — 2026-09-05
+
+### Corrigido
+
+- **Mesmo bug do 0.22.2, um passo além: uma SEGUNDA clarificação em
+  mensagem separada ainda duplicava a linha** — achado em auditoria
+  proativa (não incidente ao vivo ainda) logo depois do fix acima:
+  o merge por "linha em branco" exigia que a linha existente estivesse
+  sem nota E sem addon ao mesmo tempo. Isso funciona pra UMA
+  clarificação, mas depois que ela é anexada a linha deixa de estar
+  "em branco" — então se o cliente mandasse uma TERCEIRA mensagem com
+  outro detalhe (ex.: sabor numa mensagem, "sem gelo" na próxima), essa
+  segunda anexação caía de novo pra criar uma linha nova, mesmo bug,
+  um passo depois.
+  - Corrigido: cada dimensão (nota, addon) só precisa estar em branco
+    na linha existente se for exatamente o que ESSA chamada está
+    trazendo — uma chamada que só traz nota não se importa se a linha
+    já tem addon (e vice-versa). Uma chamada que traz os dois ainda
+    exige os dois em branco, igual antes.
+  - 2 testes novos (nas duas ordens: addon-depois-nota e
+    nota-depois-addon).
+
 ## [0.22.2] — 2026-09-05
 
 ### Corrigido

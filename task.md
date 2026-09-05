@@ -133,6 +133,19 @@
   anotada, e vice-versa).
 - 2 testes novos.
 
+### 2026-09-05 — mesmo bug acima, um passo além: SEGUNDA clarificação em mensagem separada ainda duplicava
+
+- Achado em auditoria proativa (pergunta do Eder "tem mais algo que
+  pode gerar o mesmo erro"), não incidente ao vivo ainda.
+- O merge exigia linha existente sem nota E sem addon ao mesmo tempo —
+  funciona pra uma clarificação, mas depois de anexada a linha deixa
+  de estar "em branco", então uma TERCEIRA mensagem com outro detalhe
+  (ex.: sabor numa mensagem, "sem gelo" na próxima) caía de novo pra
+  linha nova.
+- Corrigido: cada dimensão (nota, addon) só precisa estar em branco na
+  linha se for exatamente o que aquela chamada está trazendo.
+- 2 testes novos (nas duas ordens).
+
 ### 2026-09-04 — Agente de impressão passa a se auto-atualizar (zontalk-print-agent v1.1.0)
 
 - Motivado pela investigação do falso alarme de "pedido duplicado" da

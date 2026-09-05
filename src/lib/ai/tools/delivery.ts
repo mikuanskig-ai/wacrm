@@ -487,6 +487,22 @@ export const addToCartTool: ToolDefinition = {
     // this match (keyed only on `item.notes`) never even looked at
     // that case, so it fell straight to a second line every time.
     //
+    // Caught by code review right after that fix (not a live incident
+    // yet — closing the gap before it becomes one): the match below
+    // used to require the candidate line to be untouched on BOTH notes
+    // AND addons. That means a line could only ever receive ONE such
+    // clarification, ever — the moment the Ezequiel fix above attaches
+    // a flavor, the line has addons=[Coca cola] and is no longer
+    // "bare", so a customer who then sends a THIRD message ("sem
+    // gelo") would fail this match and get a genuine duplicate line
+    // again, just one message later. Now each dimension is only
+    // required to still be blank if THIS call is the one supplying it
+    // — a call bringing only notes only needs notes still blank
+    // (whatever addons the line already has from an earlier attach are
+    // irrelevant to it), and vice versa for a call bringing only
+    // addons. A call bringing both still requires both blank, same as
+    // before.
+    //
     // This ONLY fires when the model explicitly says so
     // (attach_note_to_existing: true) — it used to auto-detect this
     // from cart shape alone (same product/addons + an empty-notes
@@ -508,14 +524,16 @@ export const addToCartTool: ToolDefinition = {
     // is visible and fixable in review (update_cart_item, or the
     // staff-side AI-order confirmation dialog); a silently eaten item
     // is invisible until the customer notices it's missing, or never.
-    const hasNewDetail = (item.notes && item.notes.trim().length > 0) || item.addons.length > 0
+    const hasNewNotes = !!(item.notes && item.notes.trim().length > 0)
+    const hasNewAddons = item.addons.length > 0
+    const hasNewDetail = hasNewNotes || hasNewAddons
     const refinementMatchIndex =
       args.attach_note_to_existing === true && exactMatchIndex === -1 && quantity === 1 && hasNewDetail
         ? cartBefore.findIndex(
             (line) =>
               line.product_id === item.product_id &&
-              (line.addons ?? []).length === 0 &&
-              !(line.notes ?? '').trim(),
+              (!hasNewAddons || (line.addons ?? []).length === 0) &&
+              (!hasNewNotes || !(line.notes ?? '').trim()),
           )
         : -1
 
