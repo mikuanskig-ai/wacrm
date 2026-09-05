@@ -6,13 +6,6 @@
 
 ## Pendentes
 
-- [ ] **Pedir pra Concórdia baixar o `.exe` do agente de impressão de
-  novo** (Configurações → Impressão) — mesmo com o auto-update
-  implementado hoje (ver Feitas), isso NÃO retroage: quem já está numa
-  versão anterior à 1.1.0 (é o caso da Concórdia agora) precisa de um
-  último download manual pra ganhar a capacidade de se atualizar
-  sozinho daqui pra frente.
-
 - [ ] **Causa raiz de por que a IA recriou o pedido do Rogério (31/08)
   não foi resolvida** — o pedido já tinha sido confirmado e "enviado
   pra cozinha" quando o cliente mandou uma mensagem de acompanhamento
@@ -132,6 +125,26 @@
   nunca apaga o outro campo (addon anexado depois não apaga nota já
   anotada, e vice-versa).
 - 2 testes novos.
+
+### 2026-09-05 — Impressão duplicada (pedido ED61F2FE, Concórdia) — investigado, não reproduzível no código
+
+- Reportado ao vivo (Eder, fotos de 2 notinhas físicas idênticas). Ao
+  contrário dos incidentes de duplicação anteriores, o pedido em si
+  **não** duplicou no painel — só existe 1 pedido e 1 `print_job` no
+  banco (`status=printed`, `attempts=0`, sem erro): o ciclo
+  claim→imprime→confirma rodou uma única vez, do jeito certo.
+- `receipt.ts`/`printer.ts` também revisados — sem comando de "2
+  cópias" nem envio duplicado no código do agente.
+- Pedido pro Eder verificar na loja: Gerenciador de Tarefas (2
+  processos do agente rodando?) e fila de impressão do Windows (job
+  travado/reiniciado?). Ele confirmou que está tudo certo — nenhuma
+  das duas coisas.
+- Conclusão: não achamos causa reproduzível no nosso código nem
+  evidência de 2 processos — provável soluço isolado do spooler/
+  impressora física da loja, fora do nosso alcance de código. Nenhuma
+  mudança de código feita; fica como "observar se repete".
+- A loja aproveitou e já atualizou o `.exe` do agente pra versão com
+  auto-update (v1.1.0+) — fecha o pendente abaixo.
 
 ### 2026-09-05 — mesmo bug acima, um passo além: SEGUNDA clarificação em mensagem separada ainda duplicava
 
